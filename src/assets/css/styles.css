@@ -1,0 +1,1427 @@
+/* ---------------BARRA DE NAVEGACIÓN -------------------------- */
+
+.navbar-siivda{
+    background:
+        linear-gradient(90deg, rgba(0,60,52,0.80), rgba(30,91,79,0.80)),
+        url("../img/pattern_gob_verde.jpg");
+
+    background-size: cover;
+    background-position: right center;
+    background-repeat: no-repeat;
+
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    border-bottom: 1px solid #a57f2c;
+
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+
+    padding: 0.55rem 0;
+}
+
+/* contenedor general */
+.navbar-wrap{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 0.5rem;
+    padding-right: 1rem;
+}
+
+/* marca izquierda */
+.brand-siivda{
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    text-decoration: none;
+    margin-right: 1.5rem;
+    flex-shrink: 1;
+    margin-left: 0;
+}
+
+
+/* logo PROFEPA*/
+.logo-profepa{
+    height: 52px;
+    width: auto;
+    display: block;
+    filter:brightness(0) invert(1);
+    opacity: 0.9;
+    transition: transform 0.3s ease, filter 0.3s ease;
+}
+
+.logo-profepa:hover{
+    transform: scale(1.2);
+}
+
+/* titulo COORDINACION */
+.titulo-coordinacion{
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #ffffff;
+    line-height: 1.1;
+    white-space: nowrap;
+    margin: 0;
+    display: inline-block;
+    transform: translateY(1px);
+}
+
+/* menu */
+.menu-siivda{
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.navbar-siivda .nav-link{
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 0.5rem 0.7rem;
+    transition: color 0.25s ease, transform 0.25s ease, font-weight 0.25s ease;
+
+}
+
+.navbar-siivda .nav-link:hover,
+.navbar-siivda .nav-link:focus{
+    color: #ffffff;
+    transform: translateY(-1.5px);
+    font-weight: 600;
+}
+
+/* dropdown */
+.dropdown-menu{
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+}
+
+.dropdown-item{
+    font-size: 0.92rem;
+    transition: background-color 0.25s ease, color 0.25s ease, padding-left 0.25s ease, font-weight 0.2s ease;
+    color: #000000;
+    font-weight: 400;
+}
+
+.dropdown-item:hover{
+    background-color: #e7f5f2;
+    color: #1e5b4f;
+    font-weight: 500;
+    padding-left: 1.1rem;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f8f9fa;
+}
+
+@media (max-width: 991.98px){
+    .brand-siivda{
+        gap: 0.5rem;
+        margin-right: 0.5rem;
+    }
+
+    .logo-profepa{
+        height: 42px;
+    }
+
+    .titulo-coordinacion{
+        font-size: 0.78rem;
+        line-height: 1.2;
+        white-space: normal;
+    }
+
+    .navbar-wrap{
+        padding-left: 0.25rem;
+        padding-right: 0.25rem;
+    }
+
+    .menu-siivda{
+        gap: 0.2rem;
+        padding-top: 0.5rem;
+    }
+
+    .navbar-siivda .nav-link{
+        padding: 0.45rem 0.5rem;
+    }
+}
+/* ---------------BANNER DE SIIVDA -------------------------- */
+.hero-carousel{
+  position: relative;
+  min-height: 38vh;
+  overflow: hidden;
+}
+
+/* cada slide */
+.hero-slide{
+  min-height: 38vh;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+}
+
+/* overlay */
+.hero-slide::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background: linear-gradient(rgba(0,0,0,.40), rgba(0,0,0,.40));
+}
+
+/* contenedor contenido */
+.hero-content{
+  position:absolute;
+  inset:0;
+  z-index:3;
+  display:flex;
+  align-items:center;
+}
+
+.hero-container{
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 100%;
+  max-width: 100%;
+  padding-left: 1.25rem;
+  padding-right: 2rem;
+}
+
+/* panel translúcido sutil */
+.hero-panel{
+  max-width: 700px;
+  margin-left: 0;
+  padding: 1rem 1.6rem;
+
+  background: rgba(255,255,255,0.05);
+  border: 0.4px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  
+  box-shadow: 0 8px 18px rgba(0,0,0,0.12);
+
+  animation: fadeUp 0.8s ease;
+
+  transition: max-width 0.45s ease, padding 0.35s ease;
+}
+
+/* expansión al pasar el mouse */
+.hero-panel:hover{
+  max-height: 100%;
+  max-width: 50%;
+  padding-right: 2rem;
+  padding-top: 1.4rem;
+}
+
+
+/* título principal */
+.hero-title{
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  margin-bottom: 0.45rem;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+
+/* subtítulo */
+.hero-subtitle{
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-bottom: 1.2rem;
+  color: rgba(255,255,255,0.96);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.16);
+}
+
+/* contenedor de botones */
+.hero-actions{
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+/* botones */
+.btn-siivda{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 220px;
+
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.45);
+  color: #ffffff;
+
+  border-radius: 12px;
+  padding: 0.72rem 1.5rem;
+  
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+
+  transition: all 0.28s ease;
+}
+
+.btn-siivda:hover{
+  background: rgba(145,110,35,0.96);
+  border-color: rgba(145,110,35,0.96);
+  color: #ffffff;
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.14);
+  font-size: 1.2rem;
+}
+
+.btn-siivda-outline{
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.50);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 0.72rem 1.45rem;
+  font-weight: 600;
+  transition: all 0.28s ease;
+  font-size: 0.95rem;
+}
+
+.btn-siivda-outline:hover{
+  background: rgba(255,255,255,0.14);
+  color: #ffffff;
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.10);
+}
+
+/* microanimación suave */
+@keyframes fadeUp{
+  from{
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to{
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------------DESCRIPCIÓN DE SIIVDA -------------------------- */
+.text-dark-green { color: #163f37; }
+.text-gold { font-size: 1.4rem; color: #d6b56a !important; }
+
+.executive-header {
+    margin-bottom: 2rem;
+}
+
+.badge-kicker {
+    background: rgba(165, 127, 44, 0.1);
+    color: #a57f2c;
+    padding: 6px 16px;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.header-line {
+    width: 60px;
+    height: 4px;
+    background: #a57f2c;
+    margin-top: 15px;
+}
+
+.executive-main-card {
+    border-radius: 20px;
+    overflow: hidden;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.08);
+}
+
+.border-end-custom {
+    border-right: 1px solid #eee;
+}
+
+.bg-light-gray { background-color: #f8faf9; }
+
+.obj-item { 
+    display: flex; 
+    align-items: flex-start; 
+    gap: 15px; 
+    margin-bottom: 25px; }
+
+.obj-icon {
+    width: 45px;
+    height: 45px;
+    background: #163f37;
+    color: #fff;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.2rem;
+    box-shadow: 0 4px 10px rgba(22, 63, 55, 0.2);
+}
+
+@media (max-width: 991px) {
+    .border-end-custom { border-right: none; border-bottom: 1px solid #eee; }
+    .min-vh-50 { min-height: 400px; }
+}
+
+/* ---------------2da seccion -------------------------- */
+
+.exec-card-premium {
+    background: #ffffff;
+    flex-direction: column;
+    border: none;
+    border-radius: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.exec-card-premium:hover .icon-badge-executive{
+    transform: scale(1.1) rotate(-5deg);
+    box-shadow: 0 20px 40px rgba(22, 63, 55, 0.12) !important;
+    background: linear-gradient(135deg, #1e5b4f 0%, #163f37 100%);
+}
+
+.card-accent-gold {
+    height: 6px;
+    width: 100%;
+    background: linear-gradient(90deg, #EEEEEE, #FDF4E3);
+    border-bottom-left-radius: 20px;
+    border-bottom-right-radius: 20px;
+    margin-top: auto;
+}
+
+.exec-card-number-large {
+    font-size: 3.5rem;
+    font-weight: 900;
+    color: #DEDED1; 
+    line-height: 1;
+    user-select:none;
+}
+
+.icon-box-gold {
+    width: 50px;
+    height: 50px;
+    background: rgba(165, 127, 44, 0.08);
+    color: #e0e0e0;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+}
+
+/* Badge para que el icono resalte */
+.icon-badge-executive {
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(135deg, #163f37 0%, #1e5b4f 100%);
+    color: #fff;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem; /* Icono más grande */
+    box-shadow: 0 8px 15px rgba(22, 63, 55, 0.2);
+    border: 1px solid rgba(214, 181, 106, 0.3);
+    transition: transform 0.3s ease;
+}
+
+.text-justify {
+    text-align: justify;
+    text-justify: inter-word;
+}
+
+.section-lead {
+    max-width: 800px;
+    font-size: 1.1rem;
+    line-height: 1.6;
+}
+
+/* ---------------tercer seccion -------------------------- */
+
+
+.module-flip-container {
+    perspective: 1200px;
+    height: 400px;
+    margin-bottom: 20px;
+}
+
+.module-card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-style: preserve-3d;
+}
+
+.module-card-inner.is-flipped {
+    transform: rotateY(180deg);
+}
+
+.module-card-front, .module-card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    border-radius: 12px;
+}
+
+.module-card-front {
+    background: #ffffff;
+    z-index: 2;
+}
+
+.module-top-bar {
+    height: 5px;
+    background: #163f37; /* Verde PROFEPA */
+}
+
+.module-badge {
+    background: rgba(22, 63, 55, 0.05);
+    color: #163f37;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    border: 1px solid rgba(22, 63, 55, 0.1);
+    cursor: pointer;
+}
+
+.module-id {
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #f0f0f0;
+}
+
+.module-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #163f37;
+}
+
+.pointer-hint {
+    color: #a57f2c;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* REVERSO */
+.module-card-back {
+    background: #163f37;
+    color: #ffffff;
+    transform: rotateY(180deg);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.small-text-back li {
+    font-size: 0.82rem;
+    margin-bottom: 8px;
+    color: #e0e0e0;
+}
+
+.btn-return {
+    background: transparent;
+    border: 1px solid rgba(214, 181, 106, 0.5);
+    color: #d6b56a;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 4px;
+}
+
+.btn-return:hover {
+    background: #d6b56a;
+    color: #163f37;
+}
+
+/* --- FOOTER SIIVDA --- */
+.footer-siivda {
+    background-color: #002f2a; /* Un verde casi negro, muy elegante */
+    color: #ffffff;
+    border-top: 3px solid #a57f2c; /* Línea dorada superior */
+}
+
+.footer-logo {
+    height: 50px;
+    filter: brightness(0) invert(1); /* Convierte el logo a blanco si es necesario */
+    opacity: 0.9;
+}
+
+.footer-org-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+}
+
+.footer-sub-name {
+    font-size: 0.8rem;
+    color: #8d99ae;
+}
+
+.footer-contact-info p {
+    font-size: 0.85rem;
+    color: #e0e0e0;
+}
+
+.footer-legal p {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.footer-legal .text-muted {
+    color: #6c757d !important;
+}
+
+/* Responsivo: quitar borde en móviles */
+@media (min-width: 992px) {
+    .border-end-lg {
+        border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+    }
+}
+
+
+.lead-text {
+    font-size: 1.1rem;
+    color: #444;
+    line-height: 1.6;
+}
+
+
+.obj-content h5 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 3px;
+    color: #163f37;
+}
+
+.obj-content p {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 0;
+}
+
+
+.visor-host{
+  min-height: 420px;
+}
+
+
+.intro-text-strong{
+  font-weight: 600;
+  color: #163f37;
+  margin-bottom: 1.1rem;
+  text-align: justify;
+}
+
+/* responsive */
+@media (max-width: 991.98px){
+  .section-title{
+    font-size: 1.75rem;
+  }
+
+  .visor-shell{
+    min-height: 360px;
+  }
+}
+
+
+/* --- ----------------------TARJETAS REGIONES --- */
+.region-card {
+    border: none;
+    border-radius: 12px;
+    background: #fff;
+    transition: transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1), box-shadow 0.3s ease;
+    overflow: hidden; 
+    display: flex;
+    flex-direction: column;
+}
+
+.region-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 25px rgba(0,0,0,0.1) !important;
+}
+
+/* Banner superior de la tarjeta */
+.region-banner {
+    height: 110px;
+    background-size: cover;
+    background-position: center;
+    background-color: #163f37; /* Color de respaldo */
+    border-bottom: 3px solid #d6b56a; /* Línea dorada divisoria */
+    position: relative;
+}
+
+.region-banner::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: #d6b56a; /* Línea dorada */
+}
+
+.region-icon-container {
+    width: 50px;
+    height: 50px;
+    background-color: #163f37;
+    color: #ffffff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    margin-top: -40px; /* Efecto de solapamiento sobre el banner */
+    border: 1px solid #fff;
+    position: relative;
+    z-index: 2;
+}
+
+.region-card-title-gold {
+    color: #d6b56a; 
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-top: 5px;
+    margin-bottom: 8px;
+}
+
+.region-card-text-small {
+    font-size: 0.8rem; /* Tamaño reducido */
+    color: #4a4a4a;
+    line-height: 1.4;
+    text-align: justify;
+    hyphens: auto;
+    margin-bottom: 20px;
+}
+
+.btn-region-outline {
+    border: 1.5px solid #163f37;
+    color: #163f37;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    background: transparent;
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+}
+
+.btn-region-outline:hover {
+    background-color: #163f37;
+    color: #fff;
+}
+
+/* Separador sutil */
+.region-divider {
+    height: 1px;
+    background: linear-gradient(90deg, rgba(22, 63, 55, 0.2) 0%, rgba(22, 63, 55, 0.05) 100%);
+    margin: 15px 0;
+    width: 100%;
+}
+
+/* Título de la sección de estados */
+.region-states-title {
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: #163f37;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.region-states-list {
+    list-style: none;
+    padding-left: 0;
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.region-states-list li {
+    font-size: 0.72rem;
+    color: #555;
+    background: #f1f3f2;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border-left: 2px solid #d6b56a; /* Pequeño acento dorado */
+}
+
+.region-card .p-4 {
+    flex-grow: 1;
+}
+
+.region-badge-status {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(214, 181, 106, 0.9); /* Dorado con transparencia */
+    color: #163f37;
+    font-size: 0.65rem;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    backdrop-filter: blur(2px);
+}
+
+/* Borde sutil para resaltar la tarjeta seleccionada (Occidente) */
+.border-occidente {
+    border: 1px solid rgba(214, 181, 106, 0.3) !important;
+}
+
+.region-card-title-gold {
+    letter-spacing: -0.5px;
+    line-height: 1.2;
+}
+
+.region-states-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0;
+    list-style: none;
+}
+
+.region-states-list li {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    color: #495057;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+
+/* ==============================
+   PÁGINAS REGIONALES
+============================== */
+
+.region-banner-header{
+  min-height: 250px;
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  color: #ffffff;
+  border-bottom: 5px solid #d6b56a;
+}
+
+.critical-component-card{
+  background: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.3s ease;
+  height: 100%;
+}
+
+.critical-component-card:hover{
+  box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+  transform: translateY(-5px);
+}
+
+.state-progress-item{
+  margin-bottom: 1.5rem;
+}
+
+.state-label{
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #163f37;
+  margin-bottom: 5px;
+}
+
+.status-box{
+  border: 1px solid #eee;
+  border-top: 4px solid #d6b56a;
+  border-radius: 12px;
+  background: #fff;
+  padding: 25px;
+}
+
+.case-card{
+  background: #fff;
+  border-radius: 15px;
+  overflow: hidden;
+  border: 1px solid #eee;
+  transition: all 0.3s ease;
+}
+
+.case-card:hover{
+  box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+}
+
+.case-img{
+  height: 150px;
+  background-size: cover;
+  background-position: center;
+}
+
+.btn-add-case{
+  border: 2px dashed #d6b56a;
+  color: #d6b56a;
+  background: rgba(214, 181, 106, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 350px;
+  border-radius: 15px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-add-case:hover{
+  background: rgba(214, 181, 106, 0.1);
+  transform: scale(1.02);
+}
+
+/* ==============================
+   Caja Problematica
+============================== */
+.problem-box {
+    background: linear-gradient(145deg, #ffffff, #fdfdfd);
+    border-left: 6px solid #d6b56a !important; /* Acento dorado */
+    position: relative;
+    overflow: hidden;
+    /* Sombreado 3D suave */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08), 
+                0 4px 6px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Decoración de fondo sutil */
+.problem-box::after {
+    content: "";
+    position: absolute;
+    top: -50px;
+    right: -50px;
+    width: 150px;
+    height: 150px;
+    background: rgba(214, 181, 106, 0.05);
+    border-radius: 50%;
+    z-index: 0;
+}
+
+.problem-content {
+    position: relative;
+    z-index: 1;
+    line-height: 1.8;
+    color: #34495e;
+    font-weight: 400;
+}
+
+/* Resalte para palabras clave que insertes en el texto */
+.problem-content strong {
+    color: #163f37;
+    font-weight: 700;
+    border-bottom: 2px solid rgba(214, 181, 106, 0.3);
+}
+
+/* ==============================
+   FICHAS DESCRIPTIVAS DE DAÑOS AMBIENTALES IDENTIFICADOS - OCCIDENTE
+============================== */
+.info-card-3d {
+    background: #ffffff;
+    border: 1px solid rgba(214, 181, 106, 0.2); /* Borde dorado muy tenue */
+    border-radius: 16px;
+    padding: 25px;
+    height: 100%;
+    position: relative;
+    transition: all 0.4s ease;
+    /* Doble sombra para efecto de profundidad 3D */
+    box-shadow: 8px 8px 20px rgba(0, 0, 0, 0.05), 
+                -4px -4px 15px rgba(255, 255, 255, 0.8);
+}
+
+.info-card-3d:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 12px 12px 25px rgba(0, 0, 0, 0.1);
+    border-color: #d6b56a; /* Resalta el marco al pasar el mouse */
+}
+
+/* Contenedor del Icono enmarcado */
+.icon-frame {
+    width: 50px;
+    height: 50px;
+    background: #163f37;
+    color: #ffffff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    box-shadow: 4px 4px 10px rgba(22, 63, 55, 0.2);
+}
+
+.info-card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #163f37;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #f1f3f2;
+    padding-bottom: 8px;
+}
+
+.info-card-text {
+    font-size: 0.95rem;
+    color: #4a4a4a;
+    line-height: 1.6;
+    text-align: justify;
+}
+
+
+/* ==============================
+   SECCION SUPERFICIES -- OCCIDENTE
+============================== */
+/* Master Card de Sección III */
+.master-section-card {
+    background-color: #CBCBCB; /* Tu color crema solicitado */
+    border-radius: 25px;
+    border: 1px solid rgba(0,0,0,0.05);
+    /* Efecto 3D inicial */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+/* Efecto Hoover Animado */
+.master-section-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.12);
+    background-color: #EEEEEE; /* Aclara ligeramente en hover para dar luz */
+}
+
+/* Ajuste opcional para los títulos dentro del card crema */
+.master-section-card h2 {
+    position: relative;
+    padding-bottom: 10px;
+}
+
+.master-section-card h2::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 60px;
+    height: 4px;
+    background-color: #a57f2c; /* Acento dorado */
+}
+
+.metric-card-grad {
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    border-radius: 15px;
+    padding: 10px;
+    border: none;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.bg-grad-green {
+    background: linear-gradient(135deg, #005461 0%, #018790 100%);
+}
+
+.bg-grad-gold {
+    background: linear-gradient(135deg, #296374 0%, #629FAD 100%);
+}
+
+.metric-label-light {
+    display: block;
+    width: 100%;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #a57f2c;
+}
+
+.metric-value-large {
+    font-size: 1.85rem;
+    font-weight: 850;
+    letter-spacing: -1px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Espaciado extra para separar de la fila superior si mt-5 no es suficiente */
+.section-footer-metrics {
+    padding-top: 1rem; 
+}
+
+/* Tabla Ejecutiva */
+.table-dark-green {
+    background-color: #163f37;
+    color: #ffffff;
+}
+
+.custom-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    background: white;
+}
+
+.custom-table thead th {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    border: none;
+}
+
+.custom-table tbody td {
+    font-size: 0.95rem;
+    color: #444;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.custom-table tbody tr:last-child {
+    font-weight: 800;
+    background-color: #f8faf9;
+    color: #163f37;
+}
+/* Ajuste de margen para que no queden tan lejos */
+.mt-4 {
+    margin-top: 2.5rem !important;
+}
+
+.mt-5 {
+    margin-top: 3.5rem !important;
+}
+
+/* Tarjeta informativa blanca para cerrar la sección */
+.metric-card-3d {
+    background: #ffffff;
+    border-radius: 15px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease;
+}
+
+.metric-card-3d:hover {
+    transform: translateY(-5px);
+}
+
+/* Asegura que todas las tarjetas de la fila tengan el mismo alto */
+.h-100 {
+    height: 100% !important;
+}
+
+/* Clase para itálicas suaves en notas de pie */
+.italic {
+    font-style: italic;
+    opacity: 0.8;
+}
+
+/* Espaciado interno extra para el contenedor de la gráfica */
+.metric-card canvas {
+    padding: 10px 0; /* Evita que los puntos de la gráfica toquen los bordes */
+}
+
+/* ==============================
+   SECCION TIPOLOGIA DE DAÑOS AMBIENTALES
+============================== */
+/* Master Card Alternativa (Gris Perla) */
+.master-section-card-alt {
+    background-color: #F1F3F2; /* Gris perla muy sutil */
+    border-radius: 25px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    transition: all 0.4s ease;
+    border: 1px solid rgba(0,0,0,0.03);
+}
+
+.master-section-card-alt:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+}
+
+/* Efecto 3D para la Galería */
+.border-3d-gallery {
+    border: 8px solid #ffffff;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+    border-radius: 15px;
+}
+
+.bg-dark-transparent {
+    background: rgba(22, 63, 55, 0.7);
+    backdrop-filter: blur(4px);
+}
+
+/* Títulos de sección con acento verde */
+.master-section-card-alt h2::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 60px;
+    height: 4px;
+    background-color: #163f37;
+}
+
+/* Efecto de Semáforo Físico (Botón 3D) */
+.severity-btn-3d {
+    border: none;
+    border-radius: 15px;
+    padding: 20px;
+    text-align: center;
+    color: white;
+    font-weight: 800;
+    text-transform: uppercase;
+    transition: all 0.2s ease;
+    /* Sombreado 3D: sombra inferior para volumen y superior para brillo */
+    box-shadow: 0 8px 0 rgba(0,0,0,0.15), 0 15px 20px rgba(0,0,0,0.1);
+    position: relative;
+    cursor: pointer;
+}
+
+.severity-btn-3d:active {
+    transform: translateY(4px);
+    box-shadow: 0 4px 0 rgba(0,0,0,0.15), 0 8px 10px rgba(0,0,0,0.1);
+}
+
+.severity-btn-3d.baja { background: linear-gradient(145deg, #388e3c, #2e7d32); }
+.severity-btn-3d.media { background: linear-gradient(145deg, #ffa726, #fb8c00); color: #163f37; }
+.severity-btn-3d.alta { background: linear-gradient(145deg, #d32f2f, #b71c1c); }
+
+.severity-btn-3d .ha-label {
+    display: block;
+    font-size: 1.8rem;
+    margin-top: 5px;
+    letter-spacing: -1px;
+}
+
+/* Ajuste de Galería multitira */
+#carouselPlanos img {
+    height: 120px;
+    object-fit: cover;
+    background-color: #f0f0f0;
+}
+
+/* Contenedor para uniformizar las imágenes de la columna */
+.canvas-img-container {
+    height: 120px; /* Ajusta según prefieras el largo de la card */
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    transition: transform 0.3s ease;
+}
+
+.canvas-img-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Recorta la imagen para llenar el contenedor sin deformarse */
+}
+
+.canvas-img-container:hover {
+    transform: scale(1.02);
+    border-color: #d6b56a;
+}
+
+/* Botones personalizados para el carrusel inferior */
+.btn-dark-green {
+    background-color: #163f37;
+    color: white;
+    border: none;
+}
+
+.btn-dark-green:hover {
+    background-color: #1e5b4f;
+    color: white;
+}
+
+/* ==============================
+   METRICAS_rEGIONES
+============================== */
+
+.metric-label{
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6c757d;
+  font-weight: 700;
+}
+
+.metric-value{
+  font-size: 2rem;
+  font-weight: 800;
+  color: #163f37;
+  margin-bottom: 0.35rem;
+}
+
+.metric-note{
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+
+.metric-table thead th{
+  background: #f8faf9;
+  color: #163f37;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.metric-table tbody td{
+  font-size: 0.92rem;
+}
+
+.severity-card{
+  border-radius: 14px;
+  padding: 1rem;
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+}
+
+.severity-low{
+  background: #2e7d32;
+}
+
+.severity-medium{
+  background: #f9a825;
+  color: #1f1f1f;
+}
+
+.severity-high{
+  background: #c62828;
+}
+
+/* Tarjetas de Semáforo Estilo Botón Físico */
+.severity-card-3d {
+    border-radius: 16px;
+    padding: 1.5rem;
+    text-align: center;
+    color: white;
+    font-weight: 800;
+    transition: all 0.2s ease;
+    /* Sombreado de volumen */
+    box-shadow: 0 8px 0 rgba(0,0,0,0.15), 0 15px 25px rgba(0,0,0,0.1);
+    border: none !important;
+}
+
+.severity-card-3d .label {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    opacity: 0.9;
+}
+
+.severity-card-3d .value {
+    font-size: 1.8rem;
+    display: block;
+}
+
+/* Colores institucionales para el semáforo */
+.bg-severity-low { background: linear-gradient(145deg, #2e7d32, #1b5e20); }
+.bg-severity-medium { background: linear-gradient(145deg, #f9a825, #f57f17); color: #163f37; }
+.bg-severity-high { background: linear-gradient(145deg, #c62828, #b71c1c); }
+
+
+
+/* ==============================
+   valoracion economica
+============================== */
+/* Master Card Financiera */
+.master-section-card-finance {
+    background-color: #f0f2f5; /* Gris pizarra muy claro */
+    border-radius: 25px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    border: 1px solid rgba(0,0,0,0.02);
+    transition: all 0.4s ease;
+}
+
+.master-section-card-finance:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+}
+
+.fw-extrabold { font-weight: 850; }
+
+/* Reuso de efectos 3D con ajustes de color para montos */
+.severity-card-3d.bg-white .value {
+    color: #163f37;
+    font-size: 1.5rem !important;
+    font-weight: 800;
+}
+
+
+
+/* ==============================
+   RESTAURACIÓN
+============================== */
+
+.restoration-card{
+  background: #ffffff;
+  border: 1px solid #ececec;
+  border-top: 4px solid #163f37;
+  border-radius: 14px;
+  padding: 1.2rem;
+  height: 100%;
+  transition: all 0.25s ease;
+}
+
+.restoration-card:hover{
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.06);
+}
+
+.restoration-icon{
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #163f37 0%, #1e5b4f 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  margin-bottom: 1rem;
+}
+
+.restoration-title{
+  font-size: 1rem;
+  font-weight: 700;
+  color: #163f37;
+  margin-bottom: 0.35rem;
+}
+
+.restoration-text{
+  font-size: 0.88rem;
+  color: #6c757d;
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+.restoration-value{
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #a57f2c;
+}
+
+.restoration-unit{
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6c757d;
+}
+
+
+
