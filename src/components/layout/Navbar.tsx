@@ -1,12 +1,12 @@
 import React from 'react';
-// import profepaLogo from '../../assets/img/logo-profepa.png';
+import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
 export const Navbar: React.FC = () => {
     return (
         <nav className="navbar navbar-expand-lg navbar-dark navbar-siivda shadow-sm">
             <div className="container-fluid navbar-wrap px-4">
                 <a className="navbar-brand brand-siivda" href="#" id="nav-home-link">
-                    {/* <img alt="PROFEPA" className="logo-profepa" id="nav-logo" src={profepaLogo} /> */}
+                    <img alt="PROFEPA" className="logo-profepa" id="nav-logo" src={profepaLogo} />
                     <span className="titulo-coordinacion">
                         Coordinación de Dictámenes Técnicos en Recursos Naturales
                     </span>

@@ -1,5 +1,5 @@
 import React from 'react';
-// import profepaLogo from '../../assets/img/logo-profepa.png';
+import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
 export const Footer: React.FC = () => {
     return (
@@ -7,7 +7,7 @@ export const Footer: React.FC = () => {
             <div className="container-fluid px-4 px-lg-5">
                 <div className="row align-items-center">
                     <div className="col-lg-4 text-center text-lg-start mb-4 mb-lg-0 border-end-lg">
-                        {/* <img alt="PROFEPA" className="logo-profepa" id="nav-logo" src={profepaLogo} /> */}
+                        <img alt="PROFEPA" className="logo-profepa" id="nav-logo" src={profepaLogo} />
                         <p className="footer-org-name mb-0">Subprocuraduría de Recursos Naturales</p>
                         <p className="footer-sub-name">Coordinación de dictámenes técnicos en Recursos Naturales</p>
                     </div>
