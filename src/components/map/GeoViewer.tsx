@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, GeoJSON, useMap, LayersControl, ScaleControl, CircleMarker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline } from 'react-leaflet';
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
@@ -17,93 +17,148 @@ interface FormData {
   vegetacion: string;
 }
 
-// COMPONENTE: Convertidor a Grados, Minutos y Segundos
+// COMPONENTE: Convertidor a Grados, Minutos y Segundos (Linter Fix: Sin ternarios anidados)
 const toDMS = (deg: number, isLat: boolean) => {
   const absolute = Math.abs(deg);
   const degrees = Math.floor(absolute);
   const minutesFloat = (absolute - degrees) * 60;
   const minutes = Math.floor(minutesFloat);
   const seconds = Math.floor((minutesFloat - minutes) * 60);
-  const direction = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
+  
+  let direction = '';
+  if (isLat) {
+    direction = deg >= 0 ? 'N' : 'S';
+  } else {
+    direction = deg >= 0 ? 'E' : 'W';
+  }
   return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
-// COMPONENTE: Marco de coordenadas (Estilo Topográfico)
-const CoordinateFrame: React.FC = () => {
+// COMPONENTE: Grilla, Marco Topográfico intercalado y Norte
+const GraticuleAndFrame: React.FC = () => {
   const map = useMap();
-  const [bounds, setBounds] = useState<L.LatLngBounds | null>(null);
+  
+  // Linter Fix: Inicialización perezosa de estado para no llamar setBounds en useEffect
+  const [grid, setGrid] = useState<{lats: number[], lons: number[], bounds: L.LatLngBounds}>(() => ({
+    lats: [], lons: [], bounds: map.getBounds()
+  }));
 
-  useEffect(() => setBounds(map.getBounds()), [map]);
+  const updateGrid = () => {
+    const b = map.getBounds();
+    const zoom = map.getZoom();
+    
+    // Define la separación de la grilla dependiendo del nivel de zoom
+    let step = 0.05;
+    if (zoom > 16) step = 0.001;
+    else if (zoom > 14) step = 0.005;
+    else if (zoom > 12) step = 0.01;
+    else if (zoom > 10) step = 0.05;
+    else if (zoom > 8) step = 0.1;
+    else step = 1;
+
+    const lats = [];
+    const startLat = Math.ceil(b.getSouth() / step) * step;
+    for (let lat = startLat; lat <= b.getNorth(); lat += step) lats.push(lat);
+
+    const lons = [];
+    const startLon = Math.ceil(b.getWest() / step) * step;
+    for (let lon = startLon; lon <= b.getEast(); lon += step) lons.push(lon);
+
+    setGrid({ lats, lons, bounds: b });
+  };
+
   useMapEvents({
-    move: () => setBounds(map.getBounds()),
-    zoom: () => setBounds(map.getBounds())
+    moveend: updateGrid,
+    zoomend: updateGrid,
   });
 
-  if (!bounds) return null;
-
-  const n = bounds.getNorth();
-  const s = bounds.getSouth();
-  const e = bounds.getEast();
-  const w = bounds.getWest();
-
   const labelStyle: React.CSSProperties = {
-    position: 'absolute', backgroundColor: '#ffffff', padding: '2px 5px',
+    position: 'absolute', backgroundColor: '#ffffff', padding: '1px 4px',
     fontSize: '0.65rem', fontWeight: 'bold', zIndex: 1000,
-    border: '1px solid #000', pointerEvents: 'none'
+    border: '1px solid #000', pointerEvents: 'none',
+    transform: 'translate(-50%, -50%)', whiteSpace: 'nowrap'
+  };
+
+  const verticalLabelStyle: React.CSSProperties = {
+    ...labelStyle,
+    transform: 'translate(-50%, -50%) rotate(-90deg)'
   };
 
   return (
     <>
-      {/* Marco blanco grueso con borde negro simulando plantilla oficial */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        border: '15px solid #ffffff', zIndex: 999, pointerEvents: 'none'
-      }}>
-        <div style={{ width: '100%', height: '100%', border: '2px solid #000' }}></div>
+      {/* 1. Norte Magnético (Rosa de los Vientos) */}
+      <div style={{ position: 'absolute', top: '25px', left: '25px', zIndex: 1000, pointerEvents: 'none' }}>
+        <svg width="50" height="50" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="50,0 60,40 50,50 40,40" fill="black" />
+          <polygon points="50,100 60,60 50,50 40,60" fill="white" stroke="black" />
+          <polygon points="100,50 60,60 50,50 60,40" fill="black" />
+          <polygon points="0,50 40,60 50,50 40,40" fill="white" stroke="black" />
+          <circle cx="50" cy="50" r="8" fill="white" stroke="black" />
+          <text x="50" y="-5" fontSize="20" textAnchor="middle" fill="black" fontWeight="bold">N</text>
+        </svg>
       </div>
 
-      {/* Etiquetas Eje Y (Latitudes) */}
-      <div style={{ ...labelStyle, top: '20%', left: 0 }}>{toDMS(n - (n - s) * 0.2, true)}</div>
-      <div style={{ ...labelStyle, top: '50%', left: 0, transform: 'translateY(-50%)' }}>{toDMS((n + s) / 2, true)}</div>
-      <div style={{ ...labelStyle, bottom: '20%', left: 0 }}>{toDMS(s + (n - s) * 0.2, true)}</div>
+      {/* 2. Líneas de Grilla sobre el mapa */}
+      {grid.lats.map(lat => (
+        <Polyline key={`lat-${lat}`} positions={[[lat, grid.bounds.getWest()], [lat, grid.bounds.getEast()]]} pathOptions={{ color: 'white', weight: 1, opacity: 0.6, dashArray: '5,5' }} />
+      ))}
+      {grid.lons.map(lon => (
+        <Polyline key={`lon-${lon}`} positions={[[grid.bounds.getSouth(), lon], [grid.bounds.getNorth(), lon]]} pathOptions={{ color: 'white', weight: 1, opacity: 0.6, dashArray: '5,5' }} />
+      ))}
 
-      {/* Etiquetas Eje X (Longitudes) */}
-      <div style={{ ...labelStyle, bottom: 0, left: '25%', transform: 'translateX(-50%)' }}>{toDMS(w + (e - w) * 0.25, false)}</div>
-      <div style={{ ...labelStyle, bottom: 0, left: '50%', transform: 'translateX(-50%)' }}>{toDMS((e + w) / 2, false)}</div>
-      <div style={{ ...labelStyle, bottom: 0, right: '25%', transform: 'translateX(50%)' }}>{toDMS(e - (e - w) * 0.25, false)}</div>
+      {/* 3. Marco Topográfico Intercalado (Blanco y Negro) */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '12px', zIndex: 999, backgroundImage: 'repeating-linear-gradient(to right, black 0, black 30px, white 30px, white 60px)', borderBottom: '1px solid black' }}></div>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '12px', zIndex: 999, backgroundImage: 'repeating-linear-gradient(to right, black 0, black 30px, white 30px, white 60px)', borderTop: '1px solid black' }}></div>
+      <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '12px', zIndex: 999, backgroundImage: 'repeating-linear-gradient(to bottom, black 0, black 30px, white 30px, white 60px)', borderRight: '1px solid black' }}></div>
+      <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '12px', zIndex: 999, backgroundImage: 'repeating-linear-gradient(to bottom, black 0, black 30px, white 30px, white 60px)', borderLeft: '1px solid black' }}></div>
+
+      {/* 4. Etiquetas Geográficas (Alineadas a la Grilla) */}
+      {grid.lons.map(lon => {
+        const pt = map.latLngToContainerPoint([grid.bounds.getSouth(), lon]);
+        return <div key={`lbl-lon-${lon}`} style={{ ...labelStyle, left: pt.x, bottom: '-2px', top: 'auto', transform: 'translateX(-50%)' }}>{toDMS(lon, false)}</div>
+      })}
+      {grid.lats.map(lat => {
+        const pt = map.latLngToContainerPoint([lat, grid.bounds.getWest()]);
+        // Latitudes rotadas a 90 grados
+        return <div key={`lbl-lat-${lat}`} style={{ ...verticalLabelStyle, left: '6px', top: pt.y }}>{toDMS(lat, true)}</div>
+      })}
     </>
   );
 };
 
-// COMPONENTE: Ajusta la cámara principal
+// COMPONENTE: Ajusta la cámara
 const MapUpdater: React.FC<{ data: FeatureCollection | null }> = ({ data }) => {
   const map = useMap();
   useEffect(() => {
     if (data && data.features.length > 0) {
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { padding: [60, 60] }); // Más padding para que no tape el marco
+      // Dejamos margen para que el marco y la plantilla no tapen el polígono
+      if (bounds.isValid()) map.fitBounds(bounds, { paddingBottomRight: [320, 50], paddingTopLeft: [50, 50] });
     }
   }, [data, map]);
   return null;
 };
 
-// COMPONENTE: Minimapa estático de Localización
-const MiniMapLocator: React.FC<{ data: FeatureCollection | null }> = ({ data }) => {
+// COMPONENTE: Minimapa estático
+const MiniMapLocator: React.FC<{ data: FeatureCollection | null, estado: string, municipio: string }> = ({ data, estado, municipio }) => {
   if (!data || data.features.length === 0) return null;
   const bounds = L.geoJSON(data as GeoJsonObject).getBounds();
   const center = bounds.getCenter();
 
   return (
-    <div className="bg-light p-1 mb-2 border" style={{ height: '140px', overflow: 'hidden' }}>
-      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>
-        Localización Geográfica
+    <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
+      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
+      <div style={{ height: '90px', width: '100%', position: 'relative' }}>
+        <MapContainer center={center} zoom={5} zoomControl={false} dragging={false} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
+          <CircleMarker center={center} radius={4} color="white" weight={1} fillColor="red" fillOpacity={1} />
+        </MapContainer>
       </div>
-      <MapContainer center={center} zoom={5} zoomControl={false} dragging={false} scrollWheelZoom={false} style={{ height: '105px', width: '100%' }}>
-        <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
-        <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
-        <CircleMarker center={center} radius={4} color="white" weight={1} fillColor="red" fillOpacity={1} />
-      </MapContainer>
+      <div className="text-center mt-1" style={{ fontSize: '0.65rem', lineHeight: '1.1' }}>
+        Estado: {estado || 'N/A'}<br />Municipio: {municipio || 'N/A'}
+      </div>
     </div>
   );
 };
@@ -113,7 +168,7 @@ export const GeoViewer: React.FC = () => {
   const [mapCenter] = useState<[number, number]>([19.4326, -99.1332]); 
   const [geoJsonData, setGeoJsonData] = useState<FeatureCollection | null>(null);
   const [previewData, setPreviewData] = useState<FormData | null>(null);
-  
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
 
   const onSubmit = async (data: FormData) => {
@@ -140,6 +195,7 @@ export const GeoViewer: React.FC = () => {
         parsedData = { type: 'FeatureCollection', features: [parsedData] };
       }
       setGeoJsonData(parsedData as FeatureCollection);
+      setIsSidebarOpen(false);
     } catch (error) {
       console.error("Error espacial:", error);
       alert("Error procesando el archivo espacial.");
@@ -148,14 +204,11 @@ export const GeoViewer: React.FC = () => {
 
   const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
     if (!feature) return {};
-    return {
-      color: feature.properties?.stroke || '#d6b56a', weight: 3,
-      fillColor: feature.properties?.fill || '#163f37', fillOpacity: 0.5
-    };
+    return { color: feature.properties?.stroke || '#163f37', weight: 2, fillColor: feature.properties?.fill || '#d6b56a', fillOpacity: 0.5 };
   };
 
   const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.LatLng) => {
-    return L.circleMarker(latlng, { radius: 5, fillColor: "#ff0000", color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.8 });
+    return L.circleMarker(latlng, { radius: 4, fillColor: "#ff0000", color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.8 });
   };
 
   const handleDownloadImage = async () => {
@@ -172,87 +225,109 @@ export const GeoViewer: React.FC = () => {
     }
   };
 
+  const getSimbologia = () => {
+    if (!geoJsonData) return [];
+    const symMap = new Map();
+    geoJsonData.features.forEach(f => {
+      if (f.geometry.type === 'Point') return; 
+      const name = f.properties?.name || 'Polígono';
+      const color = f.properties?.fill || f.properties?.stroke || '#d6b56a';
+      if (!symMap.has(name)) symMap.set(name, color);
+    });
+    return Array.from(symMap, ([name, color]) => ({ name, color }));
+  };
+
   return (
-    <div className="container-fluid h-100 p-0 m-0 d-flex flex-column flex-lg-row bg-light-gray">
+    <div className="container-fluid h-100 p-0 m-0 d-flex position-relative bg-light-gray">
       
       {/* PANEL IZQUIERDO */}
-      <div className="col-12 col-lg-3 p-4 bg-white border-end shadow-sm overflow-auto" style={{ zIndex: 10, maxHeight: '85vh' }}>
-        <h5 className="fw-bold mb-3" style={{ color: '#163f37' }}>Datos del Dictamen</h5>
+      <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
+        <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
+          <h5 className="fw-bold mb-0" style={{ color: '#163f37' }}>Datos del Dictamen</h5>
+          <button type="button" className="btn-close" onClick={() => setIsSidebarOpen(false)} aria-label="Close"></button>
+        </div>
         
-        <form onSubmit={handleSubmit(onSubmit)} className="d-flex flex-column gap-3">
-          <div><label className="form-label fw-semibold" style={{ fontSize: '0.9rem' }}>Expediente</label><input type="text" className="form-control form-control-sm" {...register('expediente', { required: true })} /></div>
-          <div><label className="form-label fw-semibold" style={{ fontSize: '0.9rem' }}>Acta de Inspección</label><input type="text" className="form-control form-control-sm" {...register('acta')} /></div>
-          <div className="row">
-            <div className="col-6"><label className="form-label fw-semibold" style={{ fontSize: '0.9rem' }}>Estado</label><input type="text" className="form-control form-control-sm" {...register('estado')} /></div>
-            <div className="col-6"><label className="form-label fw-semibold" style={{ fontSize: '0.9rem' }}>Municipio</label><input type="text" className="form-control form-control-sm" {...register('municipio')} /></div>
-          </div>
-          <div><label className="form-label fw-semibold" style={{ fontSize: '0.9rem' }}>Tipo de Vegetación</label><input type="text" className="form-control form-control-sm" {...register('vegetacion')} /></div>
-          <div><label className="form-label fw-semibold" style={{ fontSize: '0.9rem' }}>Fecha de Imagen</label><input type="date" className="form-control form-control-sm" {...register('targetDate', { required: true })} /></div>
-          <div><label className="form-label fw-semibold" style={{ fontSize: '0.9rem' }}>Cargar Archivos</label><input type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('polygonFile', { required: true })} /></div>
-
-          <button type="submit" className="btn text-white fw-bold mt-2" style={{ backgroundColor: '#163f37' }}>Generar Previsualización</button>
-          {geoJsonData && <button type="button" onClick={handleDownloadImage} className="btn btn-outline-secondary fw-bold mt-2"><i className="bi bi-download me-2"></i>Descargar JPG Oficial</button>}
-        </form>
+        <div className="p-3">
+          <form onSubmit={handleSubmit(onSubmit)} className="d-flex flex-column gap-3">
+            <div><label htmlFor="expId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Expediente</label><input id="expId" type="text" className="form-control form-control-sm" {...register('expediente', { required: true })} /></div>
+            <div><label htmlFor="actId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Acta de Inspección</label><input id="actId" type="text" className="form-control form-control-sm" {...register('acta')} /></div>
+            <div className="row">
+              <div className="col-6"><label htmlFor="estId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Estado</label><input id="estId" type="text" className="form-control form-control-sm" {...register('estado')} /></div>
+              <div className="col-6"><label htmlFor="munId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Municipio</label><input id="munId" type="text" className="form-control form-control-sm" {...register('municipio')} /></div>
+            </div>
+            <div><label htmlFor="vegId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Tipo de Vegetación</label><input id="vegId" type="text" className="form-control form-control-sm" {...register('vegetacion')} /></div>
+            <div><label htmlFor="datId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Fecha (Elaboración)</label><input id="datId" type="date" className="form-control form-control-sm" {...register('targetDate', { required: true })} /></div>
+            <div><label htmlFor="fileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Cargar Archivos Espaciales</label><input id="fileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('polygonFile', { required: true })} /></div>
+            <button type="submit" className="btn text-white fw-bold mt-2" style={{ backgroundColor: '#163f37' }}>Generar Previsualización</button>
+          </form>
+        </div>
       </div>
 
-      {/* PANEL DERECHO */}
-      <div ref={printRef} className="col-12 col-lg-9 position-relative p-0" style={{ height: '85vh', minHeight: '600px' }}>
+      {!isSidebarOpen && (
+        <button onClick={() => setIsSidebarOpen(true)} className="btn text-white position-absolute shadow" style={{ top: '30px', left: '30px', zIndex: 1040, backgroundColor: '#163f37', borderRadius: '50%' }} title="Abrir Configuración">
+          <i className="bi bi-gear-fill"></i>
+        </button>
+      )}
+
+      {!isSidebarOpen && geoJsonData && (
+        <button onClick={handleDownloadImage} className="btn btn-warning position-absolute shadow fw-bold" style={{ top: '30px', left: '80px', zIndex: 1040 }}>
+          <i className="bi bi-download me-2"></i>Descargar Mapa Oficial
+        </button>
+      )}
+
+      {/* ÁREA DEL MAPA (Exportable a JPG) */}
+      <div className="flex-grow-1 position-relative p-0" style={{ height: '85vh', minHeight: '650px', backgroundColor: '#e9ecef' }}>
         
-        {/* Fondo blanco para que la opacidad 0.75 del mapa se vea clara */}
-        <MapContainer center={mapCenter} zoom={6} zoomControl={false} style={{ height: '100%', width: '100%', backgroundColor: '#ffffff' }}>
-          
-          {/* Capa Satélite: Con opacidad 75% para que sea mucho más clara */}
-          <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
-          
-          {/* Capa Límites Estatales y Referencias Geográficas */}
-          <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
-          
-          <ScaleControl position="bottomleft" imperial={false} />
-          <CoordinateFrame />
-          <MapUpdater data={geoJsonData} />
+        <div ref={printRef} className="h-100 w-100 position-relative bg-white" style={{ padding: '12px' }}>
+          {/* El contenedor interior deja el espacio para que se pinte el marco */}
+          <div className="h-100 w-100 position-relative">
+            <MapContainer center={mapCenter} zoom={6} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+              
+              <TileLayer opacity={0.8} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+              <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
+              
+              {/* Escala Gráfica y Grilla */}
+              <ScaleControl position="bottomleft" imperial={false} />
+              <GraticuleAndFrame />
+              <MapUpdater data={geoJsonData} />
 
-          {geoJsonData && (
-            <LayersControl position="topleft">
-              {geoJsonData.features.map((feature, index) => {
-                const nameId = feature.properties?.name || `Cap-${index}`;
-                return (
-                  <LayersControl.Overlay key={`${nameId}-${index}`} checked name={feature.properties?.name || `Elemento ${index + 1}`}>
-                    <GeoJSON data={feature} style={featureStyle} pointToLayer={pointToLayer} />
-                  </LayersControl.Overlay>
-                );
-              })}
-            </LayersControl>
-          )}
-        </MapContainer>
+              {geoJsonData && <GeoJSON data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} />}
+            </MapContainer>
 
-        {previewData && (
-          <div className="position-absolute bg-white p-3" style={{ top: '25px', right: '25px', width: '310px', zIndex: 1000, border: '2px solid #000' }}>
-            <div className="text-center mb-2">
-              <h6 className="fw-bold mb-0" style={{ fontSize: '0.8rem', color: '#163f37' }}>PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE</h6>
-              <span className="text-muted" style={{ fontSize: '0.65rem' }}>Subprocuraduría de Recursos Naturales</span>
-            </div>
-            
-            <MiniMapLocator data={geoJsonData} />
+            {/* PLANTILLA LATERAL DERECHA IN-MAP */}
+            {previewData && (
+              <div className="position-absolute bg-white p-3 shadow-sm" style={{ top: '20px', right: '20px', width: '280px', zIndex: 1000, border: '1px solid #333' }}>
+                <div className="text-center mb-2">
+                  <h6 className="fw-bold mb-0" style={{ fontSize: '0.75rem', color: '#000' }}>PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE</h6>
+                  <span className="text-muted" style={{ fontSize: '0.6rem' }}>Subprocuraduría de Recursos Naturales</span>
+                </div>
+                
+                <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
-            <div className="bg-light p-2 mb-2 border">
-              <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Datos Generales</div>
-              <p className="mb-0" style={{ fontSize: '0.7rem' }}><strong>Expediente:</strong> {previewData.expediente}</p>
-              <p className="mb-0" style={{ fontSize: '0.7rem' }}><strong>Acta:</strong> {previewData.acta}</p>
-              <p className="mb-0" style={{ fontSize: '0.7rem' }}><strong>Estado:</strong> {previewData.estado}</p>
-              <p className="mb-0" style={{ fontSize: '0.7rem' }}><strong>Municipio:</strong> {previewData.municipio}</p>
-              <p className="mb-0" style={{ fontSize: '0.7rem' }}><strong>Vegetación:</strong> {previewData.vegetacion}</p>
-            </div>
+                <div className="bg-white mb-2 border border-dark">
+                  <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
+                  <div className="p-2">
+                    {getSimbologia().map((item) => (
+                      <div key={`sym-${item.name}`} className="d-flex align-items-center mb-1">
+                        <div style={{ width: '12px', height: '12px', backgroundColor: item.color, border: '1px solid #000', marginRight: '8px' }}></div>
+                        <span style={{ fontSize: '0.65rem', lineHeight: '1' }}>{item.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-            <div className="bg-light p-2 mb-2 border">
-              <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia</div>
-              <p className="mb-0 text-center" style={{ fontSize: '0.7rem' }}>DATUM WGS84<br/>Proyección Transversal de Mercator</p>
-            </div>
+                <div className="bg-white mb-2 border border-dark">
+                  <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
+                  <p className="mb-0 text-center p-1" style={{ fontSize: '0.65rem' }}>DATUM WGS84 Zona 14 N<br/>Proyección Transversal de Mercator</p>
+                </div>
 
-            <div className="text-end mt-2" style={{ fontSize: '0.65rem', borderTop: '1px solid #ccc', paddingTop: '5px' }}>
-              <strong>Fecha:</strong> {previewData.targetDate}
-            </div>
+                <div className="border border-dark mt-2 p-1 text-center" style={{ fontSize: '0.65rem' }}>
+                  <span className="fw-bold">Fecha de elaboración:</span> {previewData.targetDate}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
