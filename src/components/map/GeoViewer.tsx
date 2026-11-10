@@ -9,11 +9,11 @@ import html2canvas from 'html2canvas';
 import * as turf from '@turf/turf';
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
-// Desactivar aceleración 3D globalmente en Leaflet para evitar el desfase de polígonos en html2canvas
 L.Browser.any3d = false;
 
 interface FormData {
     targetDate: string;
+    inspeccionDate: string;
     polygonFile: FileList;
     expediente: string;
     acta: string;
@@ -35,7 +35,13 @@ const toDMS = (deg: number, isLat: boolean) => {
     const minutesFloat = (absolute - degrees) * 60;
     const minutes = Math.floor(minutesFloat);
     const seconds = Math.floor((minutesFloat - minutes) * 60);
-    const direction = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
+
+    let direction = '';
+    if (isLat) {
+        direction = deg >= 0 ? 'N' : 'S';
+    } else {
+        direction = deg >= 0 ? 'E' : 'W';
+    }
     return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
@@ -65,9 +71,8 @@ const onEachFeature = (feature: Feature<Geometry, GeoJsonProperties>, layer: L.L
         layer.bindPopup(`<strong>Polígono ${polyId}</strong>${areaHtml}`);
 
         if (polyId) {
-            // Se eliminó el fondo blanco y se aplicó text-shadow para que resalte la letra
             layer.bindTooltip(
-                `<div style="font-size:1.1rem; font-weight:900; color:#ff0000; text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff;">${polyId}</div>`,
+                `<div style="font-size:1.1rem; font-weight:900; color:#ff0000; text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff; margin-top: -10px;">${polyId}</div>`,
                 {
                     permanent: true,
                     direction: 'center',
@@ -128,7 +133,6 @@ const GraticuleEngine: React.FC = () => {
     );
 };
 
-// Se actualizó para manejar el Zoom según el Plano seleccionado
 const MapUpdater: React.FC<{ data: FeatureCollection | null, plano: number }> = ({ data, plano }) => {
     const map = useMap();
     useEffect(() => {
@@ -139,13 +143,10 @@ const MapUpdater: React.FC<{ data: FeatureCollection | null, plano: number }> = 
                 const paddingOpts = { paddingBottomRight: [330, 30] as [number, number], paddingTopLeft: [40, 40] as [number, number] };
 
                 if (plano === 1) {
-                    // Plano 1: Ubicación Geográfica (Zoom Out)
                     map.fitBounds(bounds, { ...paddingOpts, maxZoom: 12 });
                 } else if (plano === 2) {
-                    // Plano 2: Detalle Vértices (Zoom In)
                     map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
                 } else {
-                    // General
                     map.fitBounds(bounds, paddingOpts);
                 }
             }
@@ -163,7 +164,6 @@ const InvalidateMap: React.FC = () => {
     return null;
 };
 
-// Se cambió a OpenStreetMap puro con CORS anónimo y preferCanvas={true} para que se exporte correctamente
 const MiniMapLocator: React.FC<{ data: FeatureCollection | null, estado: string, municipio: string }> = ({ data, estado, municipio }) => {
     if (!data || data.features.length === 0) return null;
     const center = L.geoJSON(data as GeoJsonObject).getBounds().getCenter();
@@ -172,10 +172,9 @@ const MiniMapLocator: React.FC<{ data: FeatureCollection | null, estado: string,
         <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
             <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
             <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
-                {/* Zoom a 6 para mostrar aproximadamente 2 estados */}
                 <MapContainer center={center} zoom={6} zoomControl={false} dragging={false} scrollWheelZoom={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                     <InvalidateMap />
-                    <TileLayer crossOrigin="anonymous" url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
                     <CircleMarker center={center} radius={4} color="black" weight={1} fillColor="red" fillOpacity={1} />
                 </MapContainer>
             </div>
@@ -192,8 +191,6 @@ export const GeoViewer: React.FC = () => {
     const [geoJsonData, setGeoJsonData] = useState<FeatureCollection | null>(null);
     const [previewData, setPreviewData] = useState<FormData | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-
-    // 0: General, 1: Ubicación Geográfica, 2: Detalles
     const [currentPlano, setCurrentPlano] = useState<number>(0);
     const [isExporting, setIsExporting] = useState<boolean>(false);
 
@@ -256,7 +253,7 @@ export const GeoViewer: React.FC = () => {
             try {
                 const canvas = await html2canvas(printRef.current!, {
                     useCORS: true,
-                    allowTaint: true,
+                    allowTaint: false,
                     scale: 2,
                     scrollY: 0,
                     backgroundColor: '#ffffff',
@@ -277,7 +274,7 @@ export const GeoViewer: React.FC = () => {
             } finally {
                 setIsExporting(false);
             }
-        }, 300);
+        }, 1000);
     };
 
     const getSimbologiaAndArea = () => {
@@ -384,13 +381,19 @@ export const GeoViewer: React.FC = () => {
                     <div className="p-3">
                         <form onSubmit={handleSubmit(onSubmit)} className="d-flex flex-column gap-3">
                             <div><label htmlFor="expId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Expediente</label><input id="expId" type="text" className="form-control form-control-sm" {...register('expediente', { required: true })} /></div>
+
+                            {/* NUEVOS CAMPOS: Acta y Fechas */}
                             <div><label htmlFor="actId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Acta de Inspección</label><input id="actId" type="text" className="form-control form-control-sm" {...register('acta')} /></div>
+                            <div className="row">
+                                <div className="col-6"><label htmlFor="inspeccionDate" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>F. Inspección</label><input id="inspeccionDate" type="date" className="form-control form-control-sm" {...register('inspeccionDate', { required: true })} /></div>
+                                <div className="col-6"><label htmlFor="datId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>F. Elaboración</label><input id="datId" type="date" className="form-control form-control-sm" {...register('targetDate', { required: true })} /></div>
+                            </div>
+
                             <div className="row">
                                 <div className="col-6"><label htmlFor="estId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Estado</label><input id="estId" type="text" className="form-control form-control-sm" {...register('estado')} /></div>
                                 <div className="col-6"><label htmlFor="munId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Municipio</label><input id="munId" type="text" className="form-control form-control-sm" {...register('municipio')} /></div>
                             </div>
                             <div><label htmlFor="vegId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Tipo de Vegetación</label><input id="vegId" type="text" className="form-control form-control-sm" {...register('vegetacion')} /></div>
-                            <div><label htmlFor="datId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Fecha (Elaboración)</label><input id="datId" type="date" className="form-control form-control-sm" {...register('targetDate', { required: true })} /></div>
                             <div><label htmlFor="fileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Cargar Archivos Espaciales</label><input id="fileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('polygonFile', { required: true })} /></div>
                             <button type="submit" className="btn text-white fw-bold mt-2" style={{ backgroundColor: '#163f37' }}>Generar Previsualización</button>
                         </form>
@@ -435,7 +438,6 @@ export const GeoViewer: React.FC = () => {
                                     </svg>
                                 </div>
 
-                                {/* preferCanvas activado globalmente ayuda a html2canvas con vectores */}
                                 <MapContainer center={mapCenter} zoom={6} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
                                     <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
@@ -459,6 +461,15 @@ export const GeoViewer: React.FC = () => {
                                         </div>
 
                                         <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
+
+                                        {/* SECCIÓN NUEVA: Datos de Inspección */}
+                                        <div className="bg-white mb-2 border border-dark">
+                                            <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Datos de Inspección</div>
+                                            <div className="p-2 text-center" style={{ fontSize: '0.65rem' }}>
+                                                <p className="mb-1"><strong>Acta:</strong> {previewData.acta || 'N/A'}</p>
+                                                <p className="mb-0"><strong>Fecha:</strong> {previewData.inspeccionDate || 'N/A'}</p>
+                                            </div>
+                                        </div>
 
                                         <div className="bg-white mb-2 border border-dark">
                                             <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
