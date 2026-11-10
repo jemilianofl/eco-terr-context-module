@@ -41,52 +41,17 @@ const toDMS = (deg: number, isLat: boolean) => {
   const minutesFloat = (absolute - degrees) * 60;
   const minutes = Math.floor(minutesFloat);
   const seconds = Math.floor((minutesFloat - minutes) * 60);
-
-  let direction = '';
-  if (isLat) {
-    direction = deg >= 0 ? 'N' : 'S';
-  } else {
-    direction = deg >= 0 ? 'E' : 'W';
-  }
+  const direction = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
   return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
-const cleanName = (name: string) => name.replace(/\s*\([^)]*\)\s*/g, '').trim();
-
 const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
   if (!feature) return {};
-  return { color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0 };
+  return { color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0.1 };
 };
 
 const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.LatLng) => {
-  return L.circleMarker(latlng, { radius: 4, fillColor: '#ff0000', color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.8 });
-};
-
-const onEachUserFeature = (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
-  if (feature.properties && feature.geometry.type !== 'Point') {
-    const polyId = feature.properties.polyId || '';
-    let areaHtml = '';
-    try {
-      const areaSqMeters = turf.area(feature);
-      areaHtml = `<br/><strong>Superficie:</strong> ${areaSqMeters.toFixed(2)} m²`;
-    } catch (e) {
-      console.warn('Error calculando área:', e);
-    }
-
-    layer.bindPopup(`<strong>Polígono ${polyId}</strong>${areaHtml}`);
-
-    if (polyId) {
-      layer.bindTooltip(
-        `<div style="font-size:1.1rem; font-weight:900; color:#ff0000; text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff; margin-top: -10px;">${polyId}</div>`,
-        {
-          permanent: true,
-          direction: 'center',
-          className: 'bg-transparent border-0 shadow-none',
-          opacity: 1,
-        }
-      );
-    }
-  }
+  return L.circleMarker(latlng, { radius: 5, fillColor: '#ff0000', color: '#ffffff', weight: 1.5, opacity: 1, fillOpacity: 1 });
 };
 
 const GraticuleEngine: React.FC = () => {
@@ -142,8 +107,7 @@ const MapUpdater: React.FC<{
   data: FeatureCollection | null;
   plano: number;
   buffer10km: Feature<Geometry, GeoJsonProperties> | null;
-  ecoNearby: Feature<Geometry, GeoJsonProperties>[];
-}> = ({ data, plano, buffer10km, ecoNearby }) => {
+}> = ({ data, plano, buffer10km }) => {
   const map = useMap();
 
   useEffect(() => {
@@ -153,20 +117,14 @@ const MapUpdater: React.FC<{
     if (plano === 1) {
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 14 });
+      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 16 });
     } else if (plano === 2) {
-      if (ecoNearby.length > 0) {
-        // Encuadrar el mapa combinando los polígonos del predio y las capas ecológicas interceptadas
-        const fc = turf.featureCollection([...data.features, ...ecoNearby]);
-        const bbox = turf.bbox(fc);
-        map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
-      } else if (buffer10km) {
-        // Si no hay capas cercanas, encuadrar justo al límite del buffer de 10 km
+      if (buffer10km) {
         const bbox = turf.bbox(buffer10km);
         map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
       }
     }
-  }, [data, plano, buffer10km, ecoNearby, map]);
+  }, [data, plano, buffer10km, map]);
 
   return null;
 };
@@ -228,7 +186,6 @@ export const GeoViewer: React.FC = () => {
     return () => document.removeEventListener('mapFrameUpdated', handler);
   }, []);
 
-  // Carga asíncrona de las capas de Relevancia Ecológica cuando se solicita Plano 2
   useEffect(() => {
     if (currentPlano === 2) {
       ecoLayers.forEach((layer) => {
@@ -287,12 +244,10 @@ export const GeoViewer: React.FC = () => {
     }
   };
 
-  // Cálculo del Buffer de 10 km
   const buffer10km = useMemo(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
     try {
-      // Creamos un FeatureCollection solo con los polígonos (excluyendo puntos/marcadores sueltos si los hubiera)
-      const polys = turf.featureCollection(geoJsonData.features.filter(f => f.geometry.type !== 'Point'));
+      const polys = turf.featureCollection(geoJsonData.features.filter((f) => f.geometry.type !== 'Point'));
       return turf.buffer(polys, 10, { units: 'kilometers' }) as Feature<Geometry, GeoJsonProperties>;
     } catch (err) {
       console.warn('Error calculando buffer:', err);
@@ -300,7 +255,15 @@ export const GeoViewer: React.FC = () => {
     }
   }, [geoJsonData]);
 
-  // Filtrar áreas ecológicas que intersectan con el buffer de 10 km
+  const predioCentroid = useMemo(() => {
+    if (!geoJsonData || geoJsonData.features.length === 0) return null;
+    try {
+      return turf.centroid(geoJsonData);
+    } catch {
+      return null;
+    }
+  }, [geoJsonData]);
+
   const ecoNearby = useMemo(() => {
     if (!buffer10km || currentPlano !== 2) return [];
     const nearby: Feature<Geometry, GeoJsonProperties>[] = [];
@@ -313,20 +276,58 @@ export const GeoViewer: React.FC = () => {
             nearby.push({
               ...f,
               properties: {
-                ...f.properties, // Conserva los datos completos del DBF
+                ...f.properties,
                 _color: layer.color,
                 _title: layer.title,
+                _layerId: layer.id,
               },
             });
           }
         } catch {
-          // ignora fallos de geometrías rotas aisladas
+          // ignora fallos
         }
       });
     });
 
     return nearby;
   }, [buffer10km, currentPlano, ecoLayers]);
+
+  // Filtramos la leyenda para mostrar solo las capas ecológicas presentes
+  const activeEcoLegend = useMemo(() => {
+    if (currentPlano !== 2 || ecoNearby.length === 0) return [];
+    const foundIds = new Set(ecoNearby.map(f => f.properties?._layerId));
+    return ecoLayers.filter(layer => foundIds.has(layer.id));
+  }, [ecoNearby, currentPlano, ecoLayers]);
+
+  const onEachUserFeature = useCallback(
+    (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
+      if (feature.properties && feature.geometry.type !== 'Point') {
+        const polyId = feature.properties.polyId || '';
+        let areaHtml = '';
+        try {
+          const areaSqMeters = turf.area(feature);
+          areaHtml = `<br/><strong>Superficie:</strong> ${areaSqMeters.toFixed(2)} m²`;
+        } catch (e) {
+          console.warn('Error calculando área:', e);
+        }
+
+        layer.bindPopup(`<strong>Polígono ${polyId}</strong>${areaHtml}`);
+
+        if (currentPlano === 1 && polyId) {
+          layer.bindTooltip(
+            `<div style="font-size:1.1rem; font-weight:900; color:#ff0000; text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff; margin-top: -10px;">${polyId}</div>`,
+            {
+              permanent: true,
+              direction: 'center',
+              className: 'bg-transparent border-0 shadow-none',
+              opacity: 1,
+            }
+          );
+        }
+      }
+    },
+    [currentPlano]
+  );
 
   const handleDownloadImage = () => {
     if (!printRef.current) return;
@@ -354,7 +355,7 @@ export const GeoViewer: React.FC = () => {
       } finally {
         setIsExporting(false);
       }
-    }, 1000); // Dar un buen margen a Leaflet para estabilizar el canvas
+    }, 1000);
   };
 
   const { totalArea, areaDetails } = useMemo(() => {
@@ -377,7 +378,6 @@ export const GeoViewer: React.FC = () => {
     return { totalArea: areaSum.toFixed(2), areaDetails: details };
   }, [geoJsonData]);
 
-  // Fecha generada al vuelo
   const fechaElaboracion = new Date().toLocaleDateString('es-MX');
 
   const renderZebraFrame = () => {
@@ -447,11 +447,12 @@ export const GeoViewer: React.FC = () => {
     return elements;
   };
 
+  // Se retiró `minHeight: 100vh` en favor de `flex-grow-1` respetando el layout padre.
   return (
-    <div className="container-fluid p-0 m-0 d-flex flex-column position-relative bg-light-gray" style={{ minHeight: '100vh', height: '100vh' }}>
-      <div className="d-flex flex-grow-1 position-relative overflow-hidden" style={{ height: '100%' }}>
+    <div className="container-fluid p-0 m-0 d-flex flex-column position-relative bg-light-gray flex-grow-1 overflow-hidden">
+      <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100">
         
-        {/* PANEL LATERAL: Configuración */}
+        {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
             <h5 className="fw-bold mb-0" style={{ color: '#163f37' }}>Datos del Dictamen</h5>
@@ -498,7 +499,6 @@ export const GeoViewer: React.FC = () => {
 
         {/* ÁREA CENTRAL Y LIENZO CARTOGRÁFICO */}
         <div className="flex-grow-1 position-relative p-0 d-flex flex-column" style={{ backgroundColor: '#e9ecef', overflowY: 'auto' }}>
-          
           {!isSidebarOpen && (
             <button type="button" onClick={() => setIsSidebarOpen(true)} className="btn text-white position-absolute shadow ignore-print" style={{ top: '15px', left: '15px', zIndex: 1040, backgroundColor: '#163f37', borderRadius: '50%' }}>
               <i className="bi bi-gear-fill"></i>
@@ -526,7 +526,6 @@ export const GeoViewer: React.FC = () => {
               {renderZebraFrame()}
 
               <div className="h-100 w-100 position-relative bg-white" style={{ outline: '1px solid black' }}>
-                
                 <div aria-hidden="true" style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 1000, pointerEvents: 'none' }}>
                   <svg width="45" height="45" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
                     <polygon points="50,0 60,40 50,50 40,40" fill="black" />
@@ -543,24 +542,18 @@ export const GeoViewer: React.FC = () => {
                   <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 
                   <GraticuleEngine />
-                  <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} ecoNearby={ecoNearby} />
+                  <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} />
 
                   <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* Polígonos del predio */}
-                  {geoJsonData && <GeoJSON data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />}
-
-                  {/* Renderizado de Relevancia Ecológica en Plano 2 (Optimizado como un solo FeatureCollection) */}
-                  {currentPlano === 2 && buffer10km && (
-                    <GeoJSON
-                      key="buffer-10km"
-                      data={buffer10km}
-                      style={{ color: '#eab308', weight: 2, dashArray: '6,6', fillOpacity: 0.05 }}
-                    />
+                  {/* PLANO 1: Polígonos de inspección con letras A, B, C */}
+                  {currentPlano === 1 && geoJsonData && (
+                    <GeoJSON data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
 
+                  {/* PLANO 2: Capas Ecológicas interceptadas por el buffer oculto */}
                   {currentPlano === 2 && ecoNearby.length > 0 && (
                     <GeoJSON
                       key={`eco-layers-${ecoNearby.length}`}
@@ -574,13 +567,12 @@ export const GeoViewer: React.FC = () => {
                       onEachFeature={(feature, layer) => {
                         const p = feature.properties || {};
                         const title = p._title || 'Capa Ecológica';
-                        // Lectura dinámica de propiedades de la DBF
                         const name = p.NOMBRE || p.NOM_AICA || p.nombre || p.Name || p.NAME || p.NOM || p.SITIO || 'Área Protegida';
                         const cat = p.CAT_MANEJO || p.CATEGORIA || p.TIPO || p.PRIORIDAD || p.TIPO_ZONA || '';
                         const estadoProp = p.ESTADOS || p.ESTADO || p.EDO || '';
                         const region = p.REGION || p.Region || '';
                         const sup = p.SUPERFICIE || p.HECTARES || p.AREA || '';
-                        
+
                         layer.bindPopup(
                           `<div style="font-size:0.85rem; min-width: 200px;">
                             <strong style="color:#163f37; font-size:0.9rem;">${title}</strong><br/>
@@ -589,10 +581,19 @@ export const GeoViewer: React.FC = () => {
                             ${cat ? `<strong>Categoría:</strong> ${cat}<br/>` : ''}
                             ${estadoProp ? `<strong>Estado:</strong> ${estadoProp}<br/>` : ''}
                             ${region ? `<strong>Región:</strong> ${region}<br/>` : ''}
-                            ${sup ? `<strong>Superficie:</strong> ${Number(sup).toLocaleString('es-MX', {maximumFractionDigits: 2})} ha` : ''}
+                            ${sup ? `<strong>Superficie:</strong> ${Number(sup).toLocaleString('es-MX', { maximumFractionDigits: 2 })} ha` : ''}
                           </div>`
                         );
                       }}
+                    />
+                  )}
+
+                  {/* Representación como Punto Rojo en Plano 2 */}
+                  {currentPlano === 2 && predioCentroid && (
+                    <CircleMarker
+                      center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
+                      radius={8}
+                      pathOptions={{ fillColor: '#ff0000', fillOpacity: 1, color: '#ffffff', weight: 2 }}
                     />
                   )}
                 </MapContainer>
@@ -608,7 +609,7 @@ export const GeoViewer: React.FC = () => {
 
                     <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
-                    {/* VISTA PLANO 1: Datos de Inspección y Superficie */}
+                    {/* VISTA PLANO 1 */}
                     {currentPlano === 1 && (
                       <>
                         <div className="bg-white mb-2 border border-dark">
@@ -642,26 +643,29 @@ export const GeoViewer: React.FC = () => {
                       </>
                     )}
 
-                    {/* VISTA PLANO 2: Simbología de Relevancia Ecológica */}
+                    {/* VISTA PLANO 2 */}
                     {currentPlano === 2 && (
                       <div className="bg-white mb-2 border border-dark">
                         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
                         <div className="p-2">
-                          <div className="d-flex align-items-center mb-2">
-                            <div style={{ width: '12px', height: '12px', backgroundColor: '#ff0000', border: '1px solid #000', marginRight: '8px' }}></div>
+                          <div className="d-flex align-items-center mb-2 border-bottom pb-2">
+                            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ff0000', border: '1.5px solid #ffffff', boxShadow: '0 0 0 1px #000', marginRight: '8px', flexShrink: 0 }}></div>
                             <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
                           </div>
-                          <div className="fw-bold mb-1" style={{ fontSize: '0.65rem', color: '#163f37' }}>Relevancia ecológica:</div>
-                          {ecoLayers.map((layer) => (
-                            <div key={`sym-eco-${layer.id}`} className="d-flex align-items-center mb-1">
-                              <div style={{ width: '12px', height: '12px', border: `2px solid ${layer.color}`, backgroundColor: `${layer.color}40`, marginRight: '8px', flexShrink: 0 }}></div>
-                              <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>{layer.title}</span>
-                            </div>
-                          ))}
-                          <div className="d-flex align-items-center mt-2 pt-2 border-top">
-                            <div style={{ width: '12px', height: '12px', border: '2px dashed #eab308', backgroundColor: '#eab30820', marginRight: '8px', flexShrink: 0 }}></div>
-                            <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>Zona de Influencia (Buffer 10 km)</span>
-                          </div>
+                          
+                          {activeEcoLegend.length > 0 ? (
+                            <>
+                              <div className="fw-bold mb-1" style={{ fontSize: '0.65rem', color: '#163f37' }}>Relevancia ecológica intersectada:</div>
+                              {activeEcoLegend.map((layer) => (
+                                <div key={`sym-eco-${layer.id}`} className="d-flex align-items-center mb-1">
+                                  <div style={{ width: '12px', height: '12px', border: `2px solid ${layer.color}`, backgroundColor: `${layer.color}40`, marginRight: '8px', flexShrink: 0 }}></div>
+                                  <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>{layer.title}</span>
+                                </div>
+                              ))}
+                            </>
+                          ) : (
+                            <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>Ningún polígono ecológico dentro de los 10 km</div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -680,7 +684,7 @@ export const GeoViewer: React.FC = () => {
             </div>
           </div>
 
-          {/* TOOLBAR INFERIOR: Integrada al flujo normal del div central, abajo del canvas cartográfico */}
+          {/* TOOLBAR */}
           {geoJsonData && (
             <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-4 mx-auto shadow rounded w-100" style={{ maxWidth: '700px', borderTop: '4px solid #d6b56a' }}>
               <span className="fw-bold" style={{ fontSize: '0.9rem' }}>Plano activo:</span>
