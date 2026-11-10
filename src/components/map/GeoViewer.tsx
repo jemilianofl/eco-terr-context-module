@@ -32,41 +32,53 @@ const toDMS = (deg: number, isLat: boolean) => {
     const minutesFloat = (absolute - degrees) * 60;
     const minutes = Math.floor(minutesFloat);
     const seconds = Math.floor((minutesFloat - minutes) * 60);
-    const direction = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
+
+    let direction = '';
+    if (isLat) {
+        direction = deg >= 0 ? 'N' : 'S';
+    } else {
+        direction = deg >= 0 ? 'E' : 'W';
+    }
     return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
+const cleanName = (name: string) => name.replace(/\s*\([^)]*\)\s*/g, '').trim();
+
+// 1. ESTILO DE POLÍGONO: Solo contorno rojo, sin relleno
 const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
     if (!feature) return {};
-    // Forzamos el color rojo según los nuevos requerimientos
-    return { color: '#ff0000', weight: 2, fillColor: '#ff0000', fillOpacity: 0.4 };
+    return { color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0 };
 };
 
 const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.LatLng) => {
     return L.circleMarker(latlng, { radius: 4, fillColor: "#ff0000", color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.8 });
 };
 
-// Se agrega Tooltip permanente para la Letra Identificadora
+// 2. ETIQUETAS: Se redujo drásticamente el tamaño para evitar amontonamiento
 const onEachFeature = (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
     if (feature.properties && feature.geometry.type !== 'Point') {
         const polyId = feature.properties.polyId || '';
 
-        // Popup al hacer click
         let areaHtml = "";
         try {
             const areaSqMeters = turf.area(feature);
             areaHtml = `<br/><strong>Superficie:</strong> ${areaSqMeters.toFixed(2)} m²`;
-        } catch (e) { console.warn("Error área", e); }
+        } catch (e) {
+            console.warn("No se pudo calcular el área:", e);
+        }
 
         layer.bindPopup(`<strong>Polígono ${polyId}</strong>${areaHtml}`);
 
-        // Etiqueta permanente en el centro del polígono con la letra A, B, C...
         if (polyId) {
-            layer.bindTooltip(polyId, {
-                permanent: true,
-                direction: 'center',
-                className: 'bg-white border border-dark fw-bold px-1 rounded-circle text-center d-flex align-items-center justify-content-center',
-            });
+            layer.bindTooltip(
+                `<div style="font-size:0.55rem; font-weight:bold; line-height:1;">${polyId}</div>`,
+                {
+                    permanent: true,
+                    direction: 'center',
+                    className: 'bg-white border border-dark rounded-circle d-flex align-items-center justify-content-center',
+                    opacity: 0.9
+                }
+            );
         }
     }
 };
@@ -141,6 +153,7 @@ const InvalidateMap: React.FC = () => {
     return null;
 };
 
+// 3. MINIMAPA: Usamos el Esri Street Map con crossOrigin para evitar que salga gris, y zoom 5 para que se vean al menos 2 estados.
 const MiniMapLocator: React.FC<{ data: FeatureCollection | null, estado: string, municipio: string }> = ({ data, estado, municipio }) => {
     if (!data || data.features.length === 0) return null;
     const center = L.geoJSON(data as GeoJsonObject).getBounds().getCenter();
@@ -149,9 +162,9 @@ const MiniMapLocator: React.FC<{ data: FeatureCollection | null, estado: string,
         <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
             <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
             <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
-                <MapContainer center={center} zoom={4} zoomControl={false} dragging={false} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
+                <MapContainer center={center} zoom={5} zoomControl={false} dragging={false} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
                     <InvalidateMap />
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
                     <CircleMarker center={center} radius={4} color="black" weight={1} fillColor="red" fillOpacity={1} />
                 </MapContainer>
             </div>
@@ -169,6 +182,7 @@ export const GeoViewer: React.FC = () => {
     const [previewData, setPreviewData] = useState<FormData | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [currentPlano, setCurrentPlano] = useState<number>(1);
+    const [isExporting, setIsExporting] = useState<boolean>(false);
 
     const [frameData, setFrameData] = useState<FrameData | null>(null);
     const printRef = useRef<HTMLDivElement>(null);
@@ -203,12 +217,11 @@ export const GeoViewer: React.FC = () => {
                 parsedData = { type: 'FeatureCollection', features: [parsedData] };
             }
 
-            // PRE-PROCESAMIENTO: Inyectamos A, B, C a los polígonos
             let polyIndex = 0;
             (parsedData as FeatureCollection).features.forEach(f => {
                 if (f.geometry.type !== 'Point') {
                     f.properties = f.properties || {};
-                    f.properties.polyId = String.fromCharCode(65 + polyIndex); // A, B, C, D...
+                    f.properties.polyId = String.fromCharCode(65 + polyIndex);
                     polyIndex++;
                 }
             });
@@ -216,31 +229,37 @@ export const GeoViewer: React.FC = () => {
             setGeoJsonData(parsedData as FeatureCollection);
             setIsSidebarOpen(false);
         } catch (err) {
+            console.warn("Error procesando el archivo espacial:", err);
             alert("Error procesando el archivo espacial.");
         }
     };
 
-    const handleDownloadImage = async () => {
+    // 4. LOADER: Se implementó un delay y estado para mostrar el spinner
+    const handleDownloadImage = () => {
         if (!printRef.current) return;
-
-        // FIX HTML2CANVAS GRIS: Bloquea el scroll arriba antes de tomar la captura
+        setIsExporting(true);
         window.scrollTo(0, 0);
 
-        try {
-            const canvas = await html2canvas(printRef.current, {
-                useCORS: true,
-                allowTaint: true,
-                scale: 2,
-                scrollY: 0, // Asegura que la captura se inicie desde el tope
-                ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup')
-            });
-            const link = document.createElement('a');
-            link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_Plano${currentPlano}.jpg`;
-            link.href = canvas.toDataURL('image/jpeg', 0.9);
-            link.click();
-        } catch (err) {
-            alert("Error al generar la imagen.");
-        }
+        setTimeout(async () => {
+            try {
+                const canvas = await html2canvas(printRef.current!, {
+                    useCORS: true,
+                    allowTaint: true,
+                    scale: 2,
+                    scrollY: 0,
+                    ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup')
+                });
+                const link = document.createElement('a');
+                link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_Plano${currentPlano}.jpg`;
+                link.href = canvas.toDataURL('image/jpeg', 0.9);
+                link.click();
+            } catch (err) {
+                console.warn("Error al generar imagen:", err);
+                alert("Error al generar la imagen.");
+            } finally {
+                setIsExporting(false);
+            }
+        }, 150);
     };
 
     const getSimbologiaAndArea = () => {
@@ -338,7 +357,7 @@ export const GeoViewer: React.FC = () => {
 
             <div className="d-flex flex-grow-1 position-relative overflow-hidden" style={{ height: '100%' }}>
 
-                {/* PANEL IZQUIERDO: Formulario */}
+                {/* PANEL IZQUIERDO */}
                 <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
                     <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
                         <h5 className="fw-bold mb-0" style={{ color: '#163f37' }}>Datos del Dictamen</h5>
@@ -369,8 +388,12 @@ export const GeoViewer: React.FC = () => {
                         </button>
                     )}
                     {!isSidebarOpen && geoJsonData && (
-                        <button onClick={handleDownloadImage} className="btn btn-warning position-absolute shadow fw-bold ignore-print" style={{ top: '15px', left: '65px', zIndex: 1040 }}>
-                            <i className="bi bi-download me-2"></i>Descargar Plano {currentPlano}
+                        <button onClick={handleDownloadImage} disabled={isExporting} className="btn btn-warning position-absolute shadow fw-bold ignore-print" style={{ top: '15px', left: '65px', zIndex: 1040 }}>
+                            {isExporting ? (
+                                <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Generando...</>
+                            ) : (
+                                <><i className="bi bi-download me-2"></i>Descargar Plano {currentPlano}</>
+                            )}
                         </button>
                     )}
 
@@ -394,7 +417,7 @@ export const GeoViewer: React.FC = () => {
                                     </svg>
                                 </div>
 
-                                <MapContainer center={mapCenter} zoom={6} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
+                                <MapContainer center={mapCenter} zoom={6} zoomControl={false} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
                                     <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 
@@ -418,7 +441,6 @@ export const GeoViewer: React.FC = () => {
 
                                         <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
-                                        {/* SIMBOLOGÍA UNIFICADA EN ROJO */}
                                         <div className="bg-white mb-2 border border-dark">
                                             <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
                                             <div className="p-2">
