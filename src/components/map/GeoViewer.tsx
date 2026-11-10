@@ -51,7 +51,8 @@ const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
 };
 
 const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.LatLng) => {
-  return L.circleMarker(latlng, { radius: 5, fillColor: '#ff0000', color: '#ffffff', weight: 1.5, opacity: 1, fillOpacity: 1 });
+  // Aseguramos que los puntos dibujados manualmente como UserLayers vayan al markerPane
+  return L.circleMarker(latlng, { radius: 5, fillColor: '#ff0000', color: '#ffffff', weight: 1.5, opacity: 1, fillOpacity: 1, pane: 'markerPane' });
 };
 
 const GraticuleEngine: React.FC = () => {
@@ -284,7 +285,7 @@ export const GeoViewer: React.FC = () => {
             });
           }
         } catch {
-          // ignora fallos
+          // Ignora fallos
         }
       });
     });
@@ -292,7 +293,6 @@ export const GeoViewer: React.FC = () => {
     return nearby;
   }, [buffer10km, currentPlano, ecoLayers]);
 
-  // Filtramos la leyenda para mostrar solo las capas ecológicas presentes
   const activeEcoLegend = useMemo(() => {
     if (currentPlano !== 2 || ecoNearby.length === 0) return [];
     const foundIds = new Set(ecoNearby.map(f => f.properties?._layerId));
@@ -447,9 +447,9 @@ export const GeoViewer: React.FC = () => {
     return elements;
   };
 
-  // Se retiró `minHeight: 100vh` en favor de `flex-grow-1` respetando el layout padre.
+  // Se retiraron las restricciones absolutas para permitir que fluya dentro del layout
   return (
-    <div className="container-fluid p-0 m-0 d-flex flex-column position-relative bg-light-gray flex-grow-1 overflow-hidden">
+    <div className="container-fluid p-0 m-0 d-flex flex-column bg-light-gray flex-grow-1" style={{ minHeight: 'calc(100vh - 140px)' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100">
         
         {/* PANEL LATERAL */}
@@ -548,12 +548,12 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* PLANO 1: Polígonos de inspección con letras A, B, C */}
+                  {/* PLANO 1: Polígonos de inspección */}
                   {currentPlano === 1 && geoJsonData && (
                     <GeoJSON data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
 
-                  {/* PLANO 2: Capas Ecológicas interceptadas por el buffer oculto */}
+                  {/* PLANO 2: Capas Ecológicas interceptadas */}
                   {currentPlano === 2 && ecoNearby.length > 0 && (
                     <GeoJSON
                       key={`eco-layers-${ecoNearby.length}`}
@@ -588,12 +588,13 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* Representación como Punto Rojo en Plano 2 */}
+                  {/* PLANO 2: Punto Rojo institucional (Garantizado siempre arriba usando markerPane) */}
                   {currentPlano === 2 && predioCentroid && (
                     <CircleMarker
                       center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
-                      radius={8}
+                      radius={6}
                       pathOptions={{ fillColor: '#ff0000', fillOpacity: 1, color: '#ffffff', weight: 2 }}
+                      pane="markerPane"
                     />
                   )}
                 </MapContainer>
