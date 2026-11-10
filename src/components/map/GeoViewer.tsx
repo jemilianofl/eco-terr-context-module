@@ -9,6 +9,9 @@ import html2canvas from 'html2canvas';
 import * as turf from '@turf/turf';
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
+// Desactivar aceleración 3D globalmente en Leaflet para evitar el desfase de polígonos en html2canvas
+L.Browser.any3d = false;
+
 interface FormData {
     targetDate: string;
     polygonFile: FileList;
@@ -32,19 +35,12 @@ const toDMS = (deg: number, isLat: boolean) => {
     const minutesFloat = (absolute - degrees) * 60;
     const minutes = Math.floor(minutesFloat);
     const seconds = Math.floor((minutesFloat - minutes) * 60);
-
-    let direction = '';
-    if (isLat) {
-        direction = deg >= 0 ? 'N' : 'S';
-    } else {
-        direction = deg >= 0 ? 'E' : 'W';
-    }
+    const direction = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
     return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
 const cleanName = (name: string) => name.replace(/\s*\([^)]*\)\s*/g, '').trim();
 
-// 1. ESTILO DE POLÍGONO: Solo contorno rojo, sin relleno
 const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
     if (!feature) return {};
     return { color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0 };
@@ -54,7 +50,6 @@ const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.
     return L.circleMarker(latlng, { radius: 4, fillColor: "#ff0000", color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.8 });
 };
 
-// 2. ETIQUETAS: Se redujo drásticamente el tamaño para evitar amontonamiento
 const onEachFeature = (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
     if (feature.properties && feature.geometry.type !== 'Point') {
         const polyId = feature.properties.polyId || '';
@@ -70,13 +65,14 @@ const onEachFeature = (feature: Feature<Geometry, GeoJsonProperties>, layer: L.L
         layer.bindPopup(`<strong>Polígono ${polyId}</strong>${areaHtml}`);
 
         if (polyId) {
+            // Se eliminó el fondo blanco y se aplicó text-shadow para que resalte la letra
             layer.bindTooltip(
-                `<div style="font-size:0.55rem; font-weight:bold; line-height:1;">${polyId}</div>`,
+                `<div style="font-size:1.1rem; font-weight:900; color:#ff0000; text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff;">${polyId}</div>`,
                 {
                     permanent: true,
                     direction: 'center',
-                    className: 'bg-white border border-dark rounded-circle d-flex align-items-center justify-content-center',
-                    opacity: 0.9
+                    className: 'bg-transparent border-0 shadow-none',
+                    opacity: 1
                 }
             );
         }
@@ -132,15 +128,29 @@ const GraticuleEngine: React.FC = () => {
     );
 };
 
-const MapUpdater: React.FC<{ data: FeatureCollection | null }> = ({ data }) => {
+// Se actualizó para manejar el Zoom según el Plano seleccionado
+const MapUpdater: React.FC<{ data: FeatureCollection | null, plano: number }> = ({ data, plano }) => {
     const map = useMap();
     useEffect(() => {
         if (data && data.features.length > 0) {
             const layer = L.geoJSON(data as GeoJsonObject);
             const bounds = layer.getBounds();
-            if (bounds.isValid()) map.fitBounds(bounds, { paddingBottomRight: [330, 30], paddingTopLeft: [40, 40] });
+            if (bounds.isValid()) {
+                const paddingOpts = { paddingBottomRight: [330, 30] as [number, number], paddingTopLeft: [40, 40] as [number, number] };
+
+                if (plano === 1) {
+                    // Plano 1: Ubicación Geográfica (Zoom Out)
+                    map.fitBounds(bounds, { ...paddingOpts, maxZoom: 12 });
+                } else if (plano === 2) {
+                    // Plano 2: Detalle Vértices (Zoom In)
+                    map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
+                } else {
+                    // General
+                    map.fitBounds(bounds, paddingOpts);
+                }
+            }
         }
-    }, [data, map]);
+    }, [data, map, plano]);
     return null;
 };
 
@@ -153,7 +163,7 @@ const InvalidateMap: React.FC = () => {
     return null;
 };
 
-// 3. MINIMAPA: Usamos el Esri Street Map con crossOrigin para evitar que salga gris, y zoom 5 para que se vean al menos 2 estados.
+// Se cambió a OpenStreetMap puro con CORS anónimo y preferCanvas={true} para que se exporte correctamente
 const MiniMapLocator: React.FC<{ data: FeatureCollection | null, estado: string, municipio: string }> = ({ data, estado, municipio }) => {
     if (!data || data.features.length === 0) return null;
     const center = L.geoJSON(data as GeoJsonObject).getBounds().getCenter();
@@ -162,9 +172,10 @@ const MiniMapLocator: React.FC<{ data: FeatureCollection | null, estado: string,
         <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
             <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
             <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
-                <MapContainer center={center} zoom={5} zoomControl={false} dragging={false} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
+                {/* Zoom a 6 para mostrar aproximadamente 2 estados */}
+                <MapContainer center={center} zoom={6} zoomControl={false} dragging={false} scrollWheelZoom={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                     <InvalidateMap />
-                    <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
+                    <TileLayer crossOrigin="anonymous" url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <CircleMarker center={center} radius={4} color="black" weight={1} fillColor="red" fillOpacity={1} />
                 </MapContainer>
             </div>
@@ -181,7 +192,9 @@ export const GeoViewer: React.FC = () => {
     const [geoJsonData, setGeoJsonData] = useState<FeatureCollection | null>(null);
     const [previewData, setPreviewData] = useState<FormData | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [currentPlano, setCurrentPlano] = useState<number>(1);
+
+    // 0: General, 1: Ubicación Geográfica, 2: Detalles
+    const [currentPlano, setCurrentPlano] = useState<number>(0);
     const [isExporting, setIsExporting] = useState<boolean>(false);
 
     const [frameData, setFrameData] = useState<FrameData | null>(null);
@@ -234,7 +247,6 @@ export const GeoViewer: React.FC = () => {
         }
     };
 
-    // 4. LOADER: Se implementó un delay y estado para mostrar el spinner
     const handleDownloadImage = () => {
         if (!printRef.current) return;
         setIsExporting(true);
@@ -247,10 +259,16 @@ export const GeoViewer: React.FC = () => {
                     allowTaint: true,
                     scale: 2,
                     scrollY: 0,
+                    backgroundColor: '#ffffff',
                     ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup')
                 });
                 const link = document.createElement('a');
-                link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_Plano${currentPlano}.jpg`;
+
+                let planoName = "General";
+                if (currentPlano === 1) planoName = "Ubicacion";
+                if (currentPlano === 2) planoName = "Detalle";
+
+                link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
                 link.href = canvas.toDataURL('image/jpeg', 0.9);
                 link.click();
             } catch (err) {
@@ -259,7 +277,7 @@ export const GeoViewer: React.FC = () => {
             } finally {
                 setIsExporting(false);
             }
-        }, 150);
+        }, 300);
     };
 
     const getSimbologiaAndArea = () => {
@@ -392,7 +410,7 @@ export const GeoViewer: React.FC = () => {
                             {isExporting ? (
                                 <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Generando...</>
                             ) : (
-                                <><i className="bi bi-download me-2"></i>Descargar Plano {currentPlano}</>
+                                <><i className="bi bi-download me-2"></i>Descargar Mapa</>
                             )}
                         </button>
                     )}
@@ -417,12 +435,13 @@ export const GeoViewer: React.FC = () => {
                                     </svg>
                                 </div>
 
-                                <MapContainer center={mapCenter} zoom={6} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+                                {/* preferCanvas activado globalmente ayuda a html2canvas con vectores */}
+                                <MapContainer center={mapCenter} zoom={6} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
                                     <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 
                                     <GraticuleEngine />
-                                    <MapUpdater data={geoJsonData} />
+                                    <MapUpdater data={geoJsonData} plano={currentPlano} />
 
                                     <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
                                         <ScaleControl position="bottomleft" imperial={false} />
@@ -480,10 +499,10 @@ export const GeoViewer: React.FC = () => {
 
             {geoJsonData && (
                 <div className="bg-dark text-white p-2 d-flex justify-content-center align-items-center gap-3 ignore-print" style={{ zIndex: 1050, borderTop: '3px solid #d6b56a' }}>
-                    <span className="fw-bold" style={{ fontSize: '0.85rem' }}>Planos disponibles:</span>
-                    <button onClick={() => setCurrentPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold' : 'btn-outline-light'}`}>Plano 1 (General)</button>
-                    <button onClick={() => setCurrentPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold' : 'btn-outline-light'}`}>Plano 2 (Ubicación Regional)</button>
-                    <button onClick={() => setCurrentPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold' : 'btn-outline-light'}`}>Plano 3 (Detalle Vértices)</button>
+                    <span className="fw-bold" style={{ fontSize: '0.85rem' }}>Vistas disponibles:</span>
+                    <button onClick={() => setCurrentPlano(0)} className={`btn btn-sm ${currentPlano === 0 ? 'btn-light fw-bold' : 'btn-outline-light'}`}>Visualizador General</button>
+                    <button onClick={() => setCurrentPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold' : 'btn-outline-light'}`}>Plano 1 (Ubicación Geográfica)</button>
+                    <button onClick={() => setCurrentPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold' : 'btn-outline-light'}`}>Plano 2 (Detalle)</button>
                 </div>
             )}
         </div>
