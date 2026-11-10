@@ -51,7 +51,6 @@ const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
 };
 
 const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.LatLng) => {
-  // Aseguramos que los puntos dibujados manualmente como UserLayers vayan al markerPane
   return L.circleMarker(latlng, { radius: 5, fillColor: '#ff0000', color: '#ffffff', weight: 1.5, opacity: 1, fillOpacity: 1, pane: 'markerPane' });
 };
 
@@ -285,7 +284,7 @@ export const GeoViewer: React.FC = () => {
             });
           }
         } catch {
-          // Ignora fallos
+          // ignora fallos
         }
       });
     });
@@ -447,10 +446,12 @@ export const GeoViewer: React.FC = () => {
     return elements;
   };
 
-  // Se retiraron las restricciones absolutas para permitir que fluya dentro del layout
+  // Se asigna una altura base estricta de 850px para evitar desbordes (overflow) en layouts globales
   return (
-    <div className="container-fluid p-0 m-0 d-flex flex-column bg-light-gray flex-grow-1" style={{ minHeight: 'calc(100vh - 140px)' }}>
-      <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100">
+    <div className="container-fluid p-0 m-0 d-flex flex-column position-relative bg-light-gray w-100" style={{ height: '850px', overflow: 'hidden' }}>
+      
+      {/* CUERPO CENTRAL */}
+      <div className="d-flex flex-grow-1 position-relative w-100 h-100">
         
         {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
@@ -497,8 +498,8 @@ export const GeoViewer: React.FC = () => {
           </div>
         </div>
 
-        {/* ÁREA CENTRAL Y LIENZO CARTOGRÁFICO */}
-        <div className="flex-grow-1 position-relative p-0 d-flex flex-column" style={{ backgroundColor: '#e9ecef', overflowY: 'auto' }}>
+        {/* ÁREA DE EXPORTACIÓN Y MAPA */}
+        <div className="flex-grow-1 position-relative p-0 d-flex flex-column" style={{ backgroundColor: '#e9ecef' }}>
           {!isSidebarOpen && (
             <button type="button" onClick={() => setIsSidebarOpen(true)} className="btn text-white position-absolute shadow ignore-print" style={{ top: '15px', left: '15px', zIndex: 1040, backgroundColor: '#163f37', borderRadius: '50%' }}>
               <i className="bi bi-gear-fill"></i>
@@ -520,7 +521,9 @@ export const GeoViewer: React.FC = () => {
             </button>
           )}
 
-          <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center flex-grow-1" style={{ minHeight: '820px', padding: '40px', boxSizing: 'border-box' }}>
+          {/* CONTENEDOR CARTOGRÁFICO DE IMPRESIÓN */}
+          <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center" style={{ width: '100%', height: '760px', padding: '40px', boxSizing: 'border-box' }}>
+            
             <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
               {renderLabels()}
               {renderZebraFrame()}
@@ -588,7 +591,7 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* PLANO 2: Punto Rojo institucional (Garantizado siempre arriba usando markerPane) */}
+                  {/* PLANO 2: Punto Rojo institucional en el markerPane (Z-index superior) */}
                   {currentPlano === 2 && predioCentroid && (
                     <CircleMarker
                       center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
@@ -599,7 +602,7 @@ export const GeoViewer: React.FC = () => {
                   )}
                 </MapContainer>
 
-                {/* PANEL INSTITUCIONAL DERECHO */}
+                {/* LEYENDA DERECHA */}
                 {previewData && (
                   <div className="position-absolute bg-white p-3 shadow-sm" style={{ top: '15px', right: '15px', width: '290px', zIndex: 1000, border: '1px solid #000' }}>
                     <div className="text-center mb-3 d-flex flex-column align-items-center">
@@ -687,7 +690,7 @@ export const GeoViewer: React.FC = () => {
 
           {/* TOOLBAR */}
           {geoJsonData && (
-            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-4 mx-auto shadow rounded w-100" style={{ maxWidth: '700px', borderTop: '4px solid #d6b56a' }}>
+            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-3 mx-auto shadow rounded" style={{ maxWidth: '700px', borderTop: '4px solid #d6b56a', height: '60px' }}>
               <span className="fw-bold" style={{ fontSize: '0.9rem' }}>Plano activo:</span>
               <button
                 type="button"
