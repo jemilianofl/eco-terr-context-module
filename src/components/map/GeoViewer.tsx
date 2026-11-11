@@ -329,12 +329,13 @@ export const GeoViewer: React.FC = () => {
         );
 
         if (currentPlano === 1 && polyId) {
-          // Etiqueta limpia: texto rojo con contorno blanco sin recuadro de fondo
+          // SE REDUJO FUENTE A 0.85rem Y SE AGREGÓ OFFSET PARA MOVERLA HACIA AFUERA DEL POLÍGONO
           layer.bindTooltip(
-            `<div style="font-size:1.1rem; font-weight:900; color:#ff0000; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;">${polyId}</div>`,
+            `<div style="font-size:0.85rem; font-weight:900; color:#ff0000; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;">${polyId}</div>`,
             {
               permanent: true,
-              direction: 'center',
+              direction: 'top',
+              offset: [15, -15],
               className: 'bg-transparent border-0 shadow-none p-0',
               opacity: 1,
             }
@@ -536,7 +537,6 @@ export const GeoViewer: React.FC = () => {
           )}
 
           <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center flex-grow-1" style={{ minHeight: '760px', padding: '40px', boxSizing: 'border-box' }}>
-
             <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
               {renderLabels()}
               {renderZebraFrame()}
@@ -554,7 +554,6 @@ export const GeoViewer: React.FC = () => {
                 </div>
 
                 <MapContainer center={mapCenter} zoom={6} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
-                  {/* Este TileLayer (satélite) se reemplazará por la URL dinámica del backend Sentinel-2 cuando esté listo */}
                   <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
                   <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 
@@ -565,7 +564,7 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* PLANO 1: Polígonos de inspección sin relleno */}
+                  {/* PLANO 1: Polígonos de inspección */}
                   {currentPlano === 1 && geoJsonData && (
                     <GeoJSON key="user-layer-1" data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
@@ -605,7 +604,7 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* PLANO 2: Punto Rojo institucional */}
+                  {/* PLANO 2: Punto Rojo institucional en el markerPane (Z-index superior) */}
                   {currentPlano === 2 && predioCentroid && (
                     <CircleMarker
                       center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
