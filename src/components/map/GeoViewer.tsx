@@ -173,14 +173,13 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
           const centroid = turf.centroid(f);
           const [lon, lat] = centroid.geometry.coordinates;
           
-          // Patrón de ángulos intercalados para evitar superposición
           const angles = [45, 135, 315, 225, 0, 180, 90, 270];
           const angleDeg = angles[i % angles.length];
           const angleRad = angleDeg * (Math.PI / 180);
           
-          // Distancia reducida drásticamente (sin líneas) para que esté pegado al polígono
-          const baseDist = 0.00012; 
-          const multiplier = 1 + Math.floor(i / 8) * 0.2;
+          // Separación incrementada y multiplicador ajustado para dar más margen
+          const baseDist = 0.00025; 
+          const multiplier = 1 + Math.floor(i / 8) * 0.3;
           const offsetDist = baseDist * multiplier;
 
           const labelLat = lat + Math.sin(angleRad) * offsetDist;
@@ -193,7 +192,8 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
                 direction="center" 
                 className="bg-transparent border-0 shadow-none p-0"
               >
-                <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#ff0000', textShadow: '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff' }}>
+                {/* Tamaño de fuente reducido a 0.85rem para evitar colisiones */}
+                <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#ff0000', textShadow: '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff' }}>
                   {polyId}
                 </div>
               </Tooltip>
@@ -603,7 +603,7 @@ export const GeoViewer: React.FC = () => {
                     <GeoJSON key="user-layer-1" data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
 
-                  {/* PLANO 1: Etiquetas inteligentes expulsadas (Sin líneas, pegadas al polígono) */}
+                  {/* PLANO 1: Etiquetas inteligentes expulsadas alternadamente */}
                   <SmartLabels data={geoJsonData} plano={currentPlano} />
 
                   {/* PLANO 2: Capas Ecológicas interceptadas */}
