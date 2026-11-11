@@ -118,7 +118,7 @@ const MapUpdater: React.FC<{
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
       if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
-    } else if (plano === 2) {
+    } else if (plano === 2 || plano === 3) {
       if (buffer10km) {
         const bbox = turf.bbox(buffer10km);
         map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
@@ -222,6 +222,20 @@ export const GeoViewer: React.FC = () => {
   const [sentinelMetadata, setSentinelMetadata] = useState<any>(null);
   const [useSentinel, setUseSentinel] = useState<boolean>(true);
 
+  // NUEVOS ESTADOS: Control de Vegetación (Plano 3)
+  const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
+  const [vegLayerData, setVegLayerData] = useState<FeatureCollection | null>(null);
+
+  const vegSeriesOptions = [
+    { id: 'serie_1', label: 'Serie I' },
+    { id: 'serie_2', label: 'Serie II' },
+    { id: 'serie_3', label: 'Serie III' },
+    { id: 'serie_4', label: 'Serie IV' },
+    { id: 'serie_5', label: 'Serie V' },
+    { id: 'serie_6', label: 'Serie VI' },
+    { id: 'serie_7', label: 'Serie VII' },
+  ];
+
   const [ecoLayers, setEcoLayers] = useState<EcoLayerItem[]>([
     { id: 'aicas', title: 'Área de Importancia para la Conservación de las Aves (AICA)', color: '#d63384', data: null },
     { id: 'ramsar', title: 'Sitio Ramsar', color: '#0d6efd', data: null },
@@ -238,6 +252,7 @@ export const GeoViewer: React.FC = () => {
     return () => document.removeEventListener('mapFrameUpdated', handler);
   }, []);
 
+  // Efecto para capas ecológicas
   useEffect(() => {
     if (currentPlano === 2) {
       ecoLayers.forEach((layer) => {
@@ -254,6 +269,20 @@ export const GeoViewer: React.FC = () => {
       });
     }
   }, [currentPlano, ecoLayers]);
+
+  // EFECTO NUEVO: Efecto para capa de vegetación seleccionada
+  useEffect(() => {
+    if (currentPlano === 3) {
+      // Limpiamos la capa actual al cambiar de serie para forzar re-render
+      setVegLayerData(null);
+      fetch(`/layers/geojson/usv_${selectedVegSerie}.geojson`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json: FeatureCollection | null) => {
+          if (json) setVegLayerData(json);
+        })
+        .catch((err) => console.warn(`Capa de vegetación ${selectedVegSerie} no disponible.`, err));
+    }
+  }, [currentPlano, selectedVegSerie]);
 
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
@@ -336,13 +365,11 @@ export const GeoViewer: React.FC = () => {
             setUseSentinel(true);
           }
         } else {
-          console.warn("Backend Sentinel respondió con error, usando mapa por defecto.");
           setSentinelUrl(null);
           setSentinelMetadata(null);
           setUseSentinel(false);
         }
       } catch (error) {
-        console.error("Error contactando al backend de Sentinel:", error);
         setSentinelUrl(null);
         setSentinelMetadata(null);
         setUseSentinel(false);
@@ -380,6 +407,24 @@ export const GeoViewer: React.FC = () => {
 
     return nearby;
   }, [buffer10km, currentPlano, ecoLayers]);
+
+  // MEMO NUEVO: Intersección con capa de vegetación (Plano 3)
+  const vegNearby = useMemo(() => {
+    if (!buffer10km || currentPlano !== 3 || !vegLayerData) return [];
+    const nearby: Feature<Geometry, GeoJsonProperties>[] = [];
+
+    vegLayerData.features.forEach((f) => {
+      try {
+        if (turf.booleanIntersects(f as turf.CoordPair, buffer10km as turf.CoordPair)) {
+          nearby.push(f);
+        }
+      } catch {
+        // ignora fallos
+      }
+    });
+
+    return nearby;
+  }, [buffer10km, currentPlano, vegLayerData]);
 
   const activeEcoLegend = useMemo(() => {
     if (currentPlano !== 2 || ecoNearby.length === 0) return [];
@@ -420,6 +465,27 @@ export const GeoViewer: React.FC = () => {
     []
   );
 
+  // CALLBACK NUEVO: Generador de Popups para la capa de Vegetación y Suelo
+  const onEachVegFeature = useCallback(
+    (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
+      if (feature.properties) {
+        const p = feature.properties;
+        const desc = p.DESCRIPCIO || p.TIPO_VEG || p.TIPO || p.DESC || p.NOMBRE || 'Vegetación / Suelo';
+        const cve = p.CVE_VEG || p.CLAVE || '';
+        
+        layer.bindPopup(
+          `<div style="font-size:0.85rem; min-width: 200px;">
+            <strong style="color:#65a30d; font-size:0.95rem;">Información de Vegetación</strong><br/>
+            <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
+            <strong>Descripción:</strong> ${desc}<br/>
+            ${cve ? `<strong>Clave:</strong> ${cve}<br/>` : ''}
+          </div>`
+        );
+      }
+    },
+    []
+  );
+
   const handleDownloadImage = () => {
     if (!printRef.current) return;
     setIsExporting(true);
@@ -433,13 +499,14 @@ export const GeoViewer: React.FC = () => {
           scale: 2,
           scrollY: 0,
           backgroundColor: '#ffffff',
-          // Aseguramos que capture el div con las proporciones y estilos correctos
           width: printRef.current?.scrollWidth,
           height: printRef.current?.scrollHeight,
           ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup'),
         });
         const link = document.createElement('a');
-        const planoName = currentPlano === 1 ? 'Ubicacion_Geografica' : 'Relevancia_Ecologica';
+        let planoName = 'Ubicacion_Geografica';
+        if (currentPlano === 2) planoName = 'Relevancia_Ecologica';
+        if (currentPlano === 3) planoName = 'Tipo_Vegetacion';
         link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
         link.href = canvas.toDataURL('image/jpeg', 0.9);
         link.click();
@@ -605,13 +672,12 @@ export const GeoViewer: React.FC = () => {
               ) : (
                 <>
                   <i className="bi bi-download me-2"></i>
-                  Descargar {currentPlano === 1 ? 'Plano 1' : 'Plano 2'}
+                  Descargar {currentPlano === 1 ? 'Plano 1' : currentPlano === 2 ? 'Plano 2' : 'Plano 3'}
                 </>
               )}
             </button>
           )}
 
-          {/* CONTENEDOR DE IMPRESIÓN CON DIMENSIONES FIJAS (Emula tamaño carta apaisado en la captura) */}
           <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center" style={{ padding: '40px', boxSizing: 'border-box', width: '11in', height: '8.5in', marginTop: '40px' }}>
             
             <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
@@ -632,7 +698,7 @@ export const GeoViewer: React.FC = () => {
 
                 <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                   
-                  <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen]} />
+                  <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
                   
                   {useSentinel && sentinelUrl && currentPlano === 1 ? (
                     <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
@@ -649,12 +715,14 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
+                  {/* POLIGONO BASE DE INSPECCION EN EL PLANO 1 */}
                   {currentPlano === 1 && geoJsonData && (
                     <GeoJSON key="user-layer-1" data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
 
                   <SmartLabels data={geoJsonData} plano={currentPlano} />
 
+                  {/* PLANO 2: CAPAS ECOLÓGICAS */}
                   {currentPlano === 2 && ecoNearby.length > 0 && (
                     <GeoJSON
                       key={`eco-layers-${ecoNearby.length}`}
@@ -689,7 +757,23 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {currentPlano === 2 && predioCentroid && (
+                  {/* PLANO 3: CAPAS DE VEGETACIÓN / SUELO */}
+                  {currentPlano === 3 && vegNearby.length > 0 && (
+                    <GeoJSON
+                      key={`veg-layers-${selectedVegSerie}-${vegNearby.length}`}
+                      data={turf.featureCollection(vegNearby)}
+                      style={() => ({
+                        color: '#65a30d',
+                        weight: 2,
+                        fillColor: '#84cc16',
+                        fillOpacity: 0.35,
+                      })}
+                      onEachFeature={onEachVegFeature}
+                    />
+                  )}
+
+                  {/* PUNTO DE REFERENCIA DEL PREDIO EN PLANO 2 y 3 */}
+                  {(currentPlano === 2 || currentPlano === 3) && predioCentroid && (
                     <CircleMarker
                       center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
                       radius={6}
@@ -757,65 +841,112 @@ export const GeoViewer: React.FC = () => {
 
                     {/* VISTA PLANO 2 */}
                     {currentPlano === 2 && (
-                      <div className="bg-white mb-2 border border-dark">
-                        <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
-                        <div className="p-2">
-                          <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-                            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ff0000', border: '1.5px solid #ffffff', boxShadow: '0 0 0 1px #000', marginRight: '8px', flexShrink: 0 }}></div>
-                            <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
+                      <>
+                        <div className="bg-white mb-2 border border-dark">
+                          <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
+                          <div className="p-2">
+                            <div className="d-flex align-items-center mb-2 border-bottom pb-2">
+                              <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ff0000', border: '1.5px solid #ffffff', boxShadow: '0 0 0 1px #000', marginRight: '8px', flexShrink: 0 }}></div>
+                              <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
+                            </div>
+                            
+                            {activeEcoLegend.length > 0 ? (
+                              <>
+                                <div className="fw-bold mb-1" style={{ fontSize: '0.65rem', color: '#163f37' }}>Relevancia ecológica intersectada:</div>
+                                {activeEcoLegend.map((layer) => (
+                                  <div key={`sym-eco-${layer.id}`} className="d-flex align-items-center mb-1">
+                                    <div style={{ width: '12px', height: '12px', border: `2px solid ${layer.color}`, backgroundColor: `${layer.color}40`, marginRight: '8px', flexShrink: 0 }}></div>
+                                    <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>{layer.title}</span>
+                                  </div>
+                                ))}
+                              </>
+                            ) : (
+                              <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>Ningún polígono ecológico dentro de los 10 km</div>
+                            )}
                           </div>
-                          
-                          {activeEcoLegend.length > 0 ? (
-                            <>
-                              <div className="fw-bold mb-1" style={{ fontSize: '0.65rem', color: '#163f37' }}>Relevancia ecológica intersectada:</div>
-                              {activeEcoLegend.map((layer) => (
-                                <div key={`sym-eco-${layer.id}`} className="d-flex align-items-center mb-1">
-                                  <div style={{ width: '12px', height: '12px', border: `2px solid ${layer.color}`, backgroundColor: `${layer.color}40`, marginRight: '8px', flexShrink: 0 }}></div>
-                                  <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>{layer.title}</span>
-                                </div>
-                              ))}
-                            </>
-                          ) : (
-                            <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>Ningún polígono ecológico dentro de los 10 km</div>
-                          )}
                         </div>
-                      </div>
+                        
+                        <div className="border border-dark mt-2 p-1 text-center" style={{ fontSize: '0.65rem' }}>
+                          <span className="fw-bold">Fecha de Inspección:</span> {previewData.targetDate || 'N/A'}
+                        </div>
+                      </>
                     )}
 
-                    <div className="bg-white mb-2 border border-dark">
+                    {/* VISTA PLANO 3 */}
+                    {currentPlano === 3 && (
+                      <>
+                        <div className="bg-white mb-2 border border-dark">
+                          <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#65a30d', fontSize: '0.75rem', padding: '2px' }}>Datos de Vegetación</div>
+                          <div className="p-2">
+                            <label className="fw-bold mb-1" style={{ fontSize: '0.65rem' }}>Serie INEGI a evaluar:</label>
+                            <select
+                              className="form-select form-select-sm ignore-print"
+                              style={{ fontSize: '0.7rem' }}
+                              value={selectedVegSerie}
+                              onChange={(e) => setSelectedVegSerie(e.target.value)}
+                            >
+                              {vegSeriesOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                            </select>
+                            
+                            <div className="d-print-block d-none" style={{ fontSize: '0.7rem' }}>
+                              Serie Seleccionada: <strong>{vegSeriesOptions.find(o => o.id === selectedVegSerie)?.label}</strong>
+                            </div>
+                          </div>
+                          
+                          <div className="p-2 border-top border-dark">
+                            <div className="fw-bold mb-2" style={{ fontSize: '0.65rem' }}>Simbología</div>
+                            <div className="d-flex align-items-center mb-2 border-bottom pb-2">
+                              <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ff0000', border: '1.5px solid #ffffff', boxShadow: '0 0 0 1px #000', marginRight: '8px', flexShrink: 0 }}></div>
+                              <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
+                            </div>
+                            <div className="d-flex align-items-center">
+                              <div style={{ width: '12px', height: '12px', border: `2px solid #65a30d`, backgroundColor: `#84cc16`, marginRight: '8px', flexShrink: 0 }}></div>
+                              <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>Uso de Suelo y Vegetación</span>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="bg-white mb-2 border border-dark mt-2">
                       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
                       <p className="mb-0 text-center p-1" style={{ fontSize: '0.65rem' }}>DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator</p>
                     </div>
-
-                    {/* SE ELIMINÓ LA SECCIÓN "Fecha de elaboración" */}
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* TOOLBAR */}
+          {/* TOOLBAR INFERIOR CON LOS NOMBRES DESCRIPTIVOS COMPLETOS */}
           {geoJsonData && (
-            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '800px', borderTop: '4px solid #d6b56a', height: '60px' }}>
-              <span className="fw-bold me-2" style={{ fontSize: '0.9rem' }}>Vistas:</span>
+            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '900px', borderTop: '4px solid #d6b56a', height: '60px' }}>
+              <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
               <button
                 type="button"
                 onClick={() => setCurrentPlano(1)}
                 className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
               >
-                <i className="bi bi-geo-alt me-1"></i> Plano 1
+                <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
               </button>
               <button
                 type="button"
                 onClick={() => setCurrentPlano(2)}
                 className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
               >
-                <i className="bi bi-tree me-1"></i> Plano 2
+                <i className="bi bi-tree me-1"></i> Relevancia Ecológica
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPlano(3)}
+                className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
+              >
+                <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
               </button>
               
               {sentinelUrl && currentPlano === 1 && (
                 <>
-                  <div className="vr bg-light mx-2" style={{ opacity: 0.5, height: '24px' }}></div>
+                  <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
                   <button
                     type="button"
                     onClick={() => setUseSentinel(!useSentinel)}
