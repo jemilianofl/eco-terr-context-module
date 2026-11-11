@@ -117,7 +117,6 @@ const MapUpdater: React.FC<{
     if (plano === 1) {
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
-      // Límite de auto-zoom al nivel 18 (escala ~50m)
       if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
     } else if (plano === 2) {
       if (buffer10km) {
@@ -434,6 +433,9 @@ export const GeoViewer: React.FC = () => {
           scale: 2,
           scrollY: 0,
           backgroundColor: '#ffffff',
+          // Aseguramos que capture el div con las proporciones y estilos correctos
+          width: printRef.current?.scrollWidth,
+          height: printRef.current?.scrollHeight,
           ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup'),
         });
         const link = document.createElement('a');
@@ -469,8 +471,6 @@ export const GeoViewer: React.FC = () => {
 
     return { totalArea: areaSum.toFixed(2), areaDetails: details };
   }, [geoJsonData]);
-
-  const fechaElaboracion = new Date().toLocaleDateString('es-MX');
 
   const renderZebraFrame = () => {
     if (!frameData) return null;
@@ -589,7 +589,7 @@ export const GeoViewer: React.FC = () => {
         </div>
 
         {/* ÁREA CENTRAL Y LIENZO CARTOGRÁFICO */}
-        <div className="flex-grow-1 position-relative p-0 d-flex flex-column" style={{ backgroundColor: '#e9ecef', overflowY: 'auto' }}>
+        <div className="flex-grow-1 position-relative p-0 d-flex flex-column align-items-center" style={{ backgroundColor: '#e9ecef', overflowY: 'auto' }}>
           {!isSidebarOpen && (
             <button type="button" onClick={() => setIsSidebarOpen(true)} className="btn text-white position-absolute shadow ignore-print" style={{ top: '15px', left: '15px', zIndex: 1040, backgroundColor: '#163f37', borderRadius: '50%' }}>
               <i className="bi bi-gear-fill"></i>
@@ -611,7 +611,8 @@ export const GeoViewer: React.FC = () => {
             </button>
           )}
 
-          <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center flex-grow-1" style={{ minHeight: '760px', padding: '40px', boxSizing: 'border-box' }}>
+          {/* CONTENEDOR DE IMPRESIÓN CON DIMENSIONES FIJAS (Emula tamaño carta apaisado en la captura) */}
+          <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center" style={{ padding: '40px', boxSizing: 'border-box', width: '11in', height: '8.5in', marginTop: '40px' }}>
             
             <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
               {renderLabels()}
@@ -629,7 +630,6 @@ export const GeoViewer: React.FC = () => {
                   </svg>
                 </div>
 
-                {/* LIMITADOR GLOBAL A NIVEL 18 (Escala de 50 metros) PARA EVITAR DISTORSIONES */}
                 <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                   
                   <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen]} />
@@ -787,9 +787,7 @@ export const GeoViewer: React.FC = () => {
                       <p className="mb-0 text-center p-1" style={{ fontSize: '0.65rem' }}>DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator</p>
                     </div>
 
-                    <div className="border border-dark mt-2 p-1 text-center" style={{ fontSize: '0.65rem' }}>
-                      <span className="fw-bold">Fecha de elaboración:</span> {fechaElaboracion}
-                    </div>
+                    {/* SE ELIMINÓ LA SECCIÓN "Fecha de elaboración" */}
                   </div>
                 )}
               </div>
@@ -798,7 +796,7 @@ export const GeoViewer: React.FC = () => {
 
           {/* TOOLBAR */}
           {geoJsonData && (
-            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-4 mx-auto shadow rounded w-100" style={{ maxWidth: '800px', borderTop: '4px solid #d6b56a', height: '60px' }}>
+            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '800px', borderTop: '4px solid #d6b56a', height: '60px' }}>
               <span className="fw-bold me-2" style={{ fontSize: '0.9rem' }}>Vistas:</span>
               <button
                 type="button"
