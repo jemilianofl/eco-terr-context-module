@@ -67,6 +67,151 @@ const getColorForVegetation = (str: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+// MOTOR DE CLIC ESPACIAL: Consulta en memoria mediante Turf.js en un solo clic
+const MapLayerClickHandler: React.FC<{
+  plano: number;
+  geoJsonData: FeatureCollection | null;
+  ecoNearby: Feature<Geometry, GeoJsonProperties>[];
+  vegNearby: Feature<Geometry, GeoJsonProperties>[];
+}> = ({ plano, geoJsonData, ecoNearby, vegNearby }) => {
+  const map = useMap();
+
+  useMapEvents({
+    click(e) {
+      const pt = turf.point([e.latlng.lng, e.latlng.lat]);
+
+      // 1. PLANO 1: Ubicación Geográfica -> Polígono inspeccionado
+      if (plano === 1 && geoJsonData) {
+        for (const f of geoJsonData.features) {
+          if (f.geometry && f.geometry.type !== 'Point') {
+            try {
+              if (turf.booleanPointInPolygon(pt, f as any)) {
+                const polyId = f.properties?.polyId || '';
+                let areaHtml = '';
+                try {
+                  const areaSqMeters = turf.area(f);
+                  areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
+                } catch {}
+
+                let propsHtml = '';
+                Object.entries(f.properties || {}).forEach(([key, val]) => {
+                  if (key !== 'polyId' && key !== 'style' && val !== null && val !== undefined && val !== '') {
+                    propsHtml += `<strong>${key}:</strong> ${val}<br/>`;
+                  }
+                });
+
+                const popupHtml = `
+                  <div style="font-size:0.85rem; min-width: 200px; max-height: 250px; overflow-y: auto;">
+                    <strong style="color:#d63384; font-size:1rem;">Datos del Polígono ${polyId}</strong><br/>
+                    <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
+                    ${areaHtml}
+                    ${propsHtml}
+                  </div>
+                `;
+                L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
+                return;
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // 2. PLANO 2: Relevancia Ecológica -> Áreas Naturales Protegidas, Ramsar, etc.
+      if (plano === 2) {
+        for (const f of ecoNearby) {
+          if (f.geometry) {
+            try {
+              if (turf.booleanPointInPolygon(pt, f as any)) {
+                const p = f.properties || {};
+                const title = p._title || 'Capa Ecológica';
+                const name = p.NOMBRE || p.NOM_AICA || p.nombre || p.Name || p.NAME || p.NOM || p.SITIO || 'Área Protegida';
+                const cat = p.CAT_MANEJO || p.CATEGORIA || p.TIPO || p.PRIORIDAD || p.TIPO_ZONA || '';
+                const estadoProp = p.ESTADOS || p.ESTADO || p.EDO || '';
+                const region = p.REGION || p.Region || '';
+                const sup = p.SUPERFICIE || p.HECTARES || p.AREA || '';
+
+                const popupHtml = `
+                  <div style="font-size:0.85rem; min-width: 220px; max-height: 250px; overflow-y: auto;">
+                    <strong style="color:#163f37; font-size:0.95rem;">${title}</strong><br/>
+                    <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
+                    <strong>Nombre:</strong> ${name}<br/>
+                    ${cat ? `<strong>Categoría:</strong> ${cat}<br/>` : ''}
+                    ${estadoProp ? `<strong>Estado:</strong> ${estadoProp}<br/>` : ''}
+                    ${region ? `<strong>Región:</strong> ${region}<br/>` : ''}
+                    ${sup ? `<strong>Superficie:</strong> ${Number(sup).toLocaleString('es-MX', { maximumFractionDigits: 2 })} ha` : ''}
+                  </div>
+                `;
+                L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
+                return;
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // 3. PLANO 3: Tipo de Vegetación y Uso de Suelo
+      if (plano === 3) {
+        for (const f of vegNearby) {
+          if (f.geometry) {
+            try {
+              if (turf.booleanPointInPolygon(pt, f as any)) {
+                const p = f.properties || {};
+                const desc = p._type || p.DESCRIPCIO || p.descripcio || p.TIPO_VEG || p.tipo_veg || p.TIP_VEG || p.TIPO || p.DESC || p.NOMBRE || 'Vegetación / Suelo';
+                const cve = p.CVE_VEG || p.cve_veg || p.CLAVE || p.CVE_USV || p.cve_usv || '';
+                const fase = p.FASE || p.fase || p.CONDICION || p.condicion || '';
+                const uso = p.USO || p.uso || p.USO_SUELO || p.uso_suelo || p.GRUPO || '';
+
+                const popupHtml = `
+                  <div style="font-size:0.85rem; min-width: 220px; max-height: 250px; overflow-y: auto;">
+                    <strong style="color:#4d7c0f; font-size:0.95rem;">Uso de Suelo y Vegetación</strong><br/>
+                    <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
+                    <strong>Descripción:</strong> ${desc}<br/>
+                    ${cve ? `<strong>Clave INEGI:</strong> ${cve}<br/>` : ''}
+                    ${fase ? `<strong>Fase / Condición:</strong> ${fase}<br/>` : ''}
+                    ${uso ? `<strong>Uso:</strong> ${uso}<br/>` : ''}
+                  </div>
+                `;
+                L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
+                return;
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // Si hace clic en el polígono inspeccionado dentro del Plano 2 o 3
+      if ((plano === 2 || plano === 3) && geoJsonData) {
+        for (const f of geoJsonData.features) {
+          if (f.geometry && f.geometry.type !== 'Point') {
+            try {
+              if (turf.booleanPointInPolygon(pt, f as any)) {
+                const polyId = f.properties?.polyId || '';
+                let areaHtml = '';
+                try {
+                  const areaSqMeters = turf.area(f);
+                  areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
+                } catch {}
+
+                const popupHtml = `
+                  <div style="font-size:0.85rem; min-width: 200px; max-height: 250px; overflow-y: auto;">
+                    <strong style="color:#d63384; font-size:1rem;">Polígono Inspeccionado ${polyId}</strong><br/>
+                    <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
+                    ${areaHtml}
+                  </div>
+                `;
+                L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
+                return;
+              }
+            } catch {}
+          }
+        }
+      }
+    }
+  });
+
+  return null;
+};
+
 const ViewportWatcher: React.FC<{ onBoundsChange: (bbox: [number, number, number, number]) => void }> = ({ onBoundsChange }) => {
   const map = useMap();
 
@@ -128,10 +273,10 @@ const GraticuleEngine: React.FC = () => {
   return (
     <>
       {grid.lats.map((lat, i) => (
-        <Polyline key={`lat-${i}-${lat}`} positions={[[lat, grid.bounds!.getWest()], [lat, grid.bounds!.getEast()]]} pathOptions={{ color: 'white', weight: 1.5, opacity: 0.5, dashArray: '5,5' }} />
+        <Polyline key={`lat-${i}-${lat}`} positions={[[lat, grid.bounds!.getWest()], [lat, grid.bounds!.getEast()]]} pathOptions={{ color: 'white', weight: 1.5, opacity: 0.5, dashArray: '5,5', interactive: false }} />
       ))}
       {grid.lons.map((lon, i) => (
-        <Polyline key={`lon-${i}-${lon}`} positions={[[grid.bounds!.getSouth(), lon], [grid.bounds!.getNorth(), lon]]} pathOptions={{ color: 'white', weight: 1.5, opacity: 0.5, dashArray: '5,5' }} />
+        <Polyline key={`lon-${i}-${lon}`} positions={[[grid.bounds!.getSouth(), lon], [grid.bounds!.getNorth(), lon]]} pathOptions={{ color: 'white', weight: 1.5, opacity: 0.5, dashArray: '5,5', interactive: false }} />
       ))}
     </>
   );
@@ -428,16 +573,13 @@ export const GeoViewer: React.FC = () => {
               },
             });
           }
-        } catch {
-          // ignora fallos
-        }
+        } catch {}
       });
     });
 
     return nearby;
   }, [buffer10km, currentPlano, ecoLayers]);
 
-  // Se cargan en el mapa los polígonos que intersecten el buffer base de 10km
   const vegNearby = useMemo(() => {
     if (!buffer10km || currentPlano !== 3 || !vegLayerData) return [];
     const nearby: Feature<Geometry, GeoJsonProperties>[] = [];
@@ -446,7 +588,7 @@ export const GeoViewer: React.FC = () => {
       try {
         if (turf.booleanIntersects(f as turf.CoordPair, buffer10km as turf.CoordPair)) {
           const props = f.properties || {};
-          const typeVeg = props.DESCRIPCIO || props.TIPO_VEG || props.TIPO || props.DESC || props.NOMBRE || 'Vegetación Indeterminada';
+          const typeVeg = props.DESCRIPCIO || props.descripcio || props.TIPO_VEG || props.tipo_veg || props.TIP_VEG || props.TIPO || props.DESC || props.NOMBRE || 'Vegetación Indeterminada';
           nearby.push({
             ...f,
             properties: {
@@ -456,9 +598,7 @@ export const GeoViewer: React.FC = () => {
             }
           });
         }
-      } catch {
-        // ignora fallos
-      }
+      } catch {}
     });
 
     return nearby;
@@ -470,7 +610,6 @@ export const GeoViewer: React.FC = () => {
     return ecoLayers.filter(layer => foundIds.has(layer.id));
   }, [ecoNearby, currentPlano, ecoLayers]);
 
-  // FILTRADO DINÁMICO DE SIMBOLOGÍA: Filtra exclusivamente los tipos de vegetación dentro del encuadre visible (viewport)
   const activeVegLegend = useMemo(() => {
     if (currentPlano !== 3 || vegNearby.length === 0) return [];
 
@@ -505,59 +644,6 @@ export const GeoViewer: React.FC = () => {
 
     return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
   }, [vegNearby, currentPlano, currentViewportBbox]);
-
-  const onEachUserFeature = useCallback(
-    (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
-      if (feature.properties && feature.geometry.type !== 'Point') {
-        const polyId = feature.properties.polyId || '';
-        
-        let areaHtml = '';
-        try {
-          const areaSqMeters = turf.area(feature);
-          areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
-        } catch (e) {
-          console.warn('Error calculando área:', e);
-        }
-
-        let propsHtml = '';
-        Object.entries(feature.properties).forEach(([key, val]) => {
-          if (key !== 'polyId' && key !== 'style' && val !== null && val !== undefined && val !== '') {
-            propsHtml += `<strong>${key}:</strong> ${val}<br/>`;
-          }
-        });
-
-        layer.bindPopup(
-          `<div style="font-size:0.85rem; min-width: 200px; max-height: 250px; overflow-y: auto;">
-            <strong style="color:#d63384; font-size:1rem;">Datos del Polígono ${polyId}</strong><br/>
-            <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
-            ${areaHtml}
-            ${propsHtml}
-          </div>`
-        );
-      }
-    },
-    []
-  );
-
-  const onEachVegFeature = useCallback(
-    (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
-      if (feature.properties) {
-        const p = feature.properties;
-        const desc = p._type;
-        const cve = p.CVE_VEG || p.CLAVE || '';
-        
-        layer.bindPopup(
-          `<div style="font-size:0.85rem; min-width: 200px;">
-            <strong style="color:#65a30d; font-size:0.95rem;">Información de Vegetación</strong><br/>
-            <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
-            <strong>Descripción:</strong> ${desc}<br/>
-            ${cve ? `<strong>Clave:</strong> ${cve}<br/>` : ''}
-          </div>`
-        );
-      }
-    },
-    []
-  );
 
   const handleDownloadImage = () => {
     if (!printRef.current) return;
@@ -771,6 +857,14 @@ export const GeoViewer: React.FC = () => {
 
                 <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                   
+                  {/* MOTOR DE CLIC: Atiende las coordenadas exactas de clic sin depender de los polígonos del Canvas */}
+                  <MapLayerClickHandler 
+                    plano={currentPlano} 
+                    geoJsonData={geoJsonData} 
+                    ecoNearby={ecoNearby} 
+                    vegNearby={vegNearby} 
+                  />
+
                   <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
                   <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
                   
@@ -789,13 +883,7 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {geoJsonData && (
-                    <GeoJSON key={`user-layer-${currentPlano}`} data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
-                  )}
-
-                  {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
-
-                  {/* PLANO 2: CAPAS ECOLÓGICAS */}
+                  {/* 1. PLANO 2: CAPAS ECOLÓGICAS */}
                   {currentPlano === 2 && ecoNearby.length > 0 && (
                     <GeoJSON
                       key={`eco-layers-${ecoNearby.length}`}
@@ -806,31 +894,10 @@ export const GeoViewer: React.FC = () => {
                         fillColor: feature?.properties?._color || '#198754',
                         fillOpacity: 0.25,
                       })}
-                      onEachFeature={(feature, layer) => {
-                        const p = feature.properties || {};
-                        const title = p._title || 'Capa Ecológica';
-                        const name = p.NOMBRE || p.NOM_AICA || p.nombre || p.Name || p.NAME || p.NOM || p.SITIO || 'Área Protegida';
-                        const cat = p.CAT_MANEJO || p.CATEGORIA || p.TIPO || p.PRIORIDAD || p.TIPO_ZONA || '';
-                        const estadoProp = p.ESTADOS || p.ESTADO || p.EDO || '';
-                        const region = p.REGION || p.Region || '';
-                        const sup = p.SUPERFICIE || p.HECTARES || p.AREA || '';
-
-                        layer.bindPopup(
-                          `<div style="font-size:0.85rem; min-width: 200px;">
-                            <strong style="color:#163f37; font-size:0.9rem;">${title}</strong><br/>
-                            <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
-                            <strong>Nombre:</strong> ${name}<br/>
-                            ${cat ? `<strong>Categoría:</strong> ${cat}<br/>` : ''}
-                            ${estadoProp ? `<strong>Estado:</strong> ${estadoProp}<br/>` : ''}
-                            ${region ? `<strong>Región:</strong> ${region}<br/>` : ''}
-                            ${sup ? `<strong>Superficie:</strong> ${Number(sup).toLocaleString('es-MX', { maximumFractionDigits: 2 })} ha` : ''}
-                          </div>`
-                        );
-                      }}
                     />
                   )}
 
-                  {/* PLANO 3: CAPAS DE VEGETACIÓN */}
+                  {/* 2. PLANO 3: CAPAS DE VEGETACIÓN */}
                   {currentPlano === 3 && vegNearby.length > 0 && (
                     <GeoJSON
                       key={`veg-layers-${selectedVegSerie}-${vegNearby.length}`}
@@ -841,9 +908,15 @@ export const GeoViewer: React.FC = () => {
                         fillColor: feature?.properties?._color || '#84cc16',
                         fillOpacity: 0.35,
                       })}
-                      onEachFeature={onEachVegFeature}
                     />
                   )}
+
+                  {/* 3. PREDIO INSPECCIONADO */}
+                  {geoJsonData && (
+                    <GeoJSON key={`user-layer-${currentPlano}`} data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} />
+                  )}
+
+                  {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
                 </MapContainer>
 
                 {/* LEYENDA DERECHA */}
