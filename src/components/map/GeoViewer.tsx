@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline } from 'react-leaflet';
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
@@ -45,9 +45,10 @@ const toDMS = (deg: number, isLat: boolean) => {
   return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
+// ESTILO DEL PREDIO: Sin relleno (fillOpacity: 0), solo contorno rojo
 const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
   if (!feature) return {};
-  return { color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0.1 };
+  return { color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0 };
 };
 
 const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.LatLng) => {
@@ -298,12 +299,11 @@ export const GeoViewer: React.FC = () => {
     return ecoLayers.filter(layer => foundIds.has(layer.id));
   }, [ecoNearby, currentPlano, ecoLayers]);
 
-  // Se modificó para extraer TODAS las propiedades del DBF y mostrarlas en el Popup
   const onEachUserFeature = useCallback(
     (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
       if (feature.properties && feature.geometry.type !== 'Point') {
         const polyId = feature.properties.polyId || '';
-        
+
         let areaHtml = '';
         try {
           const areaSqMeters = turf.area(feature);
@@ -312,7 +312,6 @@ export const GeoViewer: React.FC = () => {
           console.warn('Error calculando área:', e);
         }
 
-        // Construir HTML con todas las propiedades originales (del DBF/KML subido)
         let propsHtml = '';
         Object.entries(feature.properties).forEach(([key, val]) => {
           if (key !== 'polyId' && key !== 'style' && val !== null && val !== undefined && val !== '') {
@@ -320,7 +319,6 @@ export const GeoViewer: React.FC = () => {
           }
         });
 
-        // Popup interactivo enriquecido
         layer.bindPopup(
           `<div style="font-size:0.85rem; min-width: 200px; max-height: 250px; overflow-y: auto;">
             <strong style="color:#d63384; font-size:1rem;">Datos del Polígono ${polyId}</strong><br/>
@@ -331,8 +329,9 @@ export const GeoViewer: React.FC = () => {
         );
 
         if (currentPlano === 1 && polyId) {
+          // Etiqueta limpia: texto rojo con contorno blanco sin recuadro de fondo
           layer.bindTooltip(
-            `<div style="background-color: #ff0000; color: #ffffff; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.7rem; border: 1px solid white;">${polyId}</div>`,
+            `<div style="font-size:1.1rem; font-weight:900; color:#ff0000; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;">${polyId}</div>`,
             {
               permanent: true,
               direction: 'center',
@@ -467,7 +466,7 @@ export const GeoViewer: React.FC = () => {
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
-        
+
         {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
@@ -537,6 +536,7 @@ export const GeoViewer: React.FC = () => {
           )}
 
           <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center flex-grow-1" style={{ minHeight: '760px', padding: '40px', boxSizing: 'border-box' }}>
+
             <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
               {renderLabels()}
               {renderZebraFrame()}
@@ -554,6 +554,7 @@ export const GeoViewer: React.FC = () => {
                 </div>
 
                 <MapContainer center={mapCenter} zoom={6} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
+                  {/* Este TileLayer (satélite) se reemplazará por la URL dinámica del backend Sentinel-2 cuando esté listo */}
                   <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
                   <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 
@@ -564,7 +565,7 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* PLANO 1: Polígonos de inspección */}
+                  {/* PLANO 1: Polígonos de inspección sin relleno */}
                   {currentPlano === 1 && geoJsonData && (
                     <GeoJSON key="user-layer-1" data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
@@ -604,20 +605,14 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* PLANO 2: Punto Rojo institucional en el markerPane (Z-index superior) */}
+                  {/* PLANO 2: Punto Rojo institucional */}
                   {currentPlano === 2 && predioCentroid && (
                     <CircleMarker
                       center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
                       radius={6}
                       pathOptions={{ fillColor: '#ff0000', fillOpacity: 1, color: '#ffffff', weight: 2 }}
                       pane="markerPane"
-                    >
-                      <Popup>
-                        <div style={{ fontSize: '0.85rem' }}>
-                          <strong style={{ color: '#d63384' }}>Predio Inspeccionado</strong>
-                        </div>
-                      </Popup>
-                    </CircleMarker>
+                    />
                   )}
                 </MapContainer>
 
@@ -675,7 +670,7 @@ export const GeoViewer: React.FC = () => {
                             <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ff0000', border: '1.5px solid #ffffff', boxShadow: '0 0 0 1px #000', marginRight: '8px', flexShrink: 0 }}></div>
                             <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
                           </div>
-                          
+
                           {activeEcoLegend.length > 0 ? (
                             <>
                               <div className="fw-bold mb-1" style={{ fontSize: '0.65rem', color: '#163f37' }}>Relevancia ecológica intersectada:</div>
