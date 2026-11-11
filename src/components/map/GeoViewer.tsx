@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline, Tooltip } from 'react-leaflet';
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
@@ -45,7 +45,6 @@ const toDMS = (deg: number, isLat: boolean) => {
   return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
-// ESTILO DEL PREDIO: Sin relleno (fillOpacity: 0), solo contorno rojo
 const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
   if (!feature) return {};
   return { color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0 };
@@ -118,7 +117,7 @@ const MapUpdater: React.FC<{
     if (plano === 1) {
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 16 });
+      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 20 });
     } else if (plano === 2) {
       if (buffer10km) {
         const bbox = turf.bbox(buffer10km);
@@ -157,6 +156,54 @@ const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string;
         Estado: {estado || 'N/A'}<br />Municipio: {municipio || 'N/A'}
       </div>
     </div>
+  );
+};
+
+const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> = ({ data, plano }) => {
+  if (plano !== 1 || !data) return null;
+
+  return (
+    <>
+      {data.features.map((f, i) => {
+        if (f.geometry.type === 'Point') return null;
+        const polyId = f.properties?.polyId;
+        if (!polyId) return null;
+
+        try {
+          const centroid = turf.centroid(f);
+          const [lon, lat] = centroid.geometry.coordinates;
+          
+          // Patrón de ángulos intercalados para evitar superposición
+          const angles = [45, 135, 315, 225, 0, 180, 90, 270];
+          const angleDeg = angles[i % angles.length];
+          const angleRad = angleDeg * (Math.PI / 180);
+          
+          // Distancia reducida drásticamente (sin líneas) para que esté pegado al polígono
+          const baseDist = 0.00012; 
+          const multiplier = 1 + Math.floor(i / 8) * 0.2;
+          const offsetDist = baseDist * multiplier;
+
+          const labelLat = lat + Math.sin(angleRad) * offsetDist;
+          const labelLon = lon + Math.cos(angleRad) * offsetDist;
+
+          return (
+            <CircleMarker key={`smart-label-${polyId}`} center={[labelLat, labelLon]} radius={0} opacity={0} pane="markerPane">
+              <Tooltip 
+                permanent 
+                direction="center" 
+                className="bg-transparent border-0 shadow-none p-0"
+              >
+                <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#ff0000', textShadow: '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff' }}>
+                  {polyId}
+                </div>
+              </Tooltip>
+            </CircleMarker>
+          );
+        } catch {
+          return null;
+        }
+      })}
+    </>
   );
 };
 
@@ -303,7 +350,7 @@ export const GeoViewer: React.FC = () => {
     (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
       if (feature.properties && feature.geometry.type !== 'Point') {
         const polyId = feature.properties.polyId || '';
-
+        
         let areaHtml = '';
         try {
           const areaSqMeters = turf.area(feature);
@@ -327,23 +374,9 @@ export const GeoViewer: React.FC = () => {
             ${propsHtml}
           </div>`
         );
-
-        if (currentPlano === 1 && polyId) {
-          // SE REDUJO FUENTE A 0.85rem Y SE AGREGÓ OFFSET PARA MOVERLA HACIA AFUERA DEL POLÍGONO
-          layer.bindTooltip(
-            `<div style="font-size:0.85rem; font-weight:900; color:#ff0000; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;">${polyId}</div>`,
-            {
-              permanent: true,
-              direction: 'top',
-              offset: [15, -15],
-              className: 'bg-transparent border-0 shadow-none p-0',
-              opacity: 1,
-            }
-          );
-        }
       }
     },
-    [currentPlano]
+    []
   );
 
   const handleDownloadImage = () => {
@@ -467,7 +500,7 @@ export const GeoViewer: React.FC = () => {
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
-
+        
         {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
@@ -537,6 +570,7 @@ export const GeoViewer: React.FC = () => {
           )}
 
           <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center flex-grow-1" style={{ minHeight: '760px', padding: '40px', boxSizing: 'border-box' }}>
+            
             <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
               {renderLabels()}
               {renderZebraFrame()}
@@ -564,10 +598,13 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* PLANO 1: Polígonos de inspección */}
+                  {/* PLANO 1: Polígonos de inspección sin relleno */}
                   {currentPlano === 1 && geoJsonData && (
                     <GeoJSON key="user-layer-1" data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
+
+                  {/* PLANO 1: Etiquetas inteligentes expulsadas (Sin líneas, pegadas al polígono) */}
+                  <SmartLabels data={geoJsonData} plano={currentPlano} />
 
                   {/* PLANO 2: Capas Ecológicas interceptadas */}
                   {currentPlano === 2 && ecoNearby.length > 0 && (
@@ -604,7 +641,7 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* PLANO 2: Punto Rojo institucional en el markerPane (Z-index superior) */}
+                  {/* PLANO 2: Punto Rojo institucional */}
                   {currentPlano === 2 && predioCentroid && (
                     <CircleMarker
                       center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
@@ -669,7 +706,7 @@ export const GeoViewer: React.FC = () => {
                             <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ff0000', border: '1.5px solid #ffffff', boxShadow: '0 0 0 1px #000', marginRight: '8px', flexShrink: 0 }}></div>
                             <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
                           </div>
-
+                          
                           {activeEcoLegend.length > 0 ? (
                             <>
                               <div className="fw-bold mb-1" style={{ fontSize: '0.65rem', color: '#163f37' }}>Relevancia ecológica intersectada:</div>
