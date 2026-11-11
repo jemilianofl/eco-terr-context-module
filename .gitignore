@@ -24,3 +24,26 @@ dist-ssr
 *.sw?
 
 .env
+
+# Ignorar shapefiles y fuentes pesadas
+public/layers/**/*.shp
+public/layers/**/*.dbf
+public/layers/**/*.shx
+public/layers/**/*.prj
+public/layers/**/*.cpg
+public/layers/**/*.xml
+public/layers/**/*.html
+public/layers/**/*.png
+public/layers/**/*.txt
+public/layers/**/*.kmz
+public/layers/**/*.csv
+public/layers/**/*.pdf
+public/layers/**/*.htm
+public/layers/Edafologia/*
+public/layers/Uso\ de\ suelo\ y\ vegetacion/*
+public/layers/Unidad\ climaticas/*
+
+# Ignorar explícitamente los GeoJSON que superan los 100MB o son masivos
+public/layers/geojson/edafologia.geojson
+public/layers/geojson/usv_serie_*.geojson
+public/layers/geojson/climas.geojson

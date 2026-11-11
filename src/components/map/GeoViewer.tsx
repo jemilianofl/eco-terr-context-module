@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline, Popup } from 'react-leaflet';
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
@@ -298,27 +298,45 @@ export const GeoViewer: React.FC = () => {
     return ecoLayers.filter(layer => foundIds.has(layer.id));
   }, [ecoNearby, currentPlano, ecoLayers]);
 
+  // Se modificó para extraer TODAS las propiedades del DBF y mostrarlas en el Popup
   const onEachUserFeature = useCallback(
     (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
       if (feature.properties && feature.geometry.type !== 'Point') {
         const polyId = feature.properties.polyId || '';
+        
         let areaHtml = '';
         try {
           const areaSqMeters = turf.area(feature);
-          areaHtml = `<br/><strong>Superficie:</strong> ${areaSqMeters.toFixed(2)} m²`;
+          areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
         } catch (e) {
           console.warn('Error calculando área:', e);
         }
 
-        layer.bindPopup(`<strong>Polígono ${polyId}</strong>${areaHtml}`);
+        // Construir HTML con todas las propiedades originales (del DBF/KML subido)
+        let propsHtml = '';
+        Object.entries(feature.properties).forEach(([key, val]) => {
+          if (key !== 'polyId' && key !== 'style' && val !== null && val !== undefined && val !== '') {
+            propsHtml += `<strong>${key}:</strong> ${val}<br/>`;
+          }
+        });
+
+        // Popup interactivo enriquecido
+        layer.bindPopup(
+          `<div style="font-size:0.85rem; min-width: 200px; max-height: 250px; overflow-y: auto;">
+            <strong style="color:#d63384; font-size:1rem;">Datos del Polígono ${polyId}</strong><br/>
+            <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
+            ${areaHtml}
+            ${propsHtml}
+          </div>`
+        );
 
         if (currentPlano === 1 && polyId) {
           layer.bindTooltip(
-            `<div style="font-size:1.1rem; font-weight:900; color:#ff0000; text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff; margin-top: -10px;">${polyId}</div>`,
+            `<div style="background-color: #ff0000; color: #ffffff; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.7rem; border: 1px solid white;">${polyId}</div>`,
             {
               permanent: true,
               direction: 'center',
-              className: 'bg-transparent border-0 shadow-none',
+              className: 'bg-transparent border-0 shadow-none p-0',
               opacity: 1,
             }
           );
@@ -446,8 +464,6 @@ export const GeoViewer: React.FC = () => {
     return elements;
   };
 
-  // 1. EL CONTENEDOR PRINCIPAL SE ENCAPSULA: zIndex 1 + isolation para cortar las guerras de Z-Index con el Navbar.
-  // Se le da un minHeight y márgenes para que se comporte como un bloque independiente (Widget) entre el navbar y footer.
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
@@ -550,7 +566,7 @@ export const GeoViewer: React.FC = () => {
 
                   {/* PLANO 1: Polígonos de inspección */}
                   {currentPlano === 1 && geoJsonData && (
-                    <GeoJSON data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
+                    <GeoJSON key="user-layer-1" data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
 
                   {/* PLANO 2: Capas Ecológicas interceptadas */}
@@ -588,14 +604,20 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* PLANO 2: Punto Rojo institucional (Garantizado siempre arriba usando markerPane) */}
+                  {/* PLANO 2: Punto Rojo institucional en el markerPane (Z-index superior) */}
                   {currentPlano === 2 && predioCentroid && (
                     <CircleMarker
                       center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
                       radius={6}
                       pathOptions={{ fillColor: '#ff0000', fillOpacity: 1, color: '#ffffff', weight: 2 }}
                       pane="markerPane"
-                    />
+                    >
+                      <Popup>
+                        <div style={{ fontSize: '0.85rem' }}>
+                          <strong style={{ color: '#d63384' }}>Predio Inspeccionado</strong>
+                        </div>
+                      </Popup>
+                    </CircleMarker>
                   )}
                 </MapContainer>
 
@@ -685,9 +707,9 @@ export const GeoViewer: React.FC = () => {
             </div>
           </div>
 
-          {/* TOOLBAR INFERIOR */}
+          {/* TOOLBAR */}
           {geoJsonData && (
-            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-3 mx-auto shadow rounded w-100" style={{ maxWidth: '700px', borderTop: '4px solid #d6b56a', height: '60px' }}>
+            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-4 mx-auto shadow rounded w-100" style={{ maxWidth: '700px', borderTop: '4px solid #d6b56a', height: '60px' }}>
               <span className="fw-bold" style={{ fontSize: '0.9rem' }}>Plano activo:</span>
               <button
                 type="button"
