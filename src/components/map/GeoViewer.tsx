@@ -54,6 +54,20 @@ const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.
   return L.circleMarker(latlng, { radius: 5, fillColor: '#ff0000', color: '#ffffff', weight: 1.5, opacity: 1, fillOpacity: 1, pane: 'markerPane' });
 };
 
+// Generador de paleta de colores basada en texto para los tipos de vegetación
+const getColorForVegetation = (str: string) => {
+  const colors = [
+    '#a3e635', '#4ade80', '#fbbf24', '#f87171', '#60a5fa', '#c084fc', 
+    '#f472b6', '#fb923c', '#38bdf8', '#34d399', '#a78bfa', '#fbb6ce', 
+    '#86efac', '#fde047', '#14b8a6', '#f43f5e', '#8b5cf6', '#d946ef'
+  ];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+};
+
 const GraticuleEngine: React.FC = () => {
   const map = useMap();
   const [grid, setGrid] = useState<{ lats: number[]; lons: number[]; bounds: L.LatLngBounds | null }>({ lats: [], lons: [], bounds: null });
@@ -222,7 +236,6 @@ export const GeoViewer: React.FC = () => {
   const [sentinelMetadata, setSentinelMetadata] = useState<any>(null);
   const [useSentinel, setUseSentinel] = useState<boolean>(true);
 
-  // NUEVOS ESTADOS: Control de Vegetación (Plano 3)
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [vegLayerData, setVegLayerData] = useState<FeatureCollection | null>(null);
 
@@ -252,7 +265,6 @@ export const GeoViewer: React.FC = () => {
     return () => document.removeEventListener('mapFrameUpdated', handler);
   }, []);
 
-  // Efecto para capas ecológicas
   useEffect(() => {
     if (currentPlano === 2) {
       ecoLayers.forEach((layer) => {
@@ -270,10 +282,8 @@ export const GeoViewer: React.FC = () => {
     }
   }, [currentPlano, ecoLayers]);
 
-  // EFECTO NUEVO: Efecto para capa de vegetación seleccionada
   useEffect(() => {
     if (currentPlano === 3) {
-      // Limpiamos la capa actual al cambiar de serie para forzar re-render
       setVegLayerData(null);
       fetch(`/layers/geojson/usv_${selectedVegSerie}.geojson`)
         .then((res) => (res.ok ? res.json() : null))
@@ -310,8 +320,8 @@ export const GeoViewer: React.FC = () => {
 
       let polyIndex = 0;
       const cleanFeatures = (parsedData as FeatureCollection).features.map((f) => {
-        const cleanedF = turf.cleanCoords(f); 
-        const finalF = turf.truncate(cleanedF, { precision: 6, coordinates: 2 });
+        // CORRECCIÓN: Se eliminó turf.cleanCoords para no destruir vértices agudos y evitar suavizado extremo
+        const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
         if (finalF.geometry.type !== 'Point') {
           finalF.properties = finalF.properties || {};
           finalF.properties.polyId = String.fromCharCode(65 + polyIndex);
@@ -408,7 +418,7 @@ export const GeoViewer: React.FC = () => {
     return nearby;
   }, [buffer10km, currentPlano, ecoLayers]);
 
-  // MEMO NUEVO: Intersección con capa de vegetación (Plano 3)
+  // CORRECCIÓN: Asigna colores dinámicos basados en la descripción de la vegetación
   const vegNearby = useMemo(() => {
     if (!buffer10km || currentPlano !== 3 || !vegLayerData) return [];
     const nearby: Feature<Geometry, GeoJsonProperties>[] = [];
@@ -416,7 +426,16 @@ export const GeoViewer: React.FC = () => {
     vegLayerData.features.forEach((f) => {
       try {
         if (turf.booleanIntersects(f as turf.CoordPair, buffer10km as turf.CoordPair)) {
-          nearby.push(f);
+          const props = f.properties || {};
+          const typeVeg = props.DESCRIPCIO || props.TIPO_VEG || props.TIPO || props.DESC || props.NOMBRE || 'Vegetación Indeterminada';
+          nearby.push({
+            ...f,
+            properties: {
+              ...props,
+              _type: typeVeg,
+              _color: getColorForVegetation(typeVeg)
+            }
+          });
         }
       } catch {
         // ignora fallos
@@ -431,6 +450,19 @@ export const GeoViewer: React.FC = () => {
     const foundIds = new Set(ecoNearby.map(f => f.properties?._layerId));
     return ecoLayers.filter(layer => foundIds.has(layer.id));
   }, [ecoNearby, currentPlano, ecoLayers]);
+
+  // CORRECCIÓN: Genera la leyenda de vegetación agrupando por tipo y color
+  const activeVegLegend = useMemo(() => {
+    if (currentPlano !== 3 || vegNearby.length === 0) return [];
+    const uniqueTypes = new Map();
+    vegNearby.forEach(f => {
+      const typeStr = f.properties?._type;
+      if (typeStr && !uniqueTypes.has(typeStr)) {
+        uniqueTypes.set(typeStr, f.properties?._color);
+      }
+    });
+    return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
+  }, [vegNearby, currentPlano]);
 
   const onEachUserFeature = useCallback(
     (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
@@ -465,12 +497,11 @@ export const GeoViewer: React.FC = () => {
     []
   );
 
-  // CALLBACK NUEVO: Generador de Popups para la capa de Vegetación y Suelo
   const onEachVegFeature = useCallback(
     (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
       if (feature.properties) {
         const p = feature.properties;
-        const desc = p.DESCRIPCIO || p.TIPO_VEG || p.TIPO || p.DESC || p.NOMBRE || 'Vegetación / Suelo';
+        const desc = p._type;
         const cve = p.CVE_VEG || p.CLAVE || '';
         
         layer.bindPopup(
@@ -715,12 +746,13 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* POLIGONO BASE DE INSPECCION EN EL PLANO 1 */}
-                  {currentPlano === 1 && geoJsonData && (
-                    <GeoJSON key="user-layer-1" data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
+                  {/* CORRECCIÓN: Dibuja el polígono de inspección en TODOS los planos (sin relleno, contorno rojo) */}
+                  {geoJsonData && (
+                    <GeoJSON key={`user-layer-${currentPlano}`} data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
 
-                  <SmartLabels data={geoJsonData} plano={currentPlano} />
+                  {/* Etiquetas exclusivas del Plano 1 */}
+                  {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
 
                   {/* PLANO 2: CAPAS ECOLÓGICAS */}
                   {currentPlano === 2 && ecoNearby.length > 0 && (
@@ -762,23 +794,13 @@ export const GeoViewer: React.FC = () => {
                     <GeoJSON
                       key={`veg-layers-${selectedVegSerie}-${vegNearby.length}`}
                       data={turf.featureCollection(vegNearby)}
-                      style={() => ({
-                        color: '#65a30d',
+                      style={(feature) => ({
+                        color: feature?.properties?._color || '#65a30d',
                         weight: 2,
-                        fillColor: '#84cc16',
+                        fillColor: feature?.properties?._color || '#84cc16',
                         fillOpacity: 0.35,
                       })}
                       onEachFeature={onEachVegFeature}
-                    />
-                  )}
-
-                  {/* PUNTO DE REFERENCIA DEL PREDIO EN PLANO 2 y 3 */}
-                  {(currentPlano === 2 || currentPlano === 3) && predioCentroid && (
-                    <CircleMarker
-                      center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
-                      radius={6}
-                      pathOptions={{ fillColor: '#ff0000', fillOpacity: 1, color: '#ffffff', weight: 2 }}
-                      pane="markerPane"
                     />
                   )}
                 </MapContainer>
@@ -820,7 +842,7 @@ export const GeoViewer: React.FC = () => {
                           <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
                           <div className="p-2">
                             <div className="d-flex align-items-center mb-1">
-                              <div style={{ width: '12px', height: '12px', backgroundColor: '#ff0000', border: '1px solid #000', marginRight: '8px' }}></div>
+                              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px' }}></div>
                               <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono(s) Inspeccionado(s)</span>
                             </div>
                           </div>
@@ -846,7 +868,7 @@ export const GeoViewer: React.FC = () => {
                           <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
                           <div className="p-2">
                             <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-                              <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ff0000', border: '1.5px solid #ffffff', boxShadow: '0 0 0 1px #000', marginRight: '8px', flexShrink: 0 }}></div>
+                              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
                               <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
                             </div>
                             
@@ -896,14 +918,26 @@ export const GeoViewer: React.FC = () => {
                           <div className="p-2 border-top border-dark">
                             <div className="fw-bold mb-2" style={{ fontSize: '0.65rem' }}>Simbología</div>
                             <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-                              <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ff0000', border: '1.5px solid #ffffff', boxShadow: '0 0 0 1px #000', marginRight: '8px', flexShrink: 0 }}></div>
+                              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
                               <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
                             </div>
-                            <div className="d-flex align-items-center">
-                              <div style={{ width: '12px', height: '12px', border: `2px solid #65a30d`, backgroundColor: `#84cc16`, marginRight: '8px', flexShrink: 0 }}></div>
-                              <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>Uso de Suelo y Vegetación</span>
-                            </div>
+                            
+                            {/* CORRECCIÓN: Lista de tipos de vegetación con colores dinámicos */}
+                            {activeVegLegend.length > 0 ? (
+                              activeVegLegend.map((item, idx) => (
+                                <div key={`sym-veg-${idx}`} className="d-flex align-items-center mt-1">
+                                  <div style={{ width: '12px', height: '12px', border: `2px solid ${item.color}`, backgroundColor: `${item.color}80`, marginRight: '8px', flexShrink: 0 }}></div>
+                                  <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>{item.label}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>Buscando vegetación en el área...</div>
+                            )}
                           </div>
+                        </div>
+                        
+                        <div className="border border-dark mt-2 p-1 text-center" style={{ fontSize: '0.65rem' }}>
+                          <span className="fw-bold">Fecha de Inspección:</span> {previewData.targetDate || 'N/A'}
                         </div>
                       </>
                     )}
@@ -918,7 +952,7 @@ export const GeoViewer: React.FC = () => {
             </div>
           </div>
 
-          {/* TOOLBAR INFERIOR CON LOS NOMBRES DESCRIPTIVOS COMPLETOS */}
+          {/* TOOLBAR */}
           {geoJsonData && (
             <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '900px', borderTop: '4px solid #d6b56a', height: '60px' }}>
               <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
