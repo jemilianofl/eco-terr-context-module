@@ -117,7 +117,8 @@ const MapUpdater: React.FC<{
     if (plano === 1) {
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 20 });
+      // Límite de auto-zoom al nivel 18 (escala ~50m)
+      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
     } else if (plano === 2) {
       if (buffer10km) {
         const bbox = turf.bbox(buffer10km);
@@ -129,12 +130,14 @@ const MapUpdater: React.FC<{
   return null;
 };
 
-const InvalidateMap: React.FC = () => {
+const InvalidateMap: React.FC<{ dependencies: any[] }> = ({ dependencies }) => {
   const map = useMap();
   useEffect(() => {
-    const timer = setTimeout(() => { map.invalidateSize(); }, 400);
+    const timer = setTimeout(() => { 
+      map.invalidateSize(true); 
+    }, 400);
     return () => clearTimeout(timer);
-  }, [map]);
+  }, [map, ...dependencies]);
   return null;
 };
 
@@ -147,7 +150,7 @@ const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string;
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
       <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
         <MapContainer center={center} zoom={6} zoomControl={false} dragging={false} scrollWheelZoom={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
-          <InvalidateMap />
+          <InvalidateMap dependencies={[]} />
           <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
           <CircleMarker center={center} radius={4} color="black" weight={1} fillColor="red" fillOpacity={1} />
         </MapContainer>
@@ -277,17 +280,16 @@ export const GeoViewer: React.FC = () => {
         parsedData = { type: 'FeatureCollection', features: [parsedData as Feature] };
       }
 
-      // LIMPIEZA DE COORDENADAS: Forzamos la re-proyección y truncamos decimales excesivos
-      // para anclar el polígono firmemente al lienzo de Leaflet y evitar desplazamientos en zoom.
       let polyIndex = 0;
       const cleanFeatures = (parsedData as FeatureCollection).features.map((f) => {
-        const cleanF = turf.truncate(f, { precision: 6, coordinates: 2 });
-        if (cleanF.geometry.type !== 'Point') {
-          cleanF.properties = cleanF.properties || {};
-          cleanF.properties.polyId = String.fromCharCode(65 + polyIndex);
+        const cleanedF = turf.cleanCoords(f); 
+        const finalF = turf.truncate(cleanedF, { precision: 6, coordinates: 2 });
+        if (finalF.geometry.type !== 'Point') {
+          finalF.properties = finalF.properties || {};
+          finalF.properties.polyId = String.fromCharCode(65 + polyIndex);
           polyIndex++;
         }
-        return cleanF;
+        return finalF;
       });
 
       setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures } as FeatureCollection);
@@ -627,15 +629,18 @@ export const GeoViewer: React.FC = () => {
                   </svg>
                 </div>
 
-                <MapContainer center={mapCenter} zoom={6} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
+                {/* LIMITADOR GLOBAL A NIVEL 18 (Escala de 50 metros) PARA EVITAR DISTORSIONES */}
+                <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
+                  
+                  <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen]} />
                   
                   {useSentinel && sentinelUrl && currentPlano === 1 ? (
-                    <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={20} />
+                    <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
                   ) : (
-                    <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={20} />
+                    <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
                   )}
                   
-                  <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={20} />
+                  <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
 
                   <GraticuleEngine />
                   <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} />
