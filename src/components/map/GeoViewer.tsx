@@ -177,7 +177,6 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
           const angleDeg = angles[i % angles.length];
           const angleRad = angleDeg * (Math.PI / 180);
           
-          // Separación incrementada y multiplicador ajustado para dar más margen
           const baseDist = 0.00025; 
           const multiplier = 1 + Math.floor(i / 8) * 0.3;
           const offsetDist = baseDist * multiplier;
@@ -192,7 +191,6 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
                 direction="center" 
                 className="bg-transparent border-0 shadow-none p-0"
               >
-                {/* Tamaño de fuente reducido a 0.85rem para evitar colisiones */}
                 <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#ff0000', textShadow: '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff' }}>
                   {polyId}
                 </div>
@@ -217,6 +215,10 @@ export const GeoViewer: React.FC = () => {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  
+  const [sentinelUrl, setSentinelUrl] = useState<string | null>(null);
+  const [sentinelMetadata, setSentinelMetadata] = useState<any>(null);
+  const [useSentinel, setUseSentinel] = useState<boolean>(true);
 
   const [ecoLayers, setEcoLayers] = useState<EcoLayerItem[]>([
     { id: 'aicas', title: 'Área de Importancia para la Conservación de las Aves (AICA)', color: '#d63384', data: null },
@@ -275,16 +277,20 @@ export const GeoViewer: React.FC = () => {
         parsedData = { type: 'FeatureCollection', features: [parsedData as Feature] };
       }
 
+      // LIMPIEZA DE COORDENADAS: Forzamos la re-proyección y truncamos decimales excesivos
+      // para anclar el polígono firmemente al lienzo de Leaflet y evitar desplazamientos en zoom.
       let polyIndex = 0;
-      (parsedData as FeatureCollection).features.forEach((f) => {
-        if (f.geometry.type !== 'Point') {
-          f.properties = f.properties || {};
-          f.properties.polyId = String.fromCharCode(65 + polyIndex);
+      const cleanFeatures = (parsedData as FeatureCollection).features.map((f) => {
+        const cleanF = turf.truncate(f, { precision: 6, coordinates: 2 });
+        if (cleanF.geometry.type !== 'Point') {
+          cleanF.properties = cleanF.properties || {};
+          cleanF.properties.polyId = String.fromCharCode(65 + polyIndex);
           polyIndex++;
         }
+        return cleanF;
       });
 
-      setGeoJsonData(parsedData as FeatureCollection);
+      setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures } as FeatureCollection);
       setIsSidebarOpen(false);
     } catch (err) {
       console.warn('Error procesando el archivo espacial:', err);
@@ -311,6 +317,40 @@ export const GeoViewer: React.FC = () => {
       return null;
     }
   }, [geoJsonData]);
+
+  useEffect(() => {
+    if (!predioCentroid || !previewData?.targetDate) return;
+
+    const fetchSentinelData = async () => {
+      try {
+        const [lng, lat] = predioCentroid.geometry.coordinates;
+        const backendUrl = import.meta.env.VITE_SENTINEL_API_URL || 'http://localhost:3000';
+        const response = await fetch(`${backendUrl}/sentinel/tiles?lat=${lat}&lng=${lng}&date=${previewData.targetDate}`);
+        
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.tileUrl) {
+            setSentinelUrl(result.tileUrl);
+            setSentinelMetadata(result.metadata);
+            setUseSentinel(true);
+          }
+        } else {
+          console.warn("Backend Sentinel respondió con error, usando mapa por defecto.");
+          setSentinelUrl(null);
+          setSentinelMetadata(null);
+          setUseSentinel(false);
+        }
+      } catch (error) {
+        console.error("Error contactando al backend de Sentinel:", error);
+        setSentinelUrl(null);
+        setSentinelMetadata(null);
+        setUseSentinel(false);
+      }
+    };
+
+    fetchSentinelData();
+  }, [predioCentroid, previewData?.targetDate]);
+
 
   const ecoNearby = useMemo(() => {
     if (!buffer10km || currentPlano !== 2) return [];
@@ -588,8 +628,14 @@ export const GeoViewer: React.FC = () => {
                 </div>
 
                 <MapContainer center={mapCenter} zoom={6} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
-                  <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
-                  <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
+                  
+                  {useSentinel && sentinelUrl && currentPlano === 1 ? (
+                    <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={20} />
+                  ) : (
+                    <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={20} />
+                  )}
+                  
+                  <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={20} />
 
                   <GraticuleEngine />
                   <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} />
@@ -598,15 +644,12 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* PLANO 1: Polígonos de inspección sin relleno */}
                   {currentPlano === 1 && geoJsonData && (
                     <GeoJSON key="user-layer-1" data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} onEachFeature={onEachUserFeature} />
                   )}
 
-                  {/* PLANO 1: Etiquetas inteligentes expulsadas alternadamente */}
                   <SmartLabels data={geoJsonData} plano={currentPlano} />
 
-                  {/* PLANO 2: Capas Ecológicas interceptadas */}
                   {currentPlano === 2 && ecoNearby.length > 0 && (
                     <GeoJSON
                       key={`eco-layers-${ecoNearby.length}`}
@@ -641,7 +684,6 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* PLANO 2: Punto Rojo institucional */}
                   {currentPlano === 2 && predioCentroid && (
                     <CircleMarker
                       center={[predioCentroid.geometry.coordinates[1], predioCentroid.geometry.coordinates[0]]}
@@ -673,6 +715,17 @@ export const GeoViewer: React.FC = () => {
                             <p className="mb-0"><strong>Fecha de Inspección:</strong> {previewData.targetDate || 'N/A'}</p>
                           </div>
                         </div>
+
+                        {useSentinel && sentinelMetadata && (
+                          <div className="bg-white mb-2 border border-dark">
+                            <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem', padding: '2px' }}>Metadatos Satelitales</div>
+                            <div className="p-2 text-center" style={{ fontSize: '0.60rem' }}>
+                              <p className="mb-1"><strong>Sensor:</strong> {sentinelMetadata.platform}</p>
+                              <p className="mb-1"><strong>Captura:</strong> {new Date(sentinelMetadata.date).toLocaleDateString('es-MX')}</p>
+                              <p className="mb-0"><strong>Nubosidad:</strong> {Number(sentinelMetadata.cloudCover).toFixed(2)}%</p>
+                            </div>
+                          </div>
+                        )}
 
                         <div className="bg-white mb-2 border border-dark">
                           <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
@@ -740,22 +793,36 @@ export const GeoViewer: React.FC = () => {
 
           {/* TOOLBAR */}
           {geoJsonData && (
-            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-4 mx-auto shadow rounded w-100" style={{ maxWidth: '700px', borderTop: '4px solid #d6b56a', height: '60px' }}>
-              <span className="fw-bold" style={{ fontSize: '0.9rem' }}>Plano activo:</span>
+            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-3 ignore-print mb-4 mx-auto shadow rounded w-100" style={{ maxWidth: '800px', borderTop: '4px solid #d6b56a', height: '60px' }}>
+              <span className="fw-bold me-2" style={{ fontSize: '0.9rem' }}>Vistas:</span>
               <button
                 type="button"
                 onClick={() => setCurrentPlano(1)}
                 className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
               >
-                <i className="bi bi-geo-alt me-1"></i> Plano 1 (Ubicación Geográfica)
+                <i className="bi bi-geo-alt me-1"></i> Plano 1
               </button>
               <button
                 type="button"
                 onClick={() => setCurrentPlano(2)}
                 className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
               >
-                <i className="bi bi-tree me-1"></i> Plano 2 (Relevancia Ecológica)
+                <i className="bi bi-tree me-1"></i> Plano 2
               </button>
+              
+              {sentinelUrl && currentPlano === 1 && (
+                <>
+                  <div className="vr bg-light mx-2" style={{ opacity: 0.5, height: '24px' }}></div>
+                  <button
+                    type="button"
+                    onClick={() => setUseSentinel(!useSentinel)}
+                    className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}
+                    title="Alterna entre imagen satelital de la fecha exacta o imagen de alta resolución"
+                  >
+                    <i className="bi bi-satellite me-1"></i> {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
