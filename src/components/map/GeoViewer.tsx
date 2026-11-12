@@ -191,6 +191,7 @@ export const GeoViewer: React.FC = () => {
   const [currentPlano, setCurrentPlano] = useState<number>(1);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
+  const [mapRef, setMapRef] = useState<L.Map | null>(null); // <--- NUEVA LÍNEA
   const printRef = useRef<HTMLDivElement>(null);
 
   const [recenterTrigger, setRecenterTrigger] = useState<number>(0);
@@ -270,29 +271,40 @@ export const GeoViewer: React.FC = () => {
     setIsExporting(true);
     window.scrollTo(0, 0);
 
-    // 1. APLANAR SÓLO LA CAPA MADRE PARA EVITAR EL DOBLE DESFASE
-    const mapPane = document.querySelector('.leaflet-map-pane') as HTMLElement | null;
-    let originalTransform = '';
-    let originalLeft = '';
-    let originalTop = '';
+    // 1. DESTRUCCIÓN TEMPORAL DE 3D EN LEAFLET:
+    // Convertimos cada transform 3D en posiciones left/top absolutas
+    // Esto evita los recortes grises/blancos y el desfase de los mosaicos.
+    const originalStyles: { el: HTMLElement; transform: string; left: string; top: string }[] = [];
 
-    if (mapPane) {
-      originalTransform = mapPane.style.transform;
-      originalLeft = mapPane.style.left;
-      originalTop = mapPane.style.top;
-      
-      const match = originalTransform.match(/translate(?:3d)?\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px/);
-      if (match) {
-        mapPane.style.setProperty('transform', 'none', 'important');
-        const currentLeft = parseFloat(originalLeft || '0');
-        const currentTop = parseFloat(originalTop || '0');
-        mapPane.style.setProperty('left', `${currentLeft + parseFloat(match[1])}px`, 'important');
-        mapPane.style.setProperty('top', `${currentTop + parseFloat(match[2])}px`, 'important');
-      }
-    }
+    const flattenTransform = (selector: string) => {
+      const elements = document.querySelectorAll(selector) as NodeListOf<HTMLElement>;
+      elements.forEach(el => {
+        const transform = el.style.transform;
+        if (!transform || transform === 'none') return;
+        
+        // Captura translate(x,y) y translate3d(x,y,z)
+        const match = transform.match(/translate(?:3d)?\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px/);
+        if (match) {
+          originalStyles.push({ el, transform: el.style.transform, left: el.style.left, top: el.style.top });
+          
+          const currentLeft = parseFloat(el.style.left || '0');
+          const currentTop = parseFloat(el.style.top || '0');
+          
+          el.style.setProperty('transform', 'none', 'important');
+          el.style.setProperty('left', `${currentLeft + parseFloat(match[1])}px`, 'important');
+          el.style.setProperty('top', `${currentTop + parseFloat(match[2])}px`, 'important');
+        }
+      });
+    };
 
+    // Aplanamos absolutamente todo: paneles base, contenedores y cada cuadrito de imagen
+    flattenTransform('.leaflet-pane');
+    flattenTransform('.leaflet-tile');
+    
+    // 2. CSS Estricto para bloquear el 3D y forzar el renderizado
     const printStyle = document.createElement('style');
     printStyle.innerHTML = `
+      .leaflet-pane, .leaflet-tile { transform: none !important; }
       .leaflet-tile-pane { z-index: 200 !important; }
       .leaflet-overlay-pane { z-index: 400 !important; opacity: 1 !important; visibility: visible !important; }
       .leaflet-overlay-pane svg { z-index: 400 !important; opacity: 1 !important; }
@@ -303,13 +315,14 @@ export const GeoViewer: React.FC = () => {
     `;
     document.head.appendChild(printStyle);
 
+    // 3. Esperamos 1 segundo para que el DOM se reacomode físicamente en 2D
     setTimeout(() => {
       html2canvas(printRef.current!, {
         useCORS: true,
         allowTaint: false,
-        scale: 2, 
+        scale: 2,
         scrollY: 0,
-        scrollX: 0, 
+        scrollX: 0,
         backgroundColor: '#ffffff',
         width: printRef.current?.offsetWidth,
         height: printRef.current?.offsetHeight,
@@ -327,15 +340,15 @@ export const GeoViewer: React.FC = () => {
         alert('Error al generar la imagen. Intenta alejar un poco el zoom.');
       }).finally(() => {
         setIsExporting(false);
+        // 4. Restaurar el mapa a su estado original (3D interactivo) sin que el usuario lo note
         if (document.head.contains(printStyle)) document.head.removeChild(printStyle);
-        // 2. RESTAURAR CAPA MADRE A LA NORMALIDAD
-        if (mapPane) {
-          mapPane.style.transform = originalTransform;
-          mapPane.style.left = originalLeft;
-          mapPane.style.top = originalTop;
-        }
+        originalStyles.forEach(({ el, transform, left, top }) => {
+          el.style.transform = transform;
+          el.style.left = left;
+          el.style.top = top;
+        });
       });
-    }, 1500); 
+    }, 1000);
   };
 
   const { totalArea, areaDetails } = useMemo(() => {
@@ -501,8 +514,8 @@ export const GeoViewer: React.FC = () => {
                   </output>
                 )}
 
-                {/* CRÍTICO: preferCanvas={true} garantiza que el SVG se dibuje en un canvas nativo y elimine el desfase de html2canvas */}
-                <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={false} style={{ height: '100%', width: '100%' }}>
+                {/* Añade ref={setMapRef} al MapContainer */}
+                <MapContainer ref={setMapRef} center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={false} style={{ height: '100%', width: '100%' }}>
                   <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
 
                   {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
