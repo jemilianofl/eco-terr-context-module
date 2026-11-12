@@ -40,7 +40,6 @@ export const LegendUbicacion = ({ previewData, sentinelMetadata, areaDetails, to
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}>Simbología</div>
       <div className="p-2">
         <div className="d-flex align-items-center mb-1">
-          {/* Se eliminó el fondo rojo, ahora es transparente */}
           <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px' }}></div>
           <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono(s) Inspeccionado(s)</span>
         </div>
@@ -64,14 +63,41 @@ interface LegendEcologicaProps {
   ecoNearby: Feature[];
   isLoading: boolean;
   targetDate?: string;
+  currentViewportBbox: [number, number, number, number] | null;
 }
 
-// Se agregó targetDate a los props
-export const LegendEcologica = ({ ecoNearby, isLoading, targetDate }: LegendEcologicaProps) => {
+export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewportBbox }: LegendEcologicaProps) => {
   const activeEcoLegend = useMemo(() => {
-    const foundIds = new Set(ecoNearby.map((f) => f.properties?._layerId));
+    if (ecoNearby.length === 0) return [];
+    
+    let viewportPolygon: any = null;
+    if (currentViewportBbox) {
+      try {
+        viewportPolygon = turf.bboxPolygon(currentViewportBbox);
+      } catch {
+        viewportPolygon = null;
+      }
+    }
+
+    const foundIds = new Set<string>();
+    
+    ecoNearby.forEach((f) => {
+      let isVisible = true;
+      if (viewportPolygon) {
+        try {
+          isVisible = turf.booleanIntersects(f as any, viewportPolygon);
+        } catch {
+          isVisible = false;
+        }
+      }
+      
+      if (isVisible && f.properties?._layerId) {
+        foundIds.add(f.properties._layerId);
+      }
+    });
+    
     return ECO_LAYERS_CONFIG.filter((layer) => foundIds.has(layer.id));
-  }, [ecoNearby]);
+  }, [ecoNearby, currentViewportBbox]);
 
   return (
     <>
@@ -79,7 +105,6 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate }: LegendEcol
         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}>Simbología</div>
         <div className="p-2">
           <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-            {/* Se eliminó el fondo rojo, ahora es transparente */}
             <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
             <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
           </div>
@@ -93,13 +118,12 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate }: LegendEcol
             ))
           ) : (
             <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
-              {isLoading ? 'Buscando intersecciones...' : 'Ningún polígono ecológico a 10 km'}
+              {isLoading ? 'Buscando intersecciones...' : 'Sin polígonos ecológicos visibles en encuadre'}
             </output>
           )}
         </div>
       </div>
       
-      {/* Se agregó el cuadro con la fecha de inspección */}
       <div className="border border-dark mb-2 p-1 text-center bg-white" style={{ fontSize: '0.65rem' }}>
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
@@ -115,7 +139,6 @@ interface LegendVegetacionProps {
   targetDate?: string;
 }
 
-// Se agregó targetDate a los props
 export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSerie, currentViewportBbox, targetDate }: LegendVegetacionProps) => {
   const activeVegLegend = useMemo(() => {
     if (vegNearby.length === 0) return [];
@@ -160,10 +183,15 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
           <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
             
             <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-              {/* Se eliminó el fondo rojo, ahora es transparente */}
               <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
               <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
             </div>
+
+            {activeVegLegend.length === 0 && !isLoading && (
+              <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
+                Sin coberturas visibles en encuadre
+              </output>
+            )}
 
             {activeVegLegend.map((item) => (
               <div key={item.label} className="d-flex align-items-center mt-1">
@@ -175,7 +203,6 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
         </div>
       </div>
 
-      {/* Se agregó el cuadro con la fecha de inspección */}
       <div className="border border-dark mb-2 p-1 text-center bg-white" style={{ fontSize: '0.65rem' }}>
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>

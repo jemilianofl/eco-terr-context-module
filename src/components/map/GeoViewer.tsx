@@ -8,7 +8,6 @@ import L from 'leaflet';
 import html2canvas from 'html2canvas';
 import * as turf from '@turf/turf';
 
-// Archivos de configuración y componentes modulares
 import { toDMS } from '../../config/mapConfig';
 import { useSentinelData, useEcoLayers, useVegetationLayers } from '../../hooks/useMapLayers';
 import { UserPolygonLayer, EcoLayer, VegLayer } from './MapLayers';
@@ -16,7 +15,6 @@ import { LegendUbicacion, LegendEcologica, LegendVegetacion } from './MapLegends
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
-// Bypass de propiedad de solo lectura en Leaflet
 (L.Browser as unknown as { any3d: boolean }).any3d = false;
 
 interface FormData {
@@ -36,7 +34,6 @@ interface FrameData {
   yTicks: { lat: number; y: number }[];
 }
 
-// --- UTILIDADES DEL MAPA COMPARTIDAS ---
 const ViewportWatcher: React.FC<{ onBoundsChange: (bbox: [number, number, number, number]) => void }> = ({ onBoundsChange }) => {
   const map = useMap();
   const updateBounds = useCallback(() => {
@@ -94,11 +91,20 @@ const GraticuleEngine: React.FC = () => {
   );
 };
 
-const MapUpdater: React.FC<{ data: FeatureCollection | null; plano: number; buffer10km: Feature | null }> = ({ data, plano, buffer10km }) => {
+const MapUpdater: React.FC<{ data: FeatureCollection | null; plano: number; buffer10km: Feature | null; trigger: number }> = ({ data, plano, buffer10km, trigger }) => {
   const map = useMap();
   useEffect(() => {
     if (!data || data.features.length === 0) return;
     const paddingOpts = { paddingBottomRight: [330, 30] as [number, number], paddingTopLeft: [40, 40] as [number, number] };
+    
+    // Si se activa el botón de "Centrar", enfocamos estrictamente en el polígono del usuario
+    if (trigger > 0) {
+      const layer = L.geoJSON(data as GeoJsonObject);
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 16 });
+      return;
+    }
+
     if (plano === 1) {
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
@@ -107,7 +113,7 @@ const MapUpdater: React.FC<{ data: FeatureCollection | null; plano: number; buff
       const bbox = turf.bbox(buffer10km);
       map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
     }
-  }, [data, plano, buffer10km, map]);
+  }, [data, plano, buffer10km, map, trigger]);
   return null;
 };
 
@@ -150,8 +156,7 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
         const polyId = f.properties?.polyId;
         if (!polyId) return null;
         try {
-          // @ts-expect-error ignoramos tipado estricto para turf.centroid interno
-          const centroid = turf.centroid(f);
+          const centroid = turf.centroid(f as any);
           const [lon, lat] = centroid.geometry.coordinates;
           const angles = [45, 135, 315, 225, 0, 180, 90, 270];
           const angleRad = angles[i % angles.length] * (Math.PI / 180);
@@ -184,7 +189,8 @@ export const GeoViewer: React.FC = () => {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
-
+  
+  const [recenterTrigger, setRecenterTrigger] = useState<number>(0);
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
 
@@ -205,15 +211,11 @@ export const GeoViewer: React.FC = () => {
   const predioCentroid = useMemo(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
     try {
-      // @ts-expect-error ignoramos tipado estricto para turf.centroid interno
-      return turf.centroid(geoJsonData);
+      return turf.centroid(geoJsonData as any);
     } catch { return null; }
   }, [geoJsonData]);
 
-  // Consumo de Custom Hooks
   const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
-  
-  // Eliminamos currentPlano de la firma de los hooks para que carguen en segundo plano
   const { ecoNearby, isLoadingEco } = useEcoLayers(buffer10km);
   const { vegNearby, isLoadingVeg } = useVegetationLayers(buffer10km, selectedVegSerie);
 
@@ -298,8 +300,7 @@ export const GeoViewer: React.FC = () => {
       if (f.geometry.type === 'Point') return;
       const polyId = f.properties?.polyId;
       try {
-        // @ts-expect-error ignoramos tipado estricto para turf.area interno
-        const a = turf.area(f);
+        const a = turf.area(f as any);
         areaSum += a;
         if (polyId) details.push({ name: `Polígono ${polyId}`, area: a.toFixed(2) });
       } catch { /* ignored */ }
@@ -367,7 +368,7 @@ export const GeoViewer: React.FC = () => {
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
-
+        
         {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
@@ -467,13 +468,12 @@ export const GeoViewer: React.FC = () => {
                   <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
 
                   <GraticuleEngine />
-                  <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} />
+                  <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} trigger={recenterTrigger} />
 
                   <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* Aquí está la clave: key con el id del plano para que Leaflet remonte la capa al cambiar de vista */}
                   {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
 
                   {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
@@ -492,7 +492,7 @@ export const GeoViewer: React.FC = () => {
                     <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
                     {currentPlano === 1 && <LegendUbicacion previewData={previewData as any} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
-                    {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} />}
+                    {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
                     {currentPlano === 3 && <LegendVegetacion vegNearby={vegNearby} selectedVegSerie={selectedVegSerie} setSelectedVegSerie={setSelectedVegSerie} currentViewportBbox={currentViewportBbox} targetDate={previewData.targetDate} />}
 
                     <div className="bg-white mb-2 border border-dark mt-2">
@@ -516,6 +516,12 @@ export const GeoViewer: React.FC = () => {
               </button>
               <button type="button" onClick={() => setCurrentPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
+              </button>
+
+              <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
+              
+              <button type="button" onClick={() => setRecenterTrigger(prev => prev + 1)} className="btn btn-sm btn-outline-warning" title="Encuadrar la vista sobre el polígono inspeccionado">
+                <i className="bi bi-arrows-collapse me-1"></i> Centrar Polígono
               </button>
 
               {sentinelUrl && currentPlano === 1 && (

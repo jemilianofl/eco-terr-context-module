@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import * as turf from '@turf/turf';
-import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import { queryFgbLayer } from '../utils/fgbReader';
 import { ECO_LAYERS_CONFIG, getColorForVegetation } from '../config/mapConfig';
 
@@ -36,13 +35,11 @@ export const useSentinelData = (predioCentroid: any, targetDate: string | undefi
   return { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel };
 };
 
-// Quitamos currentPlano de los parámetros
 export const useEcoLayers = (buffer10km: any) => {
   const [ecoNearby, setEcoNearby] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    // Ya no bloqueamos la consulta por plano. Si hay buffer, buscamos.
     if (!buffer10km) return;
     let isCancelled = false;
     
@@ -74,13 +71,11 @@ export const useEcoLayers = (buffer10km: any) => {
   return { ecoNearby, isLoadingEco: isLoading };
 };
 
-// Quitamos currentPlano de los parámetros
 export const useVegetationLayers = (buffer10km: any, selectedVegSerie: string) => {
   const [vegNearby, setVegNearby] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    // Ya no bloqueamos la consulta por plano.
     if (!buffer10km) return;
     let isCancelled = false;
     
