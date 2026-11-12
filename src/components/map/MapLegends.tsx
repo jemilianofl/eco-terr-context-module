@@ -16,6 +16,15 @@ interface LegendUbicacionProps {
   useSentinel: boolean;
 }
 
+interface LegendVegetacionProps {
+  vegNearby: Feature[];
+  selectedVegSerie: string;
+  setSelectedVegSerie: (val: string) => void;
+  currentViewportBbox: [number, number, number, number] | null;
+  targetDate?: string;
+  isLoading: boolean;
+}
+
 export const LegendUbicacion = ({ previewData, sentinelMetadata, areaDetails, totalArea, useSentinel }: LegendUbicacionProps) => (
   <>
     <div className="bg-white mb-2 border border-dark">
@@ -25,7 +34,7 @@ export const LegendUbicacion = ({ previewData, sentinelMetadata, areaDetails, to
         <p className="mb-0"><strong>Fecha:</strong> {previewData.targetDate || 'N/A'}</p>
       </div>
     </div>
-    
+
     {useSentinel && sentinelMetadata && (
       <div className="bg-white mb-2 border border-dark">
         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}>Metadatos Satelitales</div>
@@ -69,7 +78,7 @@ interface LegendEcologicaProps {
 export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewportBbox }: LegendEcologicaProps) => {
   const activeEcoLegend = useMemo(() => {
     if (ecoNearby.length === 0) return [];
-    
+
     let viewportPolygon: any = null;
     if (currentViewportBbox) {
       try {
@@ -80,7 +89,7 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
     }
 
     const foundIds = new Set<string>();
-    
+
     ecoNearby.forEach((f) => {
       let isVisible = true;
       if (viewportPolygon) {
@@ -90,12 +99,12 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
           isVisible = false;
         }
       }
-      
+
       if (isVisible && f.properties?._layerId) {
         foundIds.add(f.properties._layerId);
       }
     });
-    
+
     return ECO_LAYERS_CONFIG.filter((layer) => foundIds.has(layer.id));
   }, [ecoNearby, currentViewportBbox]);
 
@@ -104,6 +113,7 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
       <div className="bg-white mb-2 border border-dark">
         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}>Simbología</div>
         <div className="p-2">
+          <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>Capa extraída de: CONABIO/CONANP</p>
           <div className="d-flex align-items-center mb-2 border-bottom pb-2">
             <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
             <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
@@ -123,7 +133,7 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
           )}
         </div>
       </div>
-      
+
       <div className="border border-dark mb-2 p-1 text-center bg-white" style={{ fontSize: '0.65rem' }}>
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
@@ -131,18 +141,10 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
   );
 };
 
-interface LegendVegetacionProps {
-  vegNearby: Feature[];
-  selectedVegSerie: string;
-  setSelectedVegSerie: (val: string) => void;
-  currentViewportBbox: [number, number, number, number] | null;
-  targetDate?: string;
-}
-
-export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSerie, currentViewportBbox, targetDate }: LegendVegetacionProps) => {
+export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSerie, currentViewportBbox, targetDate, isLoading }: LegendVegetacionProps) => {
   const activeVegLegend = useMemo(() => {
     if (vegNearby.length === 0) return [];
-    
+
     let viewportPolygon: Feature<Polygon> | null = null;
     if (currentViewportBbox) {
       try {
@@ -153,7 +155,7 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
     }
 
     const uniqueTypes = new Map<string, string>();
-    
+
     vegNearby.forEach((f) => {
       let isVisible = true;
       if (viewportPolygon) {
@@ -163,12 +165,12 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
           isVisible = false;
         }
       }
-      
+
       if (isVisible && f.properties?._type) {
         uniqueTypes.set(f.properties._type, f.properties._color);
       }
     });
-    
+
     return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
   }, [vegNearby, currentViewportBbox]);
 
@@ -177,11 +179,22 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
       <div className="bg-white mb-2 border border-dark">
         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#65a30d', fontSize: '0.75rem' }}>Datos de Vegetación</div>
         <div className="p-2">
+          <label className="fw-bold mb-1 d-block text-muted" style={{ fontSize: '0.60rem' }}>Capa extraída de: INEGI</label>
+          
           <select className="form-select form-select-sm ignore-print" value={selectedVegSerie} onChange={(e) => setSelectedVegSerie(e.target.value)}>
-            {vegSeriesOptions.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+            {vegSeriesOptions?.map((opt: any, i: number) => {
+              // CORRECCIÓN CRÍTICA: Prevenir [object Object] extrayendo de forma segura el valor
+              const val = opt?.value !== undefined ? String(opt.value) : (typeof opt === 'string' ? opt : `serie_${i}`);
+              const lbl = opt?.label !== undefined ? String(opt.label) : (typeof opt === 'string' ? opt : `Opción ${i}`);
+              return (
+                <option key={`veg-opt-${val}`} value={val}>
+                  {lbl}
+                </option>
+              );
+            })}
           </select>
+          
           <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
-            
             <div className="d-flex align-items-center mb-2 border-bottom pb-2">
               <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
               <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
@@ -196,7 +209,6 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
             {activeVegLegend.map((item) => (
               <div key={item.label} className="d-flex align-items-center mt-1">
                 <div style={{ width: '12px', height: '12px', border: `2px solid ${item.color}`, backgroundColor: `${item.color}80`, marginRight: '8px', flexShrink: 0 }}></div>
-                {/* Se aplica la función para compactar el nombre */}
                 <span style={{ fontSize: '0.60rem' }}>{compactarNombreVeg(item.label)}</span>
               </div>
             ))}

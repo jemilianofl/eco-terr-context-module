@@ -15,6 +15,7 @@ import { LegendUbicacion, LegendEcologica, LegendVegetacion } from './MapLegends
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
+// CRÍTICO: Forzamos a Leaflet a no usar animaciones 3D que confunden a html2canvas
 (L.Browser as unknown as { any3d: boolean }).any3d = false;
 
 interface FormData {
@@ -96,8 +97,7 @@ const MapUpdater: React.FC<{ data: FeatureCollection | null; plano: number; buff
   useEffect(() => {
     if (!data || data.features.length === 0) return;
     const paddingOpts = { paddingBottomRight: [330, 30] as [number, number], paddingTopLeft: [40, 40] as [number, number] };
-    
-    // Si se activa el botón de "Centrar", enfocamos estrictamente en el polígono del usuario
+
     if (trigger > 0) {
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
@@ -120,7 +120,9 @@ const MapUpdater: React.FC<{ data: FeatureCollection | null; plano: number; buff
 const InvalidateMap: React.FC<{ dependencies: unknown[] }> = ({ dependencies }) => {
   const map = useMap();
   useEffect(() => {
-    const timer = setTimeout(() => map.invalidateSize(true), 400);
+    const timer = setTimeout(() => {
+      map.invalidateSize(true);
+    }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, ...dependencies]);
@@ -134,6 +136,7 @@ const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string;
     <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
       <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
+        {/* preferCanvas activado */}
         <MapContainer center={center} zoom={6} zoomControl={false} dragging={false} scrollWheelZoom={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
           <InvalidateMap dependencies={[]} />
           <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
@@ -189,7 +192,7 @@ export const GeoViewer: React.FC = () => {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
-  
+
   const [recenterTrigger, setRecenterTrigger] = useState<number>(0);
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
@@ -265,18 +268,37 @@ export const GeoViewer: React.FC = () => {
   const handleDownloadImage = () => {
     if (!printRef.current) return;
     setIsExporting(true);
+    
+    // 1. Scroll al inicio para evitar cortes en html2canvas
     window.scrollTo(0, 0);
 
+    // 2. Inyectar estilos temporales para garantizar que html2canvas respete el orden de capas (Z-index estricto)
+    const printStyle = document.createElement('style');
+    printStyle.innerHTML = `
+      .leaflet-map-pane { z-index: 1 !important; }
+      .leaflet-tile-pane { z-index: 200 !important; }
+      .leaflet-overlay-pane { z-index: 400 !important; opacity: 1 !important; visibility: visible !important; }
+      .leaflet-overlay-pane svg { z-index: 400 !important; opacity: 1 !important; }
+      .leaflet-overlay-pane path { opacity: 1 !important; stroke-opacity: 1 !important; fill-opacity: 0.35 !important; }
+      .leaflet-marker-pane { z-index: 600 !important; }
+      .leaflet-tooltip-pane { z-index: 650 !important; }
+      .leaflet-popup-pane { z-index: 700 !important; }
+    `;
+    document.head.appendChild(printStyle);
+
+    // 3. Pequeño retraso para permitir que el navegador aplique los estilos CSS inyectados
     setTimeout(() => {
       html2canvas(printRef.current!, {
         useCORS: true,
         allowTaint: false,
-        scale: 2,
+        scale: 2, // Mayor calidad
         scrollY: 0,
+        scrollX: 0, 
         backgroundColor: '#ffffff',
-        width: printRef.current?.scrollWidth,
-        height: printRef.current?.scrollHeight,
-        ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup'),
+        width: printRef.current?.offsetWidth,
+        height: printRef.current?.offsetHeight,
+        logging: true, // Útil para depurar en consola si vuelve a fallar
+        ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup') || el.classList.contains('leaflet-control-container'),
       }).then((canvas) => {
         const link = document.createElement('a');
         let planoName = 'Ubicacion_Geografica';
@@ -287,9 +309,15 @@ export const GeoViewer: React.FC = () => {
         link.click();
       }).catch((error) => {
         console.error("Error al exportar la imagen:", error);
-        alert('Error al generar la imagen.');
-      }).finally(() => setIsExporting(false));
-    }, 1000);
+        alert('Error al generar la imagen. Intenta alejar un poco el zoom.');
+      }).finally(() => {
+        setIsExporting(false);
+        // 4. Limpiar el estilo temporal
+        if (document.head.contains(printStyle)) {
+          document.head.removeChild(printStyle);
+        }
+      });
+    }, 1500); // 1.5 segundos de espera para que Leaflet termine de cargar tiles/svg
   };
 
   const { totalArea, areaDetails } = useMemo(() => {
@@ -368,7 +396,7 @@ export const GeoViewer: React.FC = () => {
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
-        
+
         {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
@@ -455,8 +483,11 @@ export const GeoViewer: React.FC = () => {
                   </output>
                 )}
 
-                <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
+                {/* CRÍTICO: preferCanvas={true} garantiza que el SVG se dibuje en un canvas nativo y elimine el desfase de html2canvas */}
+                <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={false} style={{ height: '100%', width: '100%' }}>
                   <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
+                  
+                  {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
                   <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
 
                   {useSentinel && sentinelUrl && currentPlano === 1 ? (
@@ -474,11 +505,12 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
-
-                  {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
                   {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}`} ecoNearby={ecoNearby} />}
                   {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
+
+                  {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
+                  {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
+
                 </MapContainer>
 
                 {previewData && (
@@ -493,7 +525,16 @@ export const GeoViewer: React.FC = () => {
 
                     {currentPlano === 1 && <LegendUbicacion previewData={previewData as any} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
                     {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
-                    {currentPlano === 3 && <LegendVegetacion vegNearby={vegNearby} selectedVegSerie={selectedVegSerie} setSelectedVegSerie={setSelectedVegSerie} currentViewportBbox={currentViewportBbox} targetDate={previewData.targetDate} />}
+                    {currentPlano === 3 && (
+                      <LegendVegetacion
+                        vegNearby={vegNearby}
+                        selectedVegSerie={selectedVegSerie}
+                        setSelectedVegSerie={setSelectedVegSerie}
+                        currentViewportBbox={currentViewportBbox}
+                        targetDate={previewData.targetDate}
+                        isLoading={isLoadingVeg}
+                      />
+                    )}
 
                     <div className="bg-white mb-2 border border-dark mt-2">
                       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
@@ -519,7 +560,7 @@ export const GeoViewer: React.FC = () => {
               </button>
 
               <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
-              
+
               <button type="button" onClick={() => setRecenterTrigger(prev => prev + 1)} className="btn btn-sm btn-outline-warning" title="Encuadrar la vista sobre el polígono inspeccionado">
                 <i className="bi bi-arrows-collapse me-1"></i> Centrar Polígono
               </button>
