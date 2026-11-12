@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, u
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
-import type { FeatureCollection, Feature, Geometry, GeoJsonObject, GeoJsonProperties } from 'geojson';
+import type { FeatureCollection, Feature, Geometry, GeoJsonObject, GeoJsonProperties, Polygon, MultiPolygon } from 'geojson';
 import L from 'leaflet';
 import html2canvas from 'html2canvas';
 import * as turf from '@turf/turf';
@@ -96,14 +96,14 @@ const MapLayerClickHandler: React.FC<{
         for (const f of geoJsonData.features) {
           if (f.geometry && f.geometry.type !== 'Point') {
             try {
-              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<turf.Polygon | turf.MultiPolygon>)) {
+              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<Polygon | MultiPolygon>)) {
                 const polyId = f.properties?.polyId || '';
                 let areaHtml = '';
                 try {
                   const areaSqMeters = turf.area(f);
                   areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
                 } catch (err) {
-                  // ignored area calculation error
+                  void err;
                 }
 
                 let propsHtml = '';
@@ -125,7 +125,7 @@ const MapLayerClickHandler: React.FC<{
                 return;
               }
             } catch (err) {
-              // ignored point in polygon error
+              void err;
             }
           }
         }
@@ -135,7 +135,7 @@ const MapLayerClickHandler: React.FC<{
         for (const f of ecoNearby) {
           if (f.geometry) {
             try {
-              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<turf.Polygon | turf.MultiPolygon>)) {
+              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<Polygon | MultiPolygon>)) {
                 const p = f.properties || {};
                 const title = p._title || 'Capa Ecológica';
                 const name = p.NOMBRE || p.NOM_AICA || p.nombre || p.Name || p.NAME || p.NOM || p.SITIO || 'Área Protegida';
@@ -159,7 +159,7 @@ const MapLayerClickHandler: React.FC<{
                 return;
               }
             } catch (err) {
-              // ignored point in polygon error
+              void err;
             }
           }
         }
@@ -169,7 +169,7 @@ const MapLayerClickHandler: React.FC<{
         for (const f of vegNearby) {
           if (f.geometry) {
             try {
-              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<turf.Polygon | turf.MultiPolygon>)) {
+              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<Polygon | MultiPolygon>)) {
                 const p = f.properties || {};
                 const desc = p._type || p.DESCRIPCIO || p.descripcio || p.TIPO_VEG || p.tipo_veg || p.TIP_VEG || p.TIPO || p.DESC || p.NOMBRE || 'Vegetación / Suelo';
                 const cve = p.CVE_VEG || p.cve_veg || p.CLAVE || p.CVE_USV || p.cve_usv || '';
@@ -190,7 +190,7 @@ const MapLayerClickHandler: React.FC<{
                 return;
               }
             } catch (err) {
-              // ignored point in polygon error
+              void err;
             }
           }
         }
@@ -200,14 +200,14 @@ const MapLayerClickHandler: React.FC<{
         for (const f of geoJsonData.features) {
           if (f.geometry && f.geometry.type !== 'Point') {
             try {
-              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<turf.Polygon | turf.MultiPolygon>)) {
+              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<Polygon | MultiPolygon>)) {
                 const polyId = f.properties?.polyId || '';
                 let areaHtml = '';
                 try {
                   const areaSqMeters = turf.area(f);
                   areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
                 } catch (err) {
-                  // ignored area calculation error
+                  void err;
                 }
 
                 const popupHtml = `
@@ -221,7 +221,7 @@ const MapLayerClickHandler: React.FC<{
                 return;
               }
             } catch (err) {
-              // ignored point in polygon error
+              void err;
             }
           }
         }
@@ -284,12 +284,13 @@ const GraticuleEngine: React.FC = () => {
   useMapEvents({ moveend: updateGrid, zoomend: updateGrid, resize: updateGrid });
 
   useEffect(() => {
-    // Para evitar advertencias de React, no se llama setState inmediatamente dentro del efecto.
-    // Solo registramos los listeners y delegamos a la primera iteración.
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
         updateGrid();
     }, 0);
-    return () => setGrid({ lats: [], lons: [], bounds: null });
+    return () => {
+      clearTimeout(timerId);
+      setGrid({ lats: [], lons: [], bounds: null });
+    };
   }, [updateGrid]);
 
   if (!grid.bounds) return null;
@@ -404,6 +405,7 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
             </CircleMarker>
           );
         } catch (err) {
+          void err;
           return null;
         }
       })}
@@ -491,7 +493,7 @@ export const GeoViewer: React.FC = () => {
           setUseSentinel(false);
         }
       } catch (error) {
-        // Ignorar falla temporal de conexión satelital
+        void error;
         setSentinelUrl(null);
         setSentinelMetadata(null);
         setUseSentinel(false);
@@ -518,7 +520,7 @@ export const GeoViewer: React.FC = () => {
             return raw
               .filter((f) => {
                 try {
-                  return turf.booleanIntersects(f as unknown as Feature<turf.Polygon | turf.MultiPolygon>, buffer10km as unknown as Feature<turf.Polygon | turf.MultiPolygon>);
+                  return turf.booleanIntersects(f as unknown as Feature<Polygon | MultiPolygon>, buffer10km as unknown as Feature<Polygon | MultiPolygon>);
                 } catch {
                   return false;
                 }
@@ -568,7 +570,7 @@ export const GeoViewer: React.FC = () => {
         const filtered = raw
           .filter((f) => {
             try {
-              return turf.booleanIntersects(f as unknown as Feature<turf.Polygon | turf.MultiPolygon>, buffer10km as unknown as Feature<turf.Polygon | turf.MultiPolygon>);
+              return turf.booleanIntersects(f as unknown as Feature<Polygon | MultiPolygon>, buffer10km as unknown as Feature<Polygon | MultiPolygon>);
             } catch {
               return false;
             }
@@ -627,7 +629,7 @@ export const GeoViewer: React.FC = () => {
       let isVisible = true;
       if (viewportPolygon) {
         try {
-          isVisible = turf.booleanIntersects(f as unknown as Feature<turf.Polygon | turf.MultiPolygon>, viewportPolygon as unknown as Feature<turf.Polygon | turf.MultiPolygon>);
+          isVisible = turf.booleanIntersects(f as unknown as Feature<Polygon | MultiPolygon>, viewportPolygon as unknown as Feature<Polygon | MultiPolygon>);
         } catch {
           isVisible = false;
         }

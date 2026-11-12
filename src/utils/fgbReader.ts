@@ -1,4 +1,3 @@
-// src/utils/fgbReader.ts
 import { deserialize } from 'flatgeobuf/lib/mjs/geojson.js';
 import type { Feature } from 'geojson';
 
@@ -17,12 +16,16 @@ export async function queryFgbLayer(
   fileName: string,
   bbox: BoundingBox
 ): Promise<Feature[]> {
-  const baseUrl = import.meta.env.VITE_R2_PUBLIC_URL || '';
+  const baseUrl = (import.meta.env.VITE_R2_PUBLIC_URL || '').replace(/\/\$/, '');
   const url = `${baseUrl}/${fileName}`;
   const features: Feature[] = [];
 
   try {
-    const iterator = deserialize(url, bbox);
+    // Se envuelve en rect y se castea a never para evitar el error TS2559
+    // provocado por un desfase en los @types de flatgeobuf 3.x
+    const options = { rect: bbox };
+    const iterator = deserialize(url, options as never);
+    
     for await (const feature of iterator) {
       features.push(feature as Feature);
     }
