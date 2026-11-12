@@ -184,7 +184,7 @@ export const GeoViewer: React.FC = () => {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
-  
+
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
 
@@ -204,16 +204,18 @@ export const GeoViewer: React.FC = () => {
 
   const predioCentroid = useMemo(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
-    try { 
+    try {
       // @ts-expect-error ignoramos tipado estricto para turf.centroid interno
-      return turf.centroid(geoJsonData); 
+      return turf.centroid(geoJsonData);
     } catch { return null; }
   }, [geoJsonData]);
 
   // Consumo de Custom Hooks
   const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
-  const { ecoNearby, isLoadingEco } = useEcoLayers(currentPlano, buffer10km);
-  const { vegNearby, isLoadingVeg } = useVegetationLayers(currentPlano, buffer10km, selectedVegSerie);
+  
+  // Eliminamos currentPlano de la firma de los hooks para que carguen en segundo plano
+  const { ecoNearby, isLoadingEco } = useEcoLayers(buffer10km);
+  const { vegNearby, isLoadingVeg } = useVegetationLayers(buffer10km, selectedVegSerie);
 
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
@@ -365,7 +367,7 @@ export const GeoViewer: React.FC = () => {
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
-        
+
         {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
@@ -455,25 +457,25 @@ export const GeoViewer: React.FC = () => {
                 <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                   <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
                   <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
-                  
+
                   {useSentinel && sentinelUrl && currentPlano === 1 ? (
                     <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
                   ) : (
                     <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
                   )}
-                  
+
                   <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
-                  
+
                   <GraticuleEngine />
                   <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} />
-                  
+
                   <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
                   {/* Aquí está la clave: key con el id del plano para que Leaflet remonte la capa al cambiar de vista */}
                   {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
-                  
+
                   {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
                   {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}`} ecoNearby={ecoNearby} />}
                   {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
@@ -490,8 +492,8 @@ export const GeoViewer: React.FC = () => {
                     <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
                     {currentPlano === 1 && <LegendUbicacion previewData={previewData as any} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
-                    {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} />}
-                    {currentPlano === 3 && <LegendVegetacion vegNearby={vegNearby} selectedVegSerie={selectedVegSerie} setSelectedVegSerie={setSelectedVegSerie} currentViewportBbox={currentViewportBbox} />}
+                    {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} />}
+                    {currentPlano === 3 && <LegendVegetacion vegNearby={vegNearby} selectedVegSerie={selectedVegSerie} setSelectedVegSerie={setSelectedVegSerie} currentViewportBbox={currentViewportBbox} targetDate={previewData.targetDate} />}
 
                     <div className="bg-white mb-2 border border-dark mt-2">
                       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
@@ -515,7 +517,7 @@ export const GeoViewer: React.FC = () => {
               <button type="button" onClick={() => setCurrentPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
               </button>
-              
+
               {sentinelUrl && currentPlano === 1 && (
                 <>
                   <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
