@@ -47,14 +47,12 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
   return (
     <GeoJSON 
       data={geoJsonData} 
-      // Ignoramos completamente los vértices/puntos sueltos que vengan en el KML/ZIP
       filter={(feature) => feature.geometry.type !== 'Point' && feature.geometry.type !== 'MultiPoint'}
       style={() => ({ 
         color: '#ff0000', 
-        weight: 2.5, 
+        weight: 3,         
         fillColor: '#ff0000', 
-        fillOpacity: 0,
-        // Suaviza las uniones del contorno para que no se vean picudas o cortadas
+        fillOpacity: 0.3,  
         lineJoin: 'round',
         lineCap: 'round'
       })}
@@ -73,13 +71,27 @@ export const EcoLayer = ({ ecoNearby }: EcoLayerProps) => {
       for (const f of ecoNearby) {
         if (turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)) {
           const title = f.properties?._title || 'Área Protegida';
-          L.popup().setLatLng(e.latlng).setContent(`<div><strong>${title}</strong><br/>${f.properties?.NOMBRE || ''}</div>`).openOn(map);
+          // Se busca el nombre en múltiples campos posibles
+          const name = f.properties?.NOMBRE || f.properties?.NOM_AICA || f.properties?.nombre || f.properties?.Name || f.properties?.NAME || f.properties?.NOM || f.properties?.SITIO || 'Área Protegida';
+          
+          L.popup().setLatLng(e.latlng).setContent(`<div><strong style="color:${f.properties?._color || '#000'}">${title}</strong><br/>${name}</div>`).openOn(map);
           return;
         }
       }
     }
   });
-  return <GeoJSON data={turf.featureCollection(ecoNearby)} style={(f) => ({ color: f?.properties?._color, weight: 2, fillColor: f?.properties?._color, fillOpacity: 0.25 })} />;
+  return (
+    <GeoJSON 
+      data={turf.featureCollection(ecoNearby)} 
+      style={(f) => ({ 
+        color: f?.properties?._color, 
+        weight: 1.5, 
+        fillColor: f?.properties?._color, 
+        // Opacidad muy baja (0.15) y borde delgado (1.5) para que al sobreponerse (ej. Ramsar sobre AICA) se vean ambas
+        fillOpacity: 0.15 
+      })} 
+    />
+  );
 };
 
 interface VegLayerProps {

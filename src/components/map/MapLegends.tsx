@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import * as turf from '@turf/turf';
-import { ECO_LAYERS_CONFIG, vegSeriesOptions } from '../../config/mapConfig';
+import { ECO_LAYERS_CONFIG, vegSeriesOptions, compactarNombreVeg } from '../../config/mapConfig';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 
 interface PreviewData {
@@ -195,8 +195,9 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
 
             {activeVegLegend.map((item) => (
               <div key={item.label} className="d-flex align-items-center mt-1">
-                <div style={{ width: '12px', height: '12px', border: `2px solid ${item.color}`, backgroundColor: `${item.color}80`, marginRight: '8px' }}></div>
-                <span style={{ fontSize: '0.60rem' }}>{item.label}</span>
+                <div style={{ width: '12px', height: '12px', border: `2px solid ${item.color}`, backgroundColor: `${item.color}80`, marginRight: '8px', flexShrink: 0 }}></div>
+                {/* Se aplica la función para compactar el nombre */}
+                <span style={{ fontSize: '0.60rem' }}>{compactarNombreVeg(item.label)}</span>
               </div>
             ))}
           </div>
