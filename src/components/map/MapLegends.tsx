@@ -25,6 +25,7 @@ export const LegendUbicacion = ({ previewData, sentinelMetadata, areaDetails, to
         <p className="mb-0"><strong>Fecha:</strong> {previewData.targetDate || 'N/A'}</p>
       </div>
     </div>
+    
     {useSentinel && sentinelMetadata && (
       <div className="bg-white mb-2 border border-dark">
         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}>Metadatos Satelitales</div>
@@ -34,6 +35,18 @@ export const LegendUbicacion = ({ previewData, sentinelMetadata, areaDetails, to
         </div>
       </div>
     )}
+
+    {/* RESTAURADO: Simbología principal en Plano 1 */}
+    <div className="bg-white mb-2 border border-dark">
+      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}>Simbología</div>
+      <div className="p-2">
+        <div className="d-flex align-items-center mb-1">
+          <div style={{ width: '12px', height: '12px', backgroundColor: '#ff000040', border: '2px solid #ff0000', marginRight: '8px' }}></div>
+          <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono(s) Inspeccionado(s)</span>
+        </div>
+      </div>
+    </div>
+
     <div className="bg-white mb-2 border border-dark">
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem' }}>Superficie:</div>
       <div className="p-2 text-center">
@@ -62,6 +75,12 @@ export const LegendEcologica = ({ ecoNearby, isLoading }: LegendEcologicaProps) 
     <div className="bg-white mb-2 border border-dark">
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}>Simbología</div>
       <div className="p-2">
+        {/* RESTAURADO: Leyenda del Polígono en Plano 2 */}
+        <div className="d-flex align-items-center mb-2 border-bottom pb-2">
+          <div style={{ width: '12px', height: '12px', backgroundColor: '#ff000040', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+          <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
+        </div>
+
         {activeEcoLegend.length > 0 ? (
           activeEcoLegend.map((layer) => (
             <div key={layer.id} className="d-flex align-items-center mb-1">
@@ -127,6 +146,13 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
           {vegSeriesOptions.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
         </select>
         <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
+          
+          {/* RESTAURADO: Leyenda del Polígono en Plano 3 */}
+          <div className="d-flex align-items-center mb-2 border-bottom pb-2">
+            <div style={{ width: '12px', height: '12px', backgroundColor: '#ff000040', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+            <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
+          </div>
+
           {activeVegLegend.map((item) => (
             <div key={item.label} className="d-flex align-items-center mt-1">
               <div style={{ width: '12px', height: '12px', border: `2px solid ${item.color}`, backgroundColor: `${item.color}80`, marginRight: '8px' }}></div>
