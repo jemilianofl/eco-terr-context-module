@@ -23,6 +23,7 @@ interface LegendVegetacionProps {
   currentViewportBbox: [number, number, number, number] | null;
   targetDate?: string;
   isLoading: boolean;
+  isExporting?: boolean;
 }
 
 export const LegendUbicacion = ({ previewData, sentinelMetadata, areaDetails, totalArea, useSentinel }: LegendUbicacionProps) => (
@@ -141,38 +142,44 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
   );
 };
 
-export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSerie, currentViewportBbox, targetDate, isLoading }: LegendVegetacionProps) => {
+export const LegendVegetacion = ({ 
+  vegNearby, 
+  selectedVegSerie, 
+  setSelectedVegSerie, 
+  currentViewportBbox, 
+  targetDate, 
+  isLoading, 
+  isExporting = false
+}: LegendVegetacionProps) => {
+  
   const activeVegLegend = useMemo(() => {
     if (vegNearby.length === 0) return [];
-
     let viewportPolygon: Feature<Polygon> | null = null;
     if (currentViewportBbox) {
-      try {
-        viewportPolygon = turf.bboxPolygon(currentViewportBbox);
-      } catch {
-        viewportPolygon = null;
-      }
+      try { viewportPolygon = turf.bboxPolygon(currentViewportBbox); } 
+      catch { viewportPolygon = null; }
     }
-
     const uniqueTypes = new Map<string, string>();
-
     vegNearby.forEach((f) => {
       let isVisible = true;
       if (viewportPolygon) {
-        try {
-          isVisible = turf.booleanIntersects(f as Feature<Polygon | MultiPolygon>, viewportPolygon);
-        } catch {
-          isVisible = false;
-        }
+        try { isVisible = turf.booleanIntersects(f as Feature<Polygon | MultiPolygon>, viewportPolygon); } 
+        catch { isVisible = false; }
       }
-
       if (isVisible && f.properties?._type) {
         uniqueTypes.set(f.properties._type, f.properties._color);
       }
     });
-
     return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
   }, [vegNearby, currentViewportBbox]);
+
+  const activeSerieLabel = useMemo(() => {
+    const opt = vegSeriesOptions?.find((o: any) => {
+      const val = o?.value !== undefined ? String(o.value) : (typeof o === 'string' ? o : '');
+      return val === selectedVegSerie;
+    });
+    return opt?.label !== undefined ? String(opt.label) : selectedVegSerie;
+  }, [selectedVegSerie]);
 
   return (
     <>
@@ -181,18 +188,23 @@ export const LegendVegetacion = ({ vegNearby, selectedVegSerie, setSelectedVegSe
         <div className="p-2">
           <label className="fw-bold mb-1 d-block text-muted" style={{ fontSize: '0.60rem' }}>Capa extraída de: INEGI</label>
           
-          <select className="form-select form-select-sm ignore-print" value={selectedVegSerie} onChange={(e) => setSelectedVegSerie(e.target.value)}>
-            {vegSeriesOptions?.map((opt: any, i: number) => {
-              // CORRECCIÓN CRÍTICA: Prevenir [object Object] extrayendo de forma segura el valor
-              const val = opt?.value !== undefined ? String(opt.value) : (typeof opt === 'string' ? opt : `serie_${i}`);
-              const lbl = opt?.label !== undefined ? String(opt.label) : (typeof opt === 'string' ? opt : `Opción ${i}`);
-              return (
-                <option key={`veg-opt-${val}`} value={val}>
-                  {lbl}
-                </option>
-              );
-            })}
-          </select>
+          {isExporting ? (
+            <div className="fw-bold text-dark text-center border-bottom pb-2 mb-2" style={{ fontSize: '0.65rem' }}>
+              {activeSerieLabel}
+            </div>
+          ) : (
+            <select className="form-select form-select-sm ignore-print mb-2" value={selectedVegSerie} onChange={(e) => setSelectedVegSerie(e.target.value)}>
+              {vegSeriesOptions?.map((opt: any, i: number) => {
+                const val = opt?.value !== undefined ? String(opt.value) : (typeof opt === 'string' ? opt : `serie_${i}`);
+                const lbl = opt?.label !== undefined ? String(opt.label) : (typeof opt === 'string' ? opt : `Opción ${i}`);
+                return (
+                  <option key={`veg-opt-${val}`} value={val}>
+                    {lbl}
+                  </option>
+                );
+              })}
+            </select>
+          )}
           
           <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
             <div className="d-flex align-items-center mb-2 border-bottom pb-2">

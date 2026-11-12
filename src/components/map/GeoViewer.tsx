@@ -268,14 +268,31 @@ export const GeoViewer: React.FC = () => {
   const handleDownloadImage = () => {
     if (!printRef.current) return;
     setIsExporting(true);
-    
-    // 1. Scroll al inicio para evitar cortes en html2canvas
     window.scrollTo(0, 0);
 
-    // 2. Inyectar estilos temporales para garantizar que html2canvas respete el orden de capas (Z-index estricto)
+    // 1. APLANAR SÓLO LA CAPA MADRE PARA EVITAR EL DOBLE DESFASE
+    const mapPane = document.querySelector('.leaflet-map-pane') as HTMLElement | null;
+    let originalTransform = '';
+    let originalLeft = '';
+    let originalTop = '';
+
+    if (mapPane) {
+      originalTransform = mapPane.style.transform;
+      originalLeft = mapPane.style.left;
+      originalTop = mapPane.style.top;
+      
+      const match = originalTransform.match(/translate(?:3d)?\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px/);
+      if (match) {
+        mapPane.style.setProperty('transform', 'none', 'important');
+        const currentLeft = parseFloat(originalLeft || '0');
+        const currentTop = parseFloat(originalTop || '0');
+        mapPane.style.setProperty('left', `${currentLeft + parseFloat(match[1])}px`, 'important');
+        mapPane.style.setProperty('top', `${currentTop + parseFloat(match[2])}px`, 'important');
+      }
+    }
+
     const printStyle = document.createElement('style');
     printStyle.innerHTML = `
-      .leaflet-map-pane { z-index: 1 !important; }
       .leaflet-tile-pane { z-index: 200 !important; }
       .leaflet-overlay-pane { z-index: 400 !important; opacity: 1 !important; visibility: visible !important; }
       .leaflet-overlay-pane svg { z-index: 400 !important; opacity: 1 !important; }
@@ -286,18 +303,16 @@ export const GeoViewer: React.FC = () => {
     `;
     document.head.appendChild(printStyle);
 
-    // 3. Pequeño retraso para permitir que el navegador aplique los estilos CSS inyectados
     setTimeout(() => {
       html2canvas(printRef.current!, {
         useCORS: true,
         allowTaint: false,
-        scale: 2, // Mayor calidad
+        scale: 2, 
         scrollY: 0,
         scrollX: 0, 
         backgroundColor: '#ffffff',
         width: printRef.current?.offsetWidth,
         height: printRef.current?.offsetHeight,
-        logging: true, // Útil para depurar en consola si vuelve a fallar
         ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup') || el.classList.contains('leaflet-control-container'),
       }).then((canvas) => {
         const link = document.createElement('a');
@@ -312,12 +327,15 @@ export const GeoViewer: React.FC = () => {
         alert('Error al generar la imagen. Intenta alejar un poco el zoom.');
       }).finally(() => {
         setIsExporting(false);
-        // 4. Limpiar el estilo temporal
-        if (document.head.contains(printStyle)) {
-          document.head.removeChild(printStyle);
+        if (document.head.contains(printStyle)) document.head.removeChild(printStyle);
+        // 2. RESTAURAR CAPA MADRE A LA NORMALIDAD
+        if (mapPane) {
+          mapPane.style.transform = originalTransform;
+          mapPane.style.left = originalLeft;
+          mapPane.style.top = originalTop;
         }
       });
-    }, 1500); // 1.5 segundos de espera para que Leaflet termine de cargar tiles/svg
+    }, 1500); 
   };
 
   const { totalArea, areaDetails } = useMemo(() => {
@@ -486,7 +504,7 @@ export const GeoViewer: React.FC = () => {
                 {/* CRÍTICO: preferCanvas={true} garantiza que el SVG se dibuje en un canvas nativo y elimine el desfase de html2canvas */}
                 <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={false} style={{ height: '100%', width: '100%' }}>
                   <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
-                  
+
                   {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
                   <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
 
@@ -533,6 +551,7 @@ export const GeoViewer: React.FC = () => {
                         currentViewportBbox={currentViewportBbox}
                         targetDate={previewData.targetDate}
                         isLoading={isLoadingVeg}
+                        isExporting={isExporting}
                       />
                     )}
 
