@@ -5,7 +5,7 @@ import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
 import type { FeatureCollection, Feature, GeoJsonObject } from 'geojson';
 import L from 'leaflet';
-import html2canvas from 'html2canvas';
+import domtoimage from 'dom-to-image';
 import * as turf from '@turf/turf';
 
 import { toDMS } from '../../config/mapConfig';
@@ -269,86 +269,43 @@ export const GeoViewer: React.FC = () => {
   const handleDownloadImage = () => {
     if (!printRef.current) return;
     setIsExporting(true);
-    window.scrollTo(0, 0);
-
-    // 1. DESTRUCCIÓN TEMPORAL DE 3D EN LEAFLET:
-    // Convertimos cada transform 3D en posiciones left/top absolutas
-    // Esto evita los recortes grises/blancos y el desfase de los mosaicos.
-    const originalStyles: { el: HTMLElement; transform: string; left: string; top: string }[] = [];
-
-    const flattenTransform = (selector: string) => {
-      const elements = document.querySelectorAll(selector) as NodeListOf<HTMLElement>;
-      elements.forEach(el => {
-        const transform = el.style.transform;
-        if (!transform || transform === 'none') return;
-        
-        // Captura translate(x,y) y translate3d(x,y,z)
-        const match = transform.match(/translate(?:3d)?\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px/);
-        if (match) {
-          originalStyles.push({ el, transform: el.style.transform, left: el.style.left, top: el.style.top });
-          
-          const currentLeft = parseFloat(el.style.left || '0');
-          const currentTop = parseFloat(el.style.top || '0');
-          
-          el.style.setProperty('transform', 'none', 'important');
-          el.style.setProperty('left', `${currentLeft + parseFloat(match[1])}px`, 'important');
-          el.style.setProperty('top', `${currentTop + parseFloat(match[2])}px`, 'important');
-        }
-      });
-    };
-
-    // Aplanamos absolutamente todo: paneles base, contenedores y cada cuadrito de imagen
-    flattenTransform('.leaflet-pane');
-    flattenTransform('.leaflet-tile');
     
-    // 2. CSS Estricto para bloquear el 3D y forzar el renderizado
-    const printStyle = document.createElement('style');
-    printStyle.innerHTML = `
-      .leaflet-pane, .leaflet-tile { transform: none !important; }
-      .leaflet-tile-pane { z-index: 200 !important; }
-      .leaflet-overlay-pane { z-index: 400 !important; opacity: 1 !important; visibility: visible !important; }
-      .leaflet-overlay-pane svg { z-index: 400 !important; opacity: 1 !important; }
-      .leaflet-overlay-pane path { opacity: 1 !important; stroke-opacity: 1 !important; fill-opacity: 0.35 !important; }
-      .leaflet-marker-pane { z-index: 600 !important; }
-      .leaflet-tooltip-pane { z-index: 650 !important; }
-      .leaflet-popup-pane { z-index: 700 !important; }
-    `;
-    document.head.appendChild(printStyle);
+    // Forzamos un redraw limpio sin CSS temporal
+    if (mapRef) {
+      mapRef.setView(mapRef.getCenter(), mapRef.getZoom(), { animate: false });
+    }
 
-    // 3. Esperamos 1 segundo para que el DOM se reacomode físicamente en 2D
     setTimeout(() => {
-      html2canvas(printRef.current!, {
-        useCORS: true,
-        allowTaint: false,
-        scale: 2,
-        scrollY: 0,
-        scrollX: 0,
-        backgroundColor: '#ffffff',
-        width: printRef.current?.offsetWidth,
-        height: printRef.current?.offsetHeight,
-        ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup') || el.classList.contains('leaflet-control-container'),
-      }).then((canvas) => {
+      // Usamos domtoimage que maneja las matrices 3D de forma nativa
+      domtoimage.toJpeg(printRef.current!, {
+        quality: 0.95,
+        bgcolor: '#ffffff',
+        filter: (node: Node) => {
+          // Excluir elementos que no queremos en la captura
+          if (node instanceof HTMLElement) {
+            return !node.classList.contains('ignore-print') && 
+                   !node.classList.contains('leaflet-control-container');
+          }
+          return true;
+        }
+      })
+      .then((dataUrl) => {
         const link = document.createElement('a');
         let planoName = 'Ubicacion_Geografica';
         if (currentPlano === 2) planoName = 'Relevancia_Ecologica';
         if (currentPlano === 3) planoName = 'Tipo_Vegetacion';
         link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
-        link.href = canvas.toDataURL('image/jpeg', 0.9);
+        link.href = dataUrl;
         link.click();
-      }).catch((error) => {
+      })
+      .catch((error) => {
         console.error("Error al exportar la imagen:", error);
-        alert('Error al generar la imagen. Intenta alejar un poco el zoom.');
-      }).finally(() => {
+        alert('Error al generar la imagen.');
+      })
+      .finally(() => {
         setIsExporting(false);
-        // 4. Restaurar el mapa a su estado original (3D interactivo) sin que el usuario lo note
-        if (document.head.contains(printStyle)) document.head.removeChild(printStyle);
-        originalStyles.forEach(({ el, transform, left, top }) => {
-          el.style.transform = transform;
-          el.style.left = left;
-          el.style.top = top;
-        });
       });
-    }, 1000);
+    }, 800); 
   };
 
   const { totalArea, areaDetails } = useMemo(() => {

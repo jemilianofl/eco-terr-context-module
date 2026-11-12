@@ -174,12 +174,17 @@ export const LegendVegetacion = ({
   }, [vegNearby, currentViewportBbox]);
 
   const activeSerieLabel = useMemo(() => {
+    // Si la serie actual es la 7, fuerza su etiqueta correcta
+    if (selectedVegSerie === 'serie_7') return 'Serie VII (2021)';
+    if (selectedVegSerie === 'serie_6') return 'Serie VI (2014)';
+    
+    // Fallback original si no coinciden las de arriba
     const opt = vegSeriesOptions?.find((o: any) => {
       const val = o?.value !== undefined ? String(o.value) : (typeof o === 'string' ? o : '');
       return val === selectedVegSerie;
     });
     return opt?.label !== undefined ? String(opt.label) : selectedVegSerie;
-  }, [selectedVegSerie]);
+  }, [selectedVegSerie, vegSeriesOptions]); // <- Importante agregar dependencias
 
   return (
     <>
