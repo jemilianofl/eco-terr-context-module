@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline, Tooltip } from 'react-leaflet';
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
-import type { FeatureCollection, Feature, Geometry, GeoJsonProperties, GeoJsonObject } from 'geojson';
+import type { FeatureCollection, Feature, GeoJsonObject } from 'geojson';
 import L from 'leaflet';
 import html2canvas from 'html2canvas';
 import * as turf from '@turf/turf';
@@ -55,7 +55,7 @@ const GraticuleEngine: React.FC = () => {
   const [grid, setGrid] = useState<{ lats: number[]; lons: number[]; bounds: L.LatLngBounds | null }>({ lats: [], lons: [], bounds: null });
 
   const updateGrid = useCallback(() => {
-    if (!map || !map.getContainer()) return;
+    if (!map?.getContainer()) return;
     const b = map.getBounds();
     const mapSize = map.getSize();
     const mapWidthDegrees = b.getEast() - b.getWest();
@@ -150,7 +150,7 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
         const polyId = f.properties?.polyId;
         if (!polyId) return null;
         try {
-          const centroid = turf.centroid(f);
+          const centroid = turf.centroid(f as any);
           const [lon, lat] = centroid.geometry.coordinates;
           const angles = [45, 135, 315, 225, 0, 180, 90, 270];
           const angleRad = angles[i % angles.length] * (Math.PI / 180);
@@ -167,7 +167,7 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
               </Tooltip>
             </CircleMarker>
           );
-        } catch (err) { void err; return null; }
+        } catch { return null; }
       })}
     </>
   );
@@ -183,7 +183,7 @@ export const GeoViewer: React.FC = () => {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
-
+  
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
 
@@ -203,7 +203,7 @@ export const GeoViewer: React.FC = () => {
 
   const predioCentroid = useMemo(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
-    try { return turf.centroid(geoJsonData); } catch { return null; }
+    try { return turf.centroid(geoJsonData as any); } catch { return null; }
   }, [geoJsonData]);
 
   // Consumo de Custom Hooks
@@ -277,6 +277,9 @@ export const GeoViewer: React.FC = () => {
         link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
         link.href = canvas.toDataURL('image/jpeg', 0.9);
         link.click();
+      }).catch((error) => {
+        console.error("Error al exportar la imagen:", error);
+        alert('Error al generar la imagen.');
       }).finally(() => setIsExporting(false));
     }, 1000);
   };
@@ -289,10 +292,10 @@ export const GeoViewer: React.FC = () => {
       if (f.geometry.type === 'Point') return;
       const polyId = f.properties?.polyId;
       try {
-        const a = turf.area(f);
+        const a = turf.area(f as any);
         areaSum += a;
         if (polyId) details.push({ name: `Polígono ${polyId}`, area: a.toFixed(2) });
-      } catch (err) { void err; }
+      } catch { /* ignored */ }
     });
     return { totalArea: areaSum.toFixed(2), areaDetails: details };
   }, [geoJsonData]);
@@ -351,10 +354,13 @@ export const GeoViewer: React.FC = () => {
     return elements;
   };
 
+  const nombresPlanos = ['Plano 1', 'Plano 2', 'Plano 3'];
+  const nombreActual = nombresPlanos[currentPlano - 1];
+
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
-
+        
         {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
@@ -410,9 +416,9 @@ export const GeoViewer: React.FC = () => {
           {!isSidebarOpen && geoJsonData && (
             <button type="button" onClick={handleDownloadImage} disabled={isExporting} className="btn btn-warning position-absolute shadow fw-bold ignore-print" style={{ top: '15px', left: '65px', zIndex: 1040 }}>
               {isExporting ? (
-                <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Generando...</>
+                <><output className="spinner-border spinner-border-sm me-2" aria-hidden="true"></output>Generando...</>
               ) : (
-                <><i className="bi bi-download me-2"></i>Descargar {currentPlano === 1 ? 'Plano 1' : currentPlano === 2 ? 'Plano 2' : 'Plano 3'}</>
+                <><i className="bi bi-download me-2"></i>Descargar {nombreActual}</>
               )}
             </button>
           )}
@@ -435,27 +441,27 @@ export const GeoViewer: React.FC = () => {
                 </div>
 
                 {(isLoadingEco || isLoadingVeg) && (
-                  <div className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
-                    <div className="spinner-border spinner-border-sm text-success me-2" role="status"></div>
+                  <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
+                    <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
                     <span className="small fw-semibold text-dark">Consultando coberturas en R2...</span>
-                  </div>
+                  </output>
                 )}
 
                 <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                   <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
                   <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
-
+                  
                   {useSentinel && sentinelUrl && currentPlano === 1 ? (
                     <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
                   ) : (
                     <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
                   )}
-
+                  
                   <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
-
+                  
                   <GraticuleEngine />
                   <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} />
-
+                  
                   <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
@@ -476,9 +482,9 @@ export const GeoViewer: React.FC = () => {
 
                     <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
-                    {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
-                    {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} targetDate={previewData.targetDate} isLoading={isLoadingEco} />}
-                    {currentPlano === 3 && <LegendVegetacion vegNearby={vegNearby} selectedVegSerie={selectedVegSerie} setSelectedVegSerie={setSelectedVegSerie} currentViewportBbox={currentViewportBbox} isLoading={isLoadingVeg} targetDate={previewData.targetDate} />}
+                    {currentPlano === 1 && <LegendUbicacion previewData={previewData as any} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
+                    {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} />}
+                    {currentPlano === 3 && <LegendVegetacion vegNearby={vegNearby} selectedVegSerie={selectedVegSerie} setSelectedVegSerie={setSelectedVegSerie} currentViewportBbox={currentViewportBbox} />}
 
                     <div className="bg-white mb-2 border border-dark mt-2">
                       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
@@ -502,7 +508,7 @@ export const GeoViewer: React.FC = () => {
               <button type="button" onClick={() => setCurrentPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
               </button>
-
+              
               {sentinelUrl && currentPlano === 1 && (
                 <>
                   <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
