@@ -150,7 +150,8 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
         const polyId = f.properties?.polyId;
         if (!polyId) return null;
         try {
-          const centroid = turf.centroid(f as any);
+          // @ts-expect-error ignoramos tipado estricto para turf.centroid interno
+          const centroid = turf.centroid(f);
           const [lon, lat] = centroid.geometry.coordinates;
           const angles = [45, 135, 315, 225, 0, 180, 90, 270];
           const angleRad = angles[i % angles.length] * (Math.PI / 180);
@@ -203,7 +204,10 @@ export const GeoViewer: React.FC = () => {
 
   const predioCentroid = useMemo(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
-    try { return turf.centroid(geoJsonData as any); } catch { return null; }
+    try { 
+      // @ts-expect-error ignoramos tipado estricto para turf.centroid interno
+      return turf.centroid(geoJsonData); 
+    } catch { return null; }
   }, [geoJsonData]);
 
   // Consumo de Custom Hooks
@@ -292,7 +296,8 @@ export const GeoViewer: React.FC = () => {
       if (f.geometry.type === 'Point') return;
       const polyId = f.properties?.polyId;
       try {
-        const a = turf.area(f as any);
+        // @ts-expect-error ignoramos tipado estricto para turf.area interno
+        const a = turf.area(f);
         areaSum += a;
         if (polyId) details.push({ name: `Polígono ${polyId}`, area: a.toFixed(2) });
       } catch { /* ignored */ }
@@ -466,10 +471,12 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {geoJsonData && <UserPolygonLayer geoJsonData={geoJsonData} />}
+                  {/* Aquí está la clave: key con el id del plano para que Leaflet remonte la capa al cambiar de vista */}
+                  {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
+                  
                   {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
-                  {currentPlano === 2 && <EcoLayer ecoNearby={ecoNearby} />}
-                  {currentPlano === 3 && <VegLayer vegNearby={vegNearby} />}
+                  {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}`} ecoNearby={ecoNearby} />}
+                  {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
                 </MapContainer>
 
                 {previewData && (
