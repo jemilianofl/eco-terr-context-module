@@ -3,13 +3,18 @@ import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, u
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
-import type { FeatureCollection, Feature, Geometry, GeoJsonObject, GeoJsonProperties, Polygon, MultiPolygon } from 'geojson';
+import type { FeatureCollection, Feature, Geometry, GeoJsonProperties, GeoJsonObject } from 'geojson';
 import L from 'leaflet';
 import html2canvas from 'html2canvas';
 import * as turf from '@turf/turf';
-import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
-import { queryFgbLayer } from '../../utils/fgbReader';
+// Archivos de configuración y componentes modulares
+import { toDMS } from '../../config/mapConfig';
+import { useSentinelData, useEcoLayers, useVegetationLayers } from '../../hooks/useMapLayers';
+import { UserPolygonLayer, EcoLayer, VegLayer } from './MapLayers';
+import { LegendUbicacion, LegendEcologica, LegendVegetacion } from './MapLegends';
+
+import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
 // Bypass de propiedad de solo lectura en Leaflet
 (L.Browser as unknown as { any3d: boolean }).any3d = false;
@@ -31,225 +36,17 @@ interface FrameData {
   yTicks: { lat: number; y: number }[];
 }
 
-interface EcoLayerConfig {
-  id: string;
-  file: string;
-  title: string;
-  color: string;
-}
-
-const ECO_LAYERS_CONFIG: EcoLayerConfig[] = [
-  { id: 'aicas', file: 'aicas.fgb', title: 'Área de Importancia para la Conservación de las Aves (AICA)', color: '#d63384' },
-  { id: 'ramsar', file: 'ramsar.fgb', title: 'Sitio Ramsar', color: '#0d6efd' },
-  { id: 'anp_federal', file: 'anp_federal.fgb', title: 'Área Natural Protegida federal', color: '#198754' },
-  { id: 'anp_estatal', file: 'anp_estatal.fgb', title: 'Área Natural Protegida estatal o municipal', color: '#fd7e14' },
-  { id: 'advc', file: 'advc.fgb', title: 'Área Destinada Voluntariamente a la Conservación (ADVC)', color: '#65a30d' },
-  { id: 'rtp', file: 'rtp.fgb', title: 'Región Terrestre Prioritaria', color: '#ffc107' },
-  { id: 'rhp', file: 'rhp.fgb', title: 'Región Hídrica Prioritaria', color: '#0dcaf0' },
-];
-
-const toDMS = (deg: number, isLat: boolean) => {
-  const absolute = Math.abs(deg);
-  const degrees = Math.floor(absolute);
-  const minutesFloat = (absolute - degrees) * 60;
-  const minutes = Math.floor(minutesFloat);
-  const seconds = Math.floor((minutesFloat - minutes) * 60);
-  const direction = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
-  return `${degrees}°${minutes}'${seconds}"${direction}`;
-};
-
-const featureStyle = (feature?: Feature<Geometry, GeoJsonProperties>) => {
-  if (!feature) return {};
-  return { color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0 };
-};
-
-const pointToLayer = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.LatLng) => {
-  return L.circleMarker(latlng, { radius: 5, fillColor: '#ff0000', color: '#ffffff', weight: 1.5, opacity: 1, fillOpacity: 1, pane: 'markerPane' });
-};
-
-const getColorForVegetation = (str: string) => {
-  const colors = [
-    '#a3e635', '#4ade80', '#fbbf24', '#f87171', '#60a5fa', '#c084fc', 
-    '#f472b6', '#fb923c', '#38bdf8', '#34d399', '#a78bfa', '#fbb6ce', 
-    '#86efac', '#fde047', '#14b8a6', '#f43f5e', '#8b5cf6', '#d946ef'
-  ];
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.codePointAt(i) || 0 + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-};
-
-const MapLayerClickHandler: React.FC<{
-  plano: number;
-  geoJsonData: FeatureCollection | null;
-  ecoNearby: Feature<Geometry, GeoJsonProperties>[];
-  vegNearby: Feature<Geometry, GeoJsonProperties>[];
-}> = ({ plano, geoJsonData, ecoNearby, vegNearby }) => {
-  const map = useMap();
-
-  useMapEvents({
-    click(e) {
-      const pt = turf.point([e.latlng.lng, e.latlng.lat]);
-
-      if (plano === 1 && geoJsonData) {
-        for (const f of geoJsonData.features) {
-          if (f.geometry && f.geometry.type !== 'Point') {
-            try {
-              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<Polygon | MultiPolygon>)) {
-                const polyId = f.properties?.polyId || '';
-                let areaHtml = '';
-                try {
-                  const areaSqMeters = turf.area(f);
-                  areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
-                } catch (err) {
-                  void err;
-                }
-
-                let propsHtml = '';
-                Object.entries(f.properties || {}).forEach(([key, val]) => {
-                  if (key !== 'polyId' && key !== 'style' && val !== null && val !== undefined && val !== '') {
-                    propsHtml += `<strong>${key}:</strong> ${val}<br/>`;
-                  }
-                });
-
-                const popupHtml = `
-                  <div style="font-size:0.85rem; min-width: 200px; max-height: 250px; overflow-y: auto;">
-                    <strong style="color:#d63384; font-size:1rem;">Datos del Polígono ${polyId}</strong><br/>
-                    <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
-                    ${areaHtml}
-                    ${propsHtml}
-                  </div>
-                `;
-                L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
-                return;
-              }
-            } catch (err) {
-              void err;
-            }
-          }
-        }
-      }
-
-      if (plano === 2) {
-        for (const f of ecoNearby) {
-          if (f.geometry) {
-            try {
-              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<Polygon | MultiPolygon>)) {
-                const p = f.properties || {};
-                const title = p._title || 'Capa Ecológica';
-                const name = p.NOMBRE || p.NOM_AICA || p.nombre || p.Name || p.NAME || p.NOM || p.SITIO || 'Área Protegida';
-                const cat = p.CAT_MANEJO || p.CATEGORIA || p.TIPO || p.PRIORIDAD || p.TIPO_ZONA || '';
-                const estadoProp = p.ESTADOS || p.ESTADO || p.EDO || '';
-                const region = p.REGION || p.Region || '';
-                const sup = p.SUPERFICIE || p.HECTARES || p.AREA || '';
-
-                const popupHtml = `
-                  <div style="font-size:0.85rem; min-width: 220px; max-height: 250px; overflow-y: auto;">
-                    <strong style="color:#163f37; font-size:0.95rem;">${title}</strong><br/>
-                    <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
-                    <strong>Nombre:</strong> ${name}<br/>
-                    ${cat ? `<strong>Categoría:</strong> ${cat}<br/>` : ''}
-                    ${estadoProp ? `<strong>Estado:</strong> ${estadoProp}<br/>` : ''}
-                    ${region ? `<strong>Región:</strong> ${region}<br/>` : ''}
-                    ${sup ? `<strong>Superficie:</strong> ${Number(sup).toLocaleString('es-MX', { maximumFractionDigits: 2 })} ha` : ''}
-                  </div>
-                `;
-                L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
-                return;
-              }
-            } catch (err) {
-              void err;
-            }
-          }
-        }
-      }
-
-      if (plano === 3) {
-        for (const f of vegNearby) {
-          if (f.geometry) {
-            try {
-              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<Polygon | MultiPolygon>)) {
-                const p = f.properties || {};
-                const desc = p._type || p.DESCRIPCIO || p.descripcio || p.TIPO_VEG || p.tipo_veg || p.TIP_VEG || p.TIPO || p.DESC || p.NOMBRE || 'Vegetación / Suelo';
-                const cve = p.CVE_VEG || p.cve_veg || p.CLAVE || p.CVE_USV || p.cve_usv || '';
-                const fase = p.FASE || p.fase || p.CONDICION || p.condicion || '';
-                const uso = p.USO || p.uso || p.USO_SUELO || p.uso_suelo || p.GRUPO || '';
-
-                const popupHtml = `
-                  <div style="font-size:0.85rem; min-width: 220px; max-height: 250px; overflow-y: auto;">
-                    <strong style="color:#4d7c0f; font-size:0.95rem;">Uso de Suelo y Vegetación</strong><br/>
-                    <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
-                    <strong>Descripción:</strong> ${desc}<br/>
-                    ${cve ? `<strong>Clave INEGI:</strong> ${cve}<br/>` : ''}
-                    ${fase ? `<strong>Fase / Condición:</strong> ${fase}<br/>` : ''}
-                    ${uso ? `<strong>Uso:</strong> ${uso}<br/>` : ''}
-                  </div>
-                `;
-                L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
-                return;
-              }
-            } catch (err) {
-              void err;
-            }
-          }
-        }
-      }
-
-      if ((plano === 2 || plano === 3) && geoJsonData) {
-        for (const f of geoJsonData.features) {
-          if (f.geometry && f.geometry.type !== 'Point') {
-            try {
-              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<Polygon | MultiPolygon>)) {
-                const polyId = f.properties?.polyId || '';
-                let areaHtml = '';
-                try {
-                  const areaSqMeters = turf.area(f);
-                  areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
-                } catch (err) {
-                  void err;
-                }
-
-                const popupHtml = `
-                  <div style="font-size:0.85rem; min-width: 200px; max-height: 250px; overflow-y: auto;">
-                    <strong style="color:#d63384; font-size:1rem;">Polígono Inspeccionado ${polyId}</strong><br/>
-                    <div style="border-top:1px solid #ccc; margin: 4px 0;"></div>
-                    ${areaHtml}
-                  </div>
-                `;
-                L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
-                return;
-              }
-            } catch (err) {
-              void err;
-            }
-          }
-        }
-      }
-    }
-  });
-
-  return null;
-};
-
+// --- UTILIDADES DEL MAPA COMPARTIDAS ---
 const ViewportWatcher: React.FC<{ onBoundsChange: (bbox: [number, number, number, number]) => void }> = ({ onBoundsChange }) => {
   const map = useMap();
-
   const updateBounds = useCallback(() => {
     if (!map) return;
     const b = map.getBounds();
     onBoundsChange([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
   }, [map, onBoundsChange]);
 
-  useMapEvents({
-    moveend: updateBounds,
-    zoomend: updateBounds,
-  });
-
-  useEffect(() => {
-    updateBounds();
-  }, [updateBounds]);
-
+  useMapEvents({ moveend: updateBounds, zoomend: updateBounds });
+  useEffect(() => { updateBounds(); }, [updateBounds]);
   return null;
 };
 
@@ -263,34 +60,24 @@ const GraticuleEngine: React.FC = () => {
     const mapSize = map.getSize();
     const mapWidthDegrees = b.getEast() - b.getWest();
     const mapHeightDegrees = b.getNorth() - b.getSouth();
-
     const stepX = mapWidthDegrees / 3;
     const stepY = mapHeightDegrees / 3;
 
     const lats: number[] = [];
     for (let lat = b.getSouth() + stepY / 2; lat < b.getNorth(); lat += stepY) lats.push(lat);
-
     const lons: number[] = [];
     for (let lon = b.getWest() + stepX / 2; lon < b.getEast(); lon += stepX) lons.push(lon);
 
     setGrid({ lats, lons, bounds: b });
-
     const xTicks = lons.map((lon) => ({ lon, x: map.latLngToContainerPoint([b.getSouth(), lon]).x }));
     const yTicks = lats.map((lat) => ({ lat, y: map.latLngToContainerPoint([lat, b.getWest()]).y }));
-
     document.dispatchEvent(new CustomEvent('mapFrameUpdated', { detail: { w: mapSize.x, h: mapSize.y, xTicks, yTicks } }));
   }, [map]);
 
   useMapEvents({ moveend: updateGrid, zoomend: updateGrid, resize: updateGrid });
-
   useEffect(() => {
-    const timerId = setTimeout(() => {
-        updateGrid();
-    }, 0);
-    return () => {
-      clearTimeout(timerId);
-      setGrid({ lats: [], lons: [], bounds: null });
-    };
+    const timerId = setTimeout(() => updateGrid(), 0);
+    return () => { clearTimeout(timerId); setGrid({ lats: [], lons: [], bounds: null }); };
   }, [updateGrid]);
 
   if (!grid.bounds) return null;
@@ -307,38 +94,27 @@ const GraticuleEngine: React.FC = () => {
   );
 };
 
-const MapUpdater: React.FC<{
-  data: FeatureCollection | null;
-  plano: number;
-  buffer10km: Feature | null;
-}> = ({ data, plano, buffer10km }) => {
+const MapUpdater: React.FC<{ data: FeatureCollection | null; plano: number; buffer10km: Feature | null }> = ({ data, plano, buffer10km }) => {
   const map = useMap();
-
   useEffect(() => {
     if (!data || data.features.length === 0) return;
     const paddingOpts = { paddingBottomRight: [330, 30] as [number, number], paddingTopLeft: [40, 40] as [number, number] };
-
     if (plano === 1) {
       const layer = L.geoJSON(data as GeoJsonObject);
       const bounds = layer.getBounds();
       if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
-    } else if (plano === 2 || plano === 3) {
-      if (buffer10km) {
-        const bbox = turf.bbox(buffer10km);
-        map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
-      }
+    } else if ((plano === 2 || plano === 3) && buffer10km) {
+      const bbox = turf.bbox(buffer10km);
+      map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
     }
   }, [data, plano, buffer10km, map]);
-
   return null;
 };
 
 const InvalidateMap: React.FC<{ dependencies: unknown[] }> = ({ dependencies }) => {
   const map = useMap();
   useEffect(() => {
-    const timer = setTimeout(() => { 
-      map.invalidateSize(true); 
-    }, 400);
+    const timer = setTimeout(() => map.invalidateSize(true), 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, ...dependencies]);
@@ -348,7 +124,6 @@ const InvalidateMap: React.FC<{ dependencies: unknown[] }> = ({ dependencies }) 
 const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string; municipio: string }> = ({ data, estado, municipio }) => {
   if (!data || data.features.length === 0) return null;
   const center = L.geoJSON(data as GeoJsonObject).getBounds().getCenter();
-
   return (
     <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
@@ -368,46 +143,31 @@ const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string;
 
 const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> = ({ data, plano }) => {
   if (plano !== 1 || !data) return null;
-
   return (
     <>
       {data.features.map((f, i) => {
         if (f.geometry.type === 'Point') return null;
         const polyId = f.properties?.polyId;
         if (!polyId) return null;
-
         try {
           const centroid = turf.centroid(f);
           const [lon, lat] = centroid.geometry.coordinates;
-          
           const angles = [45, 135, 315, 225, 0, 180, 90, 270];
-          const angleDeg = angles[i % angles.length];
-          const angleRad = angleDeg * (Math.PI / 180);
-          
-          const baseDist = 0.00025; 
-          const multiplier = 1 + Math.floor(i / 8) * 0.3;
-          const offsetDist = baseDist * multiplier;
-
+          const angleRad = angles[i % angles.length] * (Math.PI / 180);
+          const offsetDist = 0.00025 * (1 + Math.floor(i / 8) * 0.3);
           const labelLat = lat + Math.sin(angleRad) * offsetDist;
           const labelLon = lon + Math.cos(angleRad) * offsetDist;
 
           return (
             <CircleMarker key={`smart-label-${polyId}`} center={[labelLat, labelLon]} radius={0} opacity={0} pane="markerPane">
-              <Tooltip 
-                permanent 
-                direction="center" 
-                className="bg-transparent border-0 shadow-none p-0"
-              >
+              <Tooltip permanent direction="center" className="bg-transparent border-0 shadow-none p-0">
                 <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#ff0000', textShadow: '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff' }}>
                   {polyId}
                 </div>
               </Tooltip>
             </CircleMarker>
           );
-        } catch (err) {
-          void err;
-          return null;
-        }
+        } catch (err) { void err; return null; }
       })}
     </>
   );
@@ -421,29 +181,11 @@ export const GeoViewer: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentPlano, setCurrentPlano] = useState<number>(1);
   const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [isLoadingR2, setIsLoadingR2] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
-  
-  const [sentinelUrl, setSentinelUrl] = useState<string | null>(null);
-  const [sentinelMetadata, setSentinelMetadata] = useState<Record<string, unknown> | null>(null);
-  const [useSentinel, setUseSentinel] = useState<boolean>(true);
 
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
-
-  const [ecoNearby, setEcoNearby] = useState<Feature<Geometry, GeoJsonProperties>[]>([]);
-  const [vegNearby, setVegNearby] = useState<Feature<Geometry, GeoJsonProperties>[]>([]);
-
-  const vegSeriesOptions = [
-    { id: 'serie_1', label: 'Serie I' },
-    { id: 'serie_2', label: 'Serie II' },
-    { id: 'serie_3', label: 'Serie III' },
-    { id: 'serie_4', label: 'Serie IV' },
-    { id: 'serie_5', label: 'Serie V' },
-    { id: 'serie_6', label: 'Serie VI' },
-    { id: 'serie_7', label: 'Serie VII' },
-  ];
 
   useEffect(() => {
     const handler = (e: Event) => setFrameData((e as CustomEvent<FrameData>).detail);
@@ -456,195 +198,18 @@ export const GeoViewer: React.FC = () => {
     try {
       const polys = turf.featureCollection(geoJsonData.features.filter((f) => f.geometry.type !== 'Point'));
       return turf.buffer(polys, 10, { units: 'kilometers' }) as unknown as Feature;
-    } catch (err) {
-      console.warn('Error calculando buffer:', err);
-      return null;
-    }
+    } catch { return null; }
   }, [geoJsonData]);
 
   const predioCentroid = useMemo(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
-    try {
-      return turf.centroid(geoJsonData);
-    } catch {
-      return null;
-    }
+    try { return turf.centroid(geoJsonData); } catch { return null; }
   }, [geoJsonData]);
 
-  useEffect(() => {
-    if (!predioCentroid || !previewData?.targetDate) return;
-
-    const fetchSentinelData = async () => {
-      try {
-        const [lng, lat] = predioCentroid.geometry.coordinates;
-        const backendUrl = import.meta.env.VITE_SENTINEL_API_URL || 'http://localhost:3000';
-        const response = await fetch(`${backendUrl}/sentinel/tiles?lat=${lat}&lng=${lng}&date=${previewData.targetDate}`);
-        
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.tileUrl) {
-            setSentinelUrl(result.tileUrl);
-            setSentinelMetadata(result.metadata);
-            setUseSentinel(true);
-          }
-        } else {
-          setSentinelUrl(null);
-          setSentinelMetadata(null);
-          setUseSentinel(false);
-        }
-      } catch (error) {
-        void error;
-        setSentinelUrl(null);
-        setSentinelMetadata(null);
-        setUseSentinel(false);
-      }
-    };
-
-    void fetchSentinelData();
-  }, [predioCentroid, previewData?.targetDate]);
-
-  // PLANO 2: Consulta por rangos HTTP a Cloudflare R2
-  useEffect(() => {
-    if (currentPlano !== 2 || !buffer10km) return;
-
-    let isCancelled = false;
-    const loadEcoData = async () => {
-      setIsLoadingR2(true);
-      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
-      const bbox = { minX, minY, maxX, maxY };
-
-      try {
-        const results = await Promise.all(
-          ECO_LAYERS_CONFIG.map(async (layer) => {
-            const raw = await queryFgbLayer(layer.file, bbox);
-            return raw
-              .filter((f) => {
-                try {
-                  return turf.booleanIntersects(f as unknown as Feature<Polygon | MultiPolygon>, buffer10km as unknown as Feature<Polygon | MultiPolygon>);
-                } catch {
-                  return false;
-                }
-              })
-              .map((f) => ({
-                ...f,
-                properties: {
-                  ...f.properties,
-                  _color: layer.color,
-                  _title: layer.title,
-                  _layerId: layer.id,
-                },
-              }));
-          })
-        );
-
-        if (!isCancelled) {
-          setEcoNearby(results.flat());
-        }
-      } catch (err) {
-        console.error('Error cargando capas ecológicas desde R2:', err);
-      } finally {
-        if (!isCancelled) setIsLoadingR2(false);
-      }
-    };
-
-    void loadEcoData();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [currentPlano, buffer10km]);
-
-  // PLANO 3: Consulta por rangos HTTP a Cloudflare R2 (Vegetación)
-  useEffect(() => {
-    if (currentPlano !== 3 || !buffer10km) return;
-
-    let isCancelled = false;
-    const loadVegData = async () => {
-      setIsLoadingR2(true);
-      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
-      const bbox = { minX, minY, maxX, maxY };
-      const fileName = `usv_${selectedVegSerie}.fgb`;
-
-      try {
-        const raw = await queryFgbLayer(fileName, bbox);
-        const filtered = raw
-          .filter((f) => {
-            try {
-              return turf.booleanIntersects(f as unknown as Feature<Polygon | MultiPolygon>, buffer10km as unknown as Feature<Polygon | MultiPolygon>);
-            } catch {
-              return false;
-            }
-          })
-          .map((f) => {
-            const props = f.properties || {};
-            const typeVeg = props.DESCRIPCIO || props.descripcio || props.TIPO_VEG || props.tipo_veg || props.TIP_VEG || props.TIPO || props.DESC || props.NOMBRE || 'Vegetación Indeterminada';
-            return {
-              ...f,
-              properties: {
-                ...props,
-                _type: typeVeg,
-                _color: getColorForVegetation(typeVeg)
-              }
-            };
-          });
-
-        if (!isCancelled) {
-          setVegNearby(filtered);
-        }
-      } catch (err) {
-        console.error('Error cargando vegetación desde R2:', err);
-      } finally {
-        if (!isCancelled) setIsLoadingR2(false);
-      }
-    };
-
-    void loadVegData();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [currentPlano, buffer10km, selectedVegSerie]);
-
-  const activeEcoLegend = useMemo(() => {
-    if (currentPlano !== 2 || ecoNearby.length === 0) return [];
-    const foundIds = new Set(ecoNearby.map((f) => f.properties?._layerId));
-    return ECO_LAYERS_CONFIG.filter((layer) => foundIds.has(layer.id));
-  }, [ecoNearby, currentPlano]);
-
-  const activeVegLegend = useMemo(() => {
-    if (currentPlano !== 3 || vegNearby.length === 0) return [];
-
-    let viewportPolygon: Feature<Geometry, GeoJsonProperties> | null = null;
-    if (currentViewportBbox) {
-      try {
-        viewportPolygon = turf.bboxPolygon(currentViewportBbox);
-      } catch {
-        viewportPolygon = null;
-      }
-    }
-
-    const uniqueTypes = new Map<string, string>();
-
-    vegNearby.forEach((f) => {
-      let isVisible = true;
-      if (viewportPolygon) {
-        try {
-          isVisible = turf.booleanIntersects(f as unknown as Feature<Polygon | MultiPolygon>, viewportPolygon as unknown as Feature<Polygon | MultiPolygon>);
-        } catch {
-          isVisible = false;
-        }
-      }
-
-      if (isVisible) {
-        const typeStr = f.properties?._type;
-        if (typeStr && !uniqueTypes.has(typeStr)) {
-          uniqueTypes.set(typeStr, f.properties?._color);
-        }
-      }
-    });
-
-    return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
-  }, [vegNearby, currentPlano, currentViewportBbox]);
+  // Consumo de Custom Hooks
+  const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
+  const { ecoNearby, isLoadingEco } = useEcoLayers(currentPlano, buffer10km);
+  const { vegNearby, isLoadingVeg } = useVegetationLayers(currentPlano, buffer10km, selectedVegSerie);
 
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
@@ -712,12 +277,7 @@ export const GeoViewer: React.FC = () => {
         link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
         link.href = canvas.toDataURL('image/jpeg', 0.9);
         link.click();
-      }).catch((err) => {
-        console.warn('Error al generar imagen:', err);
-        alert('Error al generar la imagen.');
-      }).finally(() => {
-        setIsExporting(false);
-      });
+      }).finally(() => setIsExporting(false));
     }, 1000);
   };
 
@@ -725,7 +285,6 @@ export const GeoViewer: React.FC = () => {
     if (!geoJsonData) return { totalArea: '0.00', areaDetails: [] };
     let areaSum = 0;
     const details: { name: string; area: string }[] = [];
-
     geoJsonData.features.forEach((f) => {
       if (f.geometry.type === 'Point') return;
       const polyId = f.properties?.polyId;
@@ -733,11 +292,8 @@ export const GeoViewer: React.FC = () => {
         const a = turf.area(f);
         areaSum += a;
         if (polyId) details.push({ name: `Polígono ${polyId}`, area: a.toFixed(2) });
-      } catch (err) {
-        console.warn('Turf Error:', err);
-      }
+      } catch (err) { void err; }
     });
-
     return { totalArea: areaSum.toFixed(2), areaDetails: details };
   }, [geoJsonData]);
 
@@ -745,10 +301,8 @@ export const GeoViewer: React.FC = () => {
     if (!frameData) return null;
     const { w, h, xTicks, yTicks } = frameData;
     const borderWeight = 8;
-
     const xEdges = [0, ...xTicks.map((t) => t.x).filter((x) => x > 0 && x < w).sort((a, b) => a - b), w];
     const yEdges = [0, ...yTicks.map((t) => t.y).filter((y) => y > 0 && y < h).sort((a, b) => a - b), h];
-
     const segments: React.ReactNode[] = [];
 
     for (let i = 0; i < xEdges.length - 1; i++) {
@@ -775,17 +329,7 @@ export const GeoViewer: React.FC = () => {
   const renderLabels = () => {
     if (!frameData) return null;
     const { w, h, xTicks, yTicks } = frameData;
-
-    const labelStyle: React.CSSProperties = {
-      position: 'absolute',
-      fontSize: '0.65rem',
-      fontWeight: 'bold',
-      color: 'black',
-      whiteSpace: 'nowrap',
-      zIndex: 10,
-      textAlign: 'center',
-    };
-
+    const labelStyle: React.CSSProperties = { position: 'absolute', fontSize: '0.65rem', fontWeight: 'bold', color: 'black', whiteSpace: 'nowrap', zIndex: 10, textAlign: 'center' };
     const elements: React.ReactNode[] = [];
 
     xTicks.forEach((tick) => {
@@ -796,7 +340,6 @@ export const GeoViewer: React.FC = () => {
         );
       }
     });
-
     yTicks.forEach((tick) => {
       if (tick.y > 0 && tick.y < h) {
         elements.push(
@@ -811,7 +354,7 @@ export const GeoViewer: React.FC = () => {
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
-        
+
         {/* PANEL LATERAL */}
         <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
@@ -867,21 +410,14 @@ export const GeoViewer: React.FC = () => {
           {!isSidebarOpen && geoJsonData && (
             <button type="button" onClick={handleDownloadImage} disabled={isExporting} className="btn btn-warning position-absolute shadow fw-bold ignore-print" style={{ top: '15px', left: '65px', zIndex: 1040 }}>
               {isExporting ? (
-                <>
-                  <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                  Generando...
-                </>
+                <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Generando...</>
               ) : (
-                <>
-                  <i className="bi bi-download me-2"></i>
-                  Descargar {currentPlano === 1 ? 'Plano 1' : currentPlano === 2 ? 'Plano 2' : 'Plano 3'}
-                </>
+                <><i className="bi bi-download me-2"></i>Descargar {currentPlano === 1 ? 'Plano 1' : currentPlano === 2 ? 'Plano 2' : 'Plano 3'}</>
               )}
             </button>
           )}
 
           <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center" style={{ padding: '40px', boxSizing: 'border-box', width: '11in', height: '8.5in', marginTop: '40px' }}>
-            
             <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
               {renderLabels()}
               {renderZebraFrame()}
@@ -898,7 +434,7 @@ export const GeoViewer: React.FC = () => {
                   </svg>
                 </div>
 
-                {isLoadingR2 && (
+                {(isLoadingEco || isLoadingVeg) && (
                   <div className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
                     <div className="spinner-border spinner-border-sm text-success me-2" role="status"></div>
                     <span className="small fw-semibold text-dark">Consultando coberturas en R2...</span>
@@ -906,23 +442,15 @@ export const GeoViewer: React.FC = () => {
                 )}
 
                 <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
-                  
-                  <MapLayerClickHandler 
-                    plano={currentPlano} 
-                    geoJsonData={geoJsonData} 
-                    ecoNearby={ecoNearby} 
-                    vegNearby={vegNearby} 
-                  />
-
                   <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
                   <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
-                  
+
                   {useSentinel && sentinelUrl && currentPlano === 1 ? (
                     <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
                   ) : (
                     <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
                   )}
-                  
+
                   <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
 
                   <GraticuleEngine />
@@ -932,37 +460,10 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {currentPlano === 2 && ecoNearby.length > 0 && (
-                    <GeoJSON
-                      key={`eco-layers-${ecoNearby.length}`}
-                      data={turf.featureCollection(ecoNearby)}
-                      style={(feature) => ({
-                        color: feature?.properties?._color || '#198754',
-                        weight: 2,
-                        fillColor: feature?.properties?._color || '#198754',
-                        fillOpacity: 0.25,
-                      })}
-                    />
-                  )}
-
-                  {currentPlano === 3 && vegNearby.length > 0 && (
-                    <GeoJSON
-                      key={`veg-layers-${selectedVegSerie}-${vegNearby.length}`}
-                      data={turf.featureCollection(vegNearby)}
-                      style={(feature) => ({
-                        color: feature?.properties?._color || '#65a30d',
-                        weight: 1.5,
-                        fillColor: feature?.properties?._color || '#84cc16',
-                        fillOpacity: 0.35,
-                      })}
-                    />
-                  )}
-
-                  {geoJsonData && (
-                    <GeoJSON key={`user-layer-${currentPlano}`} data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} />
-                  )}
-
+                  {geoJsonData && <UserPolygonLayer geoJsonData={geoJsonData} />}
                   {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
+                  {currentPlano === 2 && <EcoLayer ecoNearby={ecoNearby} />}
+                  {currentPlano === 3 && <VegLayer vegNearby={vegNearby} />}
                 </MapContainer>
 
                 {previewData && (
@@ -975,132 +476,9 @@ export const GeoViewer: React.FC = () => {
 
                     <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
-                    {currentPlano === 1 && (
-                      <>
-                        <div className="bg-white mb-2 border border-dark">
-                          <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Datos de Inspección</div>
-                          <div className="p-2 text-center" style={{ fontSize: '0.65rem' }}>
-                            <p className="mb-1"><strong>Acta:</strong> {previewData.acta || 'N/A'}</p>
-                            <p className="mb-0"><strong>Fecha de Inspección:</strong> {previewData.targetDate || 'N/A'}</p>
-                          </div>
-                        </div>
-
-                        {useSentinel && sentinelMetadata && (
-                          <div className="bg-white mb-2 border border-dark">
-                            <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem', padding: '2px' }}>Metadatos Satelitales</div>
-                            <div className="p-2 text-center" style={{ fontSize: '0.60rem' }}>
-                              <p className="mb-1"><strong>Sensor:</strong> {String(sentinelMetadata.platform)}</p>
-                              <p className="mb-1"><strong>Captura:</strong> {new Date(String(sentinelMetadata.date)).toLocaleDateString('es-MX')}</p>
-                              <p className="mb-0"><strong>Nubosidad:</strong> {Number(sentinelMetadata.cloudCover).toFixed(2)}%</p>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="bg-white mb-2 border border-dark">
-                          <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
-                          <div className="p-2">
-                            <div className="d-flex align-items-center mb-1">
-                              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px' }}></div>
-                              <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono(s) Inspeccionado(s)</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="bg-white mb-2 border border-dark">
-                          <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Datos de Superficie:</div>
-                          <div className="p-2 text-center">
-                            {areaDetails.map((item) => (
-                              <p key={`area-${item.name}`} className="mb-1" style={{ fontSize: '0.65rem' }}><strong>{item.name}:</strong> {item.area} m²</p>
-                            ))}
-                            <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
-                            <p className="mb-0" style={{ fontSize: '0.7rem' }}><strong>Superficie Total:</strong> {totalArea} m²</p>
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    {currentPlano === 2 && (
-                      <>
-                        <div className="bg-white mb-2 border border-dark">
-                          <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Simbología</div>
-                          <div className="p-2">
-                            <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-                              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
-                              <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
-                            </div>
-                            
-                            {activeEcoLegend.length > 0 ? (
-                              <>
-                                <div className="fw-bold mb-1" style={{ fontSize: '0.65rem', color: '#163f37' }}>Relevancia ecológica intersectada:</div>
-                                {activeEcoLegend.map((layer) => (
-                                  <div key={`sym-eco-${layer.id}`} className="d-flex align-items-center mb-1">
-                                    <div style={{ width: '12px', height: '12px', border: `2px solid ${layer.color}`, backgroundColor: `${layer.color}40`, marginRight: '8px', flexShrink: 0 }}></div>
-                                    <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>{layer.title}</span>
-                                  </div>
-                                ))}
-                              </>
-                            ) : (
-                              <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
-                                {isLoadingR2 ? 'Buscando intersecciones...' : 'Ningún polígono ecológico dentro de los 10 km'}
-                              </output>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="border border-dark mt-2 p-1 text-center" style={{ fontSize: '0.65rem' }}>
-                          <span className="fw-bold">Fecha de Inspección:</span> {previewData.targetDate || 'N/A'}
-                        </div>
-                      </>
-                    )}
-
-                    {currentPlano === 3 && (
-                      <>
-                        <div className="bg-white mb-2 border border-dark">
-                          <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#65a30d', fontSize: '0.75rem', padding: '2px' }}>Datos de Vegetación</div>
-                          <div className="p-2">
-                            <label htmlFor="vegSerieSelect" className="fw-bold mb-1" style={{ fontSize: '0.65rem' }}>Serie INEGI a evaluar:</label>
-                            <select
-                              id="vegSerieSelect"
-                              className="form-select form-select-sm ignore-print"
-                              style={{ fontSize: '0.7rem' }}
-                              value={selectedVegSerie}
-                              onChange={(e) => setSelectedVegSerie(e.target.value)}
-                            >
-                              {vegSeriesOptions.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
-                            </select>
-                            
-                            <div className="d-print-block d-none" style={{ fontSize: '0.7rem' }}>
-                              Serie Seleccionada: <strong>{vegSeriesOptions.find((o) => o.id === selectedVegSerie)?.label}</strong>
-                            </div>
-                          </div>
-                          
-                          <div className="p-2 border-top border-dark" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                            <div className="fw-bold mb-2" style={{ fontSize: '0.65rem' }}>Simbología Visible en Encuadre</div>
-                            <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-                              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
-                              <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
-                            </div>
-                            
-                            {activeVegLegend.length > 0 ? (
-                              activeVegLegend.map((item) => (
-                                <div key={`sym-veg-${item.label}`} className="d-flex align-items-center mt-1">
-                                  <div style={{ width: '12px', height: '12px', border: `2px solid ${item.color}`, backgroundColor: `${item.color}80`, marginRight: '8px', flexShrink: 0 }}></div>
-                                  <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>{item.label}</span>
-                                </div>
-                              ))
-                            ) : (
-                              <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
-                                {isLoadingR2 ? 'Cargando coberturas...' : 'Sin coberturas visibles en este encuadre'}
-                              </output>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="border border-dark mt-2 p-1 text-center" style={{ fontSize: '0.65rem' }}>
-                          <span className="fw-bold">Fecha de Inspección:</span> {previewData.targetDate || 'N/A'}
-                        </div>
-                      </>
-                    )}
+                    {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
+                    {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} targetDate={previewData.targetDate} isLoading={isLoadingEco} />}
+                    {currentPlano === 3 && <LegendVegetacion vegNearby={vegNearby} selectedVegSerie={selectedVegSerie} setSelectedVegSerie={setSelectedVegSerie} currentViewportBbox={currentViewportBbox} isLoading={isLoadingVeg} targetDate={previewData.targetDate} />}
 
                     <div className="bg-white mb-2 border border-dark mt-2">
                       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
@@ -1115,37 +493,20 @@ export const GeoViewer: React.FC = () => {
           {geoJsonData && (
             <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '900px', borderTop: '4px solid #d6b56a', height: '60px' }}>
               <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
-              <button
-                type="button"
-                onClick={() => setCurrentPlano(1)}
-                className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
-              >
+              <button type="button" onClick={() => setCurrentPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
               </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPlano(2)}
-                className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
-              >
+              <button type="button" onClick={() => setCurrentPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-tree me-1"></i> Relevancia Ecológica
               </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPlano(3)}
-                className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
-              >
+              <button type="button" onClick={() => setCurrentPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
               </button>
-              
+
               {sentinelUrl && currentPlano === 1 && (
                 <>
                   <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
-                  <button
-                    type="button"
-                    onClick={() => setUseSentinel(!useSentinel)}
-                    className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}
-                    title="Alterna entre imagen satelital de la fecha exacta o imagen de alta resolución"
-                  >
+                  <button type="button" onClick={() => setUseSentinel(!useSentinel)} className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}>
                     <i className="bi bi-satellite me-1"></i> {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
                   </button>
                 </>
