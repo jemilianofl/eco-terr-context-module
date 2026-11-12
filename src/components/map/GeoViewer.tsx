@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, u
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
+import { deserialize } from 'flatgeobuf/lib/mjs/geojson.js';
 import type { FeatureCollection, Feature, Geometry, GeoJsonObject, GeoJsonProperties } from 'geojson';
 import L from 'leaflet';
 import html2canvas from 'html2canvas';
@@ -28,12 +29,22 @@ interface FrameData {
   yTicks: { lat: number; y: number }[];
 }
 
-interface EcoLayerItem {
+interface EcoLayerConfig {
   id: string;
+  file: string;
   title: string;
   color: string;
-  data: FeatureCollection | null;
 }
+
+const ECO_LAYERS_CONFIG: EcoLayerConfig[] = [
+  { id: 'aicas', file: 'aicas.fgb', title: 'Área de Importancia para la Conservación de las Aves (AICA)', color: '#d63384' },
+  { id: 'ramsar', file: 'ramsar.fgb', title: 'Sitio Ramsar', color: '#0d6efd' },
+  { id: 'anp_federal', file: 'anp_federal.fgb', title: 'Área Natural Protegida federal', color: '#198754' },
+  { id: 'anp_estatal', file: 'anp_estatal.fgb', title: 'Área Natural Protegida estatal o municipal', color: '#fd7e14' },
+  { id: 'advc', file: 'advc.fgb', title: 'Área Destinada Voluntariamente a la Conservación (ADVC)', color: '#65a30d' },
+  { id: 'rtp', file: 'rtp.fgb', title: 'Región Terrestre Prioritaria', color: '#ffc107' },
+  { id: 'rhp', file: 'rhp.fgb', title: 'Región Hídrica Prioritaria', color: '#0dcaf0' },
+];
 
 const toDMS = (deg: number, isLat: boolean) => {
   const absolute = Math.abs(deg);
@@ -67,7 +78,27 @@ const getColorForVegetation = (str: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-// MOTOR DE CLIC ESPACIAL: Consulta en memoria mediante Turf.js en un solo clic
+async function fetchFgbFromR2(
+  fileName: string,
+  bbox: { minX: number; minY: number; maxX: number; maxY: number }
+): Promise<Feature<Geometry, GeoJsonProperties>[]> {
+  const baseUrl = (import.meta.env.VITE_R2_PUBLIC_URL || '').replace(/\/$/, '');
+  const url = `${baseUrl}/${fileName}`;
+  const features: Feature<Geometry, GeoJsonProperties>[] = [];
+
+  try {
+    // AQUÍ ESTÁ LA CORRECCIÓN: Envolver 'bbox' dentro de 'rect'
+    const iterator = deserialize(url, { rect: bbox });
+    for await (const feature of iterator) {
+      features.push(feature as Feature<Geometry, GeoJsonProperties>);
+    }
+  } catch (error) {
+    console.warn(`Error al consultar FlatGeobuf en R2 (${fileName}):`, error);
+  }
+
+  return features;
+}
+
 const MapLayerClickHandler: React.FC<{
   plano: number;
   geoJsonData: FeatureCollection | null;
@@ -80,7 +111,6 @@ const MapLayerClickHandler: React.FC<{
     click(e) {
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
 
-      // 1. PLANO 1: Ubicación Geográfica -> Polígono inspeccionado
       if (plano === 1 && geoJsonData) {
         for (const f of geoJsonData.features) {
           if (f.geometry && f.geometry.type !== 'Point') {
@@ -116,7 +146,6 @@ const MapLayerClickHandler: React.FC<{
         }
       }
 
-      // 2. PLANO 2: Relevancia Ecológica -> Áreas Naturales Protegidas, Ramsar, etc.
       if (plano === 2) {
         for (const f of ecoNearby) {
           if (f.geometry) {
@@ -149,7 +178,6 @@ const MapLayerClickHandler: React.FC<{
         }
       }
 
-      // 3. PLANO 3: Tipo de Vegetación y Uso de Suelo
       if (plano === 3) {
         for (const f of vegNearby) {
           if (f.geometry) {
@@ -179,7 +207,6 @@ const MapLayerClickHandler: React.FC<{
         }
       }
 
-      // Si hace clic en el polígono inspeccionado dentro del Plano 2 o 3
       if ((plano === 2 || plano === 3) && geoJsonData) {
         for (const f of geoJsonData.features) {
           if (f.geometry && f.geometry.type !== 'Point') {
@@ -394,6 +421,7 @@ export const GeoViewer: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentPlano, setCurrentPlano] = useState<number>(1);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isLoadingR2, setIsLoadingR2] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
   
@@ -402,8 +430,10 @@ export const GeoViewer: React.FC = () => {
   const [useSentinel, setUseSentinel] = useState<boolean>(true);
 
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
-  const [vegLayerData, setVegLayerData] = useState<FeatureCollection | null>(null);
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
+
+  const [ecoNearby, setEcoNearby] = useState<Feature<Geometry, GeoJsonProperties>[]>([]);
+  const [vegNearby, setVegNearby] = useState<Feature<Geometry, GeoJsonProperties>[]>([]);
 
   const vegSeriesOptions = [
     { id: 'serie_1', label: 'Serie I' },
@@ -415,93 +445,11 @@ export const GeoViewer: React.FC = () => {
     { id: 'serie_7', label: 'Serie VII' },
   ];
 
-  const [ecoLayers, setEcoLayers] = useState<EcoLayerItem[]>([
-    { id: 'aicas', title: 'Área de Importancia para la Conservación de las Aves (AICA)', color: '#d63384', data: null },
-    { id: 'ramsar', title: 'Sitio Ramsar', color: '#0d6efd', data: null },
-    { id: 'anp_federal', title: 'Área Natural Protegida federal', color: '#198754', data: null },
-    { id: 'anp_estatal', title: 'Área Natural Protegida estatal o municipal', color: '#fd7e14', data: null },
-    { id: 'advc', title: 'Área Destinada Voluntariamente a la Conservación (ADVC)', color: '#65a30d', data: null },
-    { id: 'rtp', title: 'Región Terrestre Prioritaria', color: '#ffc107', data: null },
-    { id: 'rhp', title: 'Región Hídrica Prioritaria', color: '#0dcaf0', data: null },
-  ]);
-
   useEffect(() => {
     const handler = (e: Event) => setFrameData((e as CustomEvent<FrameData>).detail);
     document.addEventListener('mapFrameUpdated', handler);
     return () => document.removeEventListener('mapFrameUpdated', handler);
   }, []);
-
-  useEffect(() => {
-    if (currentPlano === 2) {
-      ecoLayers.forEach((layer) => {
-        if (!layer.data) {
-          fetch(`/layers/geojson/${layer.id}.geojson`)
-            .then((res) => (res.ok ? res.json() : null))
-            .then((json: FeatureCollection | null) => {
-              if (json) {
-                setEcoLayers((prev) => prev.map((l) => (l.id === layer.id ? { ...l, data: json } : l)));
-              }
-            })
-            .catch((err) => console.warn(`Capa ${layer.id} no disponible.`, err));
-        }
-      });
-    }
-  }, [currentPlano, ecoLayers]);
-
-  useEffect(() => {
-    if (currentPlano === 3) {
-      setVegLayerData(null);
-      fetch(`/layers/geojson/usv_${selectedVegSerie}.geojson`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((json: FeatureCollection | null) => {
-          if (json) setVegLayerData(json);
-        })
-        .catch((err) => console.warn(`Capa de vegetación ${selectedVegSerie} no disponible.`, err));
-    }
-  }, [currentPlano, selectedVegSerie]);
-
-  const onSubmit = async (data: FormData) => {
-    const files = data.polygonFile;
-    if (!files || files.length === 0) return;
-    setPreviewData(data);
-
-    try {
-      let parsedData: unknown = null;
-      const zipFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.zip'));
-      const kmlFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.kml'));
-      const geoJsonFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.geojson'));
-
-      if (zipFile) {
-        parsedData = await shp(await zipFile.arrayBuffer());
-        if (Array.isArray(parsedData)) parsedData = parsedData[0];
-      } else if (kmlFile) {
-        parsedData = kml(new DOMParser().parseFromString(await kmlFile.text(), 'text/xml'));
-      } else if (geoJsonFile) {
-        parsedData = JSON.parse(await geoJsonFile.text());
-      }
-
-      if ((parsedData as GeoJsonObject)?.type !== 'FeatureCollection') {
-        parsedData = { type: 'FeatureCollection', features: [parsedData as Feature] };
-      }
-
-      let polyIndex = 0;
-      const cleanFeatures = (parsedData as FeatureCollection).features.map((f) => {
-        const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
-        if (finalF.geometry.type !== 'Point') {
-          finalF.properties = finalF.properties || {};
-          finalF.properties.polyId = String.fromCharCode(65 + polyIndex);
-          polyIndex++;
-        }
-        return finalF;
-      });
-
-      setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures } as FeatureCollection);
-      setIsSidebarOpen(false);
-    } catch (err) {
-      console.warn('Error procesando el archivo espacial:', err);
-      alert('Error procesando el archivo espacial.');
-    }
-  };
 
   const buffer10km = useMemo(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
@@ -554,61 +502,113 @@ export const GeoViewer: React.FC = () => {
     fetchSentinelData();
   }, [predioCentroid, previewData?.targetDate]);
 
-  const ecoNearby = useMemo(() => {
-    if (!buffer10km || currentPlano !== 2) return [];
-    const nearby: Feature<Geometry, GeoJsonProperties>[] = [];
+  // PLANO 2: Consulta por rangos HTTP a Cloudflare R2 (FlatGeobuf)
+  useEffect(() => {
+    if (currentPlano !== 2 || !buffer10km) return;
 
-    ecoLayers.forEach((layer) => {
-      if (!layer.data) return;
-      layer.data.features.forEach((f) => {
-        try {
-          if (turf.booleanIntersects(f as turf.CoordPair, buffer10km as turf.CoordPair)) {
-            nearby.push({
+    let isCancelled = false;
+    const loadEcoData = async () => {
+      setIsLoadingR2(true);
+      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      const bbox = { minX, minY, maxX, maxY };
+
+      try {
+        const results = await Promise.all(
+          ECO_LAYERS_CONFIG.map(async (layer) => {
+            const raw = await fetchFgbFromR2(layer.file, bbox);
+            return raw
+              .filter((f) => {
+                try {
+                  return turf.booleanIntersects(f as any, buffer10km as any);
+                } catch {
+                  return false;
+                }
+              })
+              .map((f) => ({
+                ...f,
+                properties: {
+                  ...f.properties,
+                  _color: layer.color,
+                  _title: layer.title,
+                  _layerId: layer.id,
+                },
+              }));
+          })
+        );
+
+        if (!isCancelled) {
+          setEcoNearby(results.flat());
+        }
+      } catch (err) {
+        console.error('Error cargando capas ecológicas desde R2:', err);
+      } finally {
+        if (!isCancelled) setIsLoadingR2(false);
+      }
+    };
+
+    loadEcoData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentPlano, buffer10km]);
+
+  // PLANO 3: Consulta por rangos HTTP a Cloudflare R2 (FlatGeobuf de Vegetación)
+  useEffect(() => {
+    if (currentPlano !== 3 || !buffer10km) return;
+
+    let isCancelled = false;
+    const loadVegData = async () => {
+      setIsLoadingR2(true);
+      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      const bbox = { minX, minY, maxX, maxY };
+      const fileName = `usv_${selectedVegSerie}.fgb`;
+
+      try {
+        const raw = await fetchFgbFromR2(fileName, bbox);
+        const filtered = raw
+          .filter((f) => {
+            try {
+              return turf.booleanIntersects(f as any, buffer10km as any);
+            } catch {
+              return false;
+            }
+          })
+          .map((f) => {
+            const props = f.properties || {};
+            const typeVeg = props.DESCRIPCIO || props.descripcio || props.TIPO_VEG || props.tipo_veg || props.TIP_VEG || props.TIPO || props.DESC || props.NOMBRE || 'Vegetación Indeterminada';
+            return {
               ...f,
               properties: {
-                ...f.properties,
-                _color: layer.color,
-                _title: layer.title,
-                _layerId: layer.id,
-              },
-            });
-          }
-        } catch {}
-      });
-    });
-
-    return nearby;
-  }, [buffer10km, currentPlano, ecoLayers]);
-
-  const vegNearby = useMemo(() => {
-    if (!buffer10km || currentPlano !== 3 || !vegLayerData) return [];
-    const nearby: Feature<Geometry, GeoJsonProperties>[] = [];
-
-    vegLayerData.features.forEach((f) => {
-      try {
-        if (turf.booleanIntersects(f as turf.CoordPair, buffer10km as turf.CoordPair)) {
-          const props = f.properties || {};
-          const typeVeg = props.DESCRIPCIO || props.descripcio || props.TIPO_VEG || props.tipo_veg || props.TIP_VEG || props.TIPO || props.DESC || props.NOMBRE || 'Vegetación Indeterminada';
-          nearby.push({
-            ...f,
-            properties: {
-              ...props,
-              _type: typeVeg,
-              _color: getColorForVegetation(typeVeg)
-            }
+                ...props,
+                _type: typeVeg,
+                _color: getColorForVegetation(typeVeg)
+              }
+            };
           });
-        }
-      } catch {}
-    });
 
-    return nearby;
-  }, [buffer10km, currentPlano, vegLayerData]);
+        if (!isCancelled) {
+          setVegNearby(filtered);
+        }
+      } catch (err) {
+        console.error('Error cargando vegetación desde R2:', err);
+      } finally {
+        if (!isCancelled) setIsLoadingR2(false);
+      }
+    };
+
+    loadVegData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentPlano, buffer10km, selectedVegSerie]);
 
   const activeEcoLegend = useMemo(() => {
     if (currentPlano !== 2 || ecoNearby.length === 0) return [];
-    const foundIds = new Set(ecoNearby.map(f => f.properties?._layerId));
-    return ecoLayers.filter(layer => foundIds.has(layer.id));
-  }, [ecoNearby, currentPlano, ecoLayers]);
+    const foundIds = new Set(ecoNearby.map((f) => f.properties?._layerId));
+    return ECO_LAYERS_CONFIG.filter((layer) => foundIds.has(layer.id));
+  }, [ecoNearby, currentPlano]);
 
   const activeVegLegend = useMemo(() => {
     if (currentPlano !== 3 || vegNearby.length === 0) return [];
@@ -624,7 +624,7 @@ export const GeoViewer: React.FC = () => {
 
     const uniqueTypes = new Map<string, string>();
 
-    vegNearby.forEach(f => {
+    vegNearby.forEach((f) => {
       let isVisible = true;
       if (viewportPolygon) {
         try {
@@ -644,6 +644,49 @@ export const GeoViewer: React.FC = () => {
 
     return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
   }, [vegNearby, currentPlano, currentViewportBbox]);
+
+  const onSubmit = async (data: FormData) => {
+    const files = data.polygonFile;
+    if (!files || files.length === 0) return;
+    setPreviewData(data);
+
+    try {
+      let parsedData: unknown = null;
+      const zipFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.zip'));
+      const kmlFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.kml'));
+      const geoJsonFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.geojson'));
+
+      if (zipFile) {
+        parsedData = await shp(await zipFile.arrayBuffer());
+        if (Array.isArray(parsedData)) parsedData = parsedData[0];
+      } else if (kmlFile) {
+        parsedData = kml(new DOMParser().parseFromString(await kmlFile.text(), 'text/xml'));
+      } else if (geoJsonFile) {
+        parsedData = JSON.parse(await geoJsonFile.text());
+      }
+
+      if ((parsedData as GeoJsonObject)?.type !== 'FeatureCollection') {
+        parsedData = { type: 'FeatureCollection', features: [parsedData as Feature] };
+      }
+
+      let polyIndex = 0;
+      const cleanFeatures = (parsedData as FeatureCollection).features.map((f) => {
+        const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
+        if (finalF.geometry.type !== 'Point') {
+          finalF.properties = finalF.properties || {};
+          finalF.properties.polyId = String.fromCharCode(65 + polyIndex);
+          polyIndex++;
+        }
+        return finalF;
+      });
+
+      setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures } as FeatureCollection);
+      setIsSidebarOpen(false);
+    } catch (err) {
+      console.warn('Error procesando el archivo espacial:', err);
+      alert('Error procesando el archivo espacial.');
+    }
+  };
 
   const handleDownloadImage = () => {
     if (!printRef.current) return;
@@ -855,9 +898,15 @@ export const GeoViewer: React.FC = () => {
                   </svg>
                 </div>
 
+                {isLoadingR2 && (
+                  <div className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
+                    <div className="spinner-border spinner-border-sm text-success me-2" role="status"></div>
+                    <span className="small fw-semibold text-dark">Consultando coberturas en R2...</span>
+                  </div>
+                )}
+
                 <MapContainer center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
                   
-                  {/* MOTOR DE CLIC: Atiende las coordenadas exactas de clic sin depender de los polígonos del Canvas */}
                   <MapLayerClickHandler 
                     plano={currentPlano} 
                     geoJsonData={geoJsonData} 
@@ -997,7 +1046,9 @@ export const GeoViewer: React.FC = () => {
                                 ))}
                               </>
                             ) : (
-                              <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>Ningún polígono ecológico dentro de los 10 km</div>
+                              <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>
+                                {isLoadingR2 ? 'Buscando intersecciones...' : 'Ningún polígono ecológico dentro de los 10 km'}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -1021,11 +1072,11 @@ export const GeoViewer: React.FC = () => {
                               value={selectedVegSerie}
                               onChange={(e) => setSelectedVegSerie(e.target.value)}
                             >
-                              {vegSeriesOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                              {vegSeriesOptions.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                             </select>
                             
                             <div className="d-print-block d-none" style={{ fontSize: '0.7rem' }}>
-                              Serie Seleccionada: <strong>{vegSeriesOptions.find(o => o.id === selectedVegSerie)?.label}</strong>
+                              Serie Seleccionada: <strong>{vegSeriesOptions.find((o) => o.id === selectedVegSerie)?.label}</strong>
                             </div>
                           </div>
                           
@@ -1044,7 +1095,9 @@ export const GeoViewer: React.FC = () => {
                                 </div>
                               ))
                             ) : (
-                              <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>Sin coberturas visibles en este encuadre</div>
+                              <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>
+                                {isLoadingR2 ? 'Cargando coberturas...' : 'Sin coberturas visibles en este encuadre'}
+                              </div>
                             )}
                           </div>
                         </div>

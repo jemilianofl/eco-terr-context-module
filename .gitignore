@@ -47,3 +47,5 @@ public/layers/Unidad\ climaticas/*
 public/layers/geojson/edafologia.geojson
 public/layers/geojson/usv_serie_*.geojson
 public/layers/geojson/climas.geojson
+
+public/layers/fgb
