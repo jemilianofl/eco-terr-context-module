@@ -3,14 +3,16 @@ import { MapContainer, TileLayer, GeoJSON, useMap, ScaleControl, CircleMarker, u
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
-import { deserialize } from 'flatgeobuf/lib/mjs/geojson.js';
 import type { FeatureCollection, Feature, Geometry, GeoJsonObject, GeoJsonProperties } from 'geojson';
 import L from 'leaflet';
 import html2canvas from 'html2canvas';
 import * as turf from '@turf/turf';
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
-L.Browser.any3d = false;
+import { queryFgbLayer } from '../../utils/fgbReader';
+
+// Bypass de propiedad de solo lectura en Leaflet
+(L.Browser as unknown as { any3d: boolean }).any3d = false;
 
 interface FormData {
   targetDate: string;
@@ -73,31 +75,10 @@ const getColorForVegetation = (str: string) => {
   ];
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    hash = str.codePointAt(i) || 0 + ((hash << 5) - hash);
   }
   return colors[Math.abs(hash) % colors.length];
 };
-
-async function fetchFgbFromR2(
-  fileName: string,
-  bbox: { minX: number; minY: number; maxX: number; maxY: number }
-): Promise<Feature<Geometry, GeoJsonProperties>[]> {
-  const baseUrl = (import.meta.env.VITE_R2_PUBLIC_URL || '').replace(/\/$/, '');
-  const url = `${baseUrl}/${fileName}`;
-  const features: Feature<Geometry, GeoJsonProperties>[] = [];
-
-  try {
-    // AQUÍ ESTÁ LA CORRECCIÓN: Envolver 'bbox' dentro de 'rect'
-    const iterator = deserialize(url, { rect: bbox });
-    for await (const feature of iterator) {
-      features.push(feature as Feature<Geometry, GeoJsonProperties>);
-    }
-  } catch (error) {
-    console.warn(`Error al consultar FlatGeobuf en R2 (${fileName}):`, error);
-  }
-
-  return features;
-}
 
 const MapLayerClickHandler: React.FC<{
   plano: number;
@@ -115,13 +96,15 @@ const MapLayerClickHandler: React.FC<{
         for (const f of geoJsonData.features) {
           if (f.geometry && f.geometry.type !== 'Point') {
             try {
-              if (turf.booleanPointInPolygon(pt, f as any)) {
+              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<turf.Polygon | turf.MultiPolygon>)) {
                 const polyId = f.properties?.polyId || '';
                 let areaHtml = '';
                 try {
                   const areaSqMeters = turf.area(f);
                   areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
-                } catch {}
+                } catch (err) {
+                  // ignored area calculation error
+                }
 
                 let propsHtml = '';
                 Object.entries(f.properties || {}).forEach(([key, val]) => {
@@ -141,7 +124,9 @@ const MapLayerClickHandler: React.FC<{
                 L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
                 return;
               }
-            } catch {}
+            } catch (err) {
+              // ignored point in polygon error
+            }
           }
         }
       }
@@ -150,7 +135,7 @@ const MapLayerClickHandler: React.FC<{
         for (const f of ecoNearby) {
           if (f.geometry) {
             try {
-              if (turf.booleanPointInPolygon(pt, f as any)) {
+              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<turf.Polygon | turf.MultiPolygon>)) {
                 const p = f.properties || {};
                 const title = p._title || 'Capa Ecológica';
                 const name = p.NOMBRE || p.NOM_AICA || p.nombre || p.Name || p.NAME || p.NOM || p.SITIO || 'Área Protegida';
@@ -173,7 +158,9 @@ const MapLayerClickHandler: React.FC<{
                 L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
                 return;
               }
-            } catch {}
+            } catch (err) {
+              // ignored point in polygon error
+            }
           }
         }
       }
@@ -182,7 +169,7 @@ const MapLayerClickHandler: React.FC<{
         for (const f of vegNearby) {
           if (f.geometry) {
             try {
-              if (turf.booleanPointInPolygon(pt, f as any)) {
+              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<turf.Polygon | turf.MultiPolygon>)) {
                 const p = f.properties || {};
                 const desc = p._type || p.DESCRIPCIO || p.descripcio || p.TIPO_VEG || p.tipo_veg || p.TIP_VEG || p.TIPO || p.DESC || p.NOMBRE || 'Vegetación / Suelo';
                 const cve = p.CVE_VEG || p.cve_veg || p.CLAVE || p.CVE_USV || p.cve_usv || '';
@@ -202,7 +189,9 @@ const MapLayerClickHandler: React.FC<{
                 L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
                 return;
               }
-            } catch {}
+            } catch (err) {
+              // ignored point in polygon error
+            }
           }
         }
       }
@@ -211,13 +200,15 @@ const MapLayerClickHandler: React.FC<{
         for (const f of geoJsonData.features) {
           if (f.geometry && f.geometry.type !== 'Point') {
             try {
-              if (turf.booleanPointInPolygon(pt, f as any)) {
+              if (turf.booleanPointInPolygon(pt, f as unknown as Feature<turf.Polygon | turf.MultiPolygon>)) {
                 const polyId = f.properties?.polyId || '';
                 let areaHtml = '';
                 try {
                   const areaSqMeters = turf.area(f);
                   areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
-                } catch {}
+                } catch (err) {
+                  // ignored area calculation error
+                }
 
                 const popupHtml = `
                   <div style="font-size:0.85rem; min-width: 200px; max-height: 250px; overflow-y: auto;">
@@ -229,7 +220,9 @@ const MapLayerClickHandler: React.FC<{
                 L.popup().setLatLng(e.latlng).setContent(popupHtml).openOn(map);
                 return;
               }
-            } catch {}
+            } catch (err) {
+              // ignored point in polygon error
+            }
           }
         }
       }
@@ -291,7 +284,11 @@ const GraticuleEngine: React.FC = () => {
   useMapEvents({ moveend: updateGrid, zoomend: updateGrid, resize: updateGrid });
 
   useEffect(() => {
-    updateGrid();
+    // Para evitar advertencias de React, no se llama setState inmediatamente dentro del efecto.
+    // Solo registramos los listeners y delegamos a la primera iteración.
+    setTimeout(() => {
+        updateGrid();
+    }, 0);
     return () => setGrid({ lats: [], lons: [], bounds: null });
   }, [updateGrid]);
 
@@ -312,7 +309,7 @@ const GraticuleEngine: React.FC = () => {
 const MapUpdater: React.FC<{
   data: FeatureCollection | null;
   plano: number;
-  buffer10km: Feature<Geometry, GeoJsonProperties> | null;
+  buffer10km: Feature | null;
 }> = ({ data, plano, buffer10km }) => {
   const map = useMap();
 
@@ -335,13 +332,14 @@ const MapUpdater: React.FC<{
   return null;
 };
 
-const InvalidateMap: React.FC<{ dependencies: any[] }> = ({ dependencies }) => {
+const InvalidateMap: React.FC<{ dependencies: unknown[] }> = ({ dependencies }) => {
   const map = useMap();
   useEffect(() => {
     const timer = setTimeout(() => { 
       map.invalidateSize(true); 
     }, 400);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, ...dependencies]);
   return null;
 };
@@ -405,7 +403,7 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
               </Tooltip>
             </CircleMarker>
           );
-        } catch {
+        } catch (err) {
           return null;
         }
       })}
@@ -426,7 +424,7 @@ export const GeoViewer: React.FC = () => {
   const printRef = useRef<HTMLDivElement>(null);
   
   const [sentinelUrl, setSentinelUrl] = useState<string | null>(null);
-  const [sentinelMetadata, setSentinelMetadata] = useState<any>(null);
+  const [sentinelMetadata, setSentinelMetadata] = useState<Record<string, unknown> | null>(null);
   const [useSentinel, setUseSentinel] = useState<boolean>(true);
 
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
@@ -455,7 +453,7 @@ export const GeoViewer: React.FC = () => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
     try {
       const polys = turf.featureCollection(geoJsonData.features.filter((f) => f.geometry.type !== 'Point'));
-      return turf.buffer(polys, 10, { units: 'kilometers' }) as Feature<Geometry, GeoJsonProperties>;
+      return turf.buffer(polys, 10, { units: 'kilometers' }) as unknown as Feature;
     } catch (err) {
       console.warn('Error calculando buffer:', err);
       return null;
@@ -493,16 +491,17 @@ export const GeoViewer: React.FC = () => {
           setUseSentinel(false);
         }
       } catch (error) {
+        // Ignorar falla temporal de conexión satelital
         setSentinelUrl(null);
         setSentinelMetadata(null);
         setUseSentinel(false);
       }
     };
 
-    fetchSentinelData();
+    void fetchSentinelData();
   }, [predioCentroid, previewData?.targetDate]);
 
-  // PLANO 2: Consulta por rangos HTTP a Cloudflare R2 (FlatGeobuf)
+  // PLANO 2: Consulta por rangos HTTP a Cloudflare R2
   useEffect(() => {
     if (currentPlano !== 2 || !buffer10km) return;
 
@@ -515,11 +514,11 @@ export const GeoViewer: React.FC = () => {
       try {
         const results = await Promise.all(
           ECO_LAYERS_CONFIG.map(async (layer) => {
-            const raw = await fetchFgbFromR2(layer.file, bbox);
+            const raw = await queryFgbLayer(layer.file, bbox);
             return raw
               .filter((f) => {
                 try {
-                  return turf.booleanIntersects(f as any, buffer10km as any);
+                  return turf.booleanIntersects(f as unknown as Feature<turf.Polygon | turf.MultiPolygon>, buffer10km as unknown as Feature<turf.Polygon | turf.MultiPolygon>);
                 } catch {
                   return false;
                 }
@@ -546,14 +545,14 @@ export const GeoViewer: React.FC = () => {
       }
     };
 
-    loadEcoData();
+    void loadEcoData();
 
     return () => {
       isCancelled = true;
     };
   }, [currentPlano, buffer10km]);
 
-  // PLANO 3: Consulta por rangos HTTP a Cloudflare R2 (FlatGeobuf de Vegetación)
+  // PLANO 3: Consulta por rangos HTTP a Cloudflare R2 (Vegetación)
   useEffect(() => {
     if (currentPlano !== 3 || !buffer10km) return;
 
@@ -565,11 +564,11 @@ export const GeoViewer: React.FC = () => {
       const fileName = `usv_${selectedVegSerie}.fgb`;
 
       try {
-        const raw = await fetchFgbFromR2(fileName, bbox);
+        const raw = await queryFgbLayer(fileName, bbox);
         const filtered = raw
           .filter((f) => {
             try {
-              return turf.booleanIntersects(f as any, buffer10km as any);
+              return turf.booleanIntersects(f as unknown as Feature<turf.Polygon | turf.MultiPolygon>, buffer10km as unknown as Feature<turf.Polygon | turf.MultiPolygon>);
             } catch {
               return false;
             }
@@ -597,7 +596,7 @@ export const GeoViewer: React.FC = () => {
       }
     };
 
-    loadVegData();
+    void loadVegData();
 
     return () => {
       isCancelled = true;
@@ -628,7 +627,7 @@ export const GeoViewer: React.FC = () => {
       let isVisible = true;
       if (viewportPolygon) {
         try {
-          isVisible = turf.booleanIntersects(f as turf.CoordPair, viewportPolygon as turf.CoordPair);
+          isVisible = turf.booleanIntersects(f as unknown as Feature<turf.Polygon | turf.MultiPolygon>, viewportPolygon as unknown as Feature<turf.Polygon | turf.MultiPolygon>);
         } catch {
           isVisible = false;
         }
@@ -674,7 +673,7 @@ export const GeoViewer: React.FC = () => {
         const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
         if (finalF.geometry.type !== 'Point') {
           finalF.properties = finalF.properties || {};
-          finalF.properties.polyId = String.fromCharCode(65 + polyIndex);
+          finalF.properties.polyId = String.fromCodePoint(65 + polyIndex);
           polyIndex++;
         }
         return finalF;
@@ -693,18 +692,17 @@ export const GeoViewer: React.FC = () => {
     setIsExporting(true);
     window.scrollTo(0, 0);
 
-    setTimeout(async () => {
-      try {
-        const canvas = await html2canvas(printRef.current!, {
-          useCORS: true,
-          allowTaint: false,
-          scale: 2,
-          scrollY: 0,
-          backgroundColor: '#ffffff',
-          width: printRef.current?.scrollWidth,
-          height: printRef.current?.scrollHeight,
-          ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup'),
-        });
+    setTimeout(() => {
+      html2canvas(printRef.current!, {
+        useCORS: true,
+        allowTaint: false,
+        scale: 2,
+        scrollY: 0,
+        backgroundColor: '#ffffff',
+        width: printRef.current?.scrollWidth,
+        height: printRef.current?.scrollHeight,
+        ignoreElements: (el) => el.classList.contains('ignore-print') || el.classList.contains('leaflet-popup'),
+      }).then((canvas) => {
         const link = document.createElement('a');
         let planoName = 'Ubicacion_Geografica';
         if (currentPlano === 2) planoName = 'Relevancia_Ecologica';
@@ -712,12 +710,12 @@ export const GeoViewer: React.FC = () => {
         link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
         link.href = canvas.toDataURL('image/jpeg', 0.9);
         link.click();
-      } catch (err) {
+      }).catch((err) => {
         console.warn('Error al generar imagen:', err);
         alert('Error al generar la imagen.');
-      } finally {
+      }).finally(() => {
         setIsExporting(false);
-      }
+      });
     }, 1000);
   };
 
@@ -932,7 +930,6 @@ export const GeoViewer: React.FC = () => {
                     <ScaleControl position="bottomleft" imperial={false} />
                   </div>
 
-                  {/* 1. PLANO 2: CAPAS ECOLÓGICAS */}
                   {currentPlano === 2 && ecoNearby.length > 0 && (
                     <GeoJSON
                       key={`eco-layers-${ecoNearby.length}`}
@@ -946,7 +943,6 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* 2. PLANO 3: CAPAS DE VEGETACIÓN */}
                   {currentPlano === 3 && vegNearby.length > 0 && (
                     <GeoJSON
                       key={`veg-layers-${selectedVegSerie}-${vegNearby.length}`}
@@ -960,7 +956,6 @@ export const GeoViewer: React.FC = () => {
                     />
                   )}
 
-                  {/* 3. PREDIO INSPECCIONADO */}
                   {geoJsonData && (
                     <GeoJSON key={`user-layer-${currentPlano}`} data={geoJsonData} style={featureStyle} pointToLayer={pointToLayer} />
                   )}
@@ -968,7 +963,6 @@ export const GeoViewer: React.FC = () => {
                   {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
                 </MapContainer>
 
-                {/* LEYENDA DERECHA */}
                 {previewData && (
                   <div className="position-absolute bg-white p-3 shadow-sm" style={{ top: '15px', right: '15px', width: '290px', zIndex: 1000, border: '1px solid #000' }}>
                     <div className="text-center mb-3 d-flex flex-column align-items-center">
@@ -979,7 +973,6 @@ export const GeoViewer: React.FC = () => {
 
                     <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
-                    {/* VISTA PLANO 1 */}
                     {currentPlano === 1 && (
                       <>
                         <div className="bg-white mb-2 border border-dark">
@@ -994,8 +987,8 @@ export const GeoViewer: React.FC = () => {
                           <div className="bg-white mb-2 border border-dark">
                             <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem', padding: '2px' }}>Metadatos Satelitales</div>
                             <div className="p-2 text-center" style={{ fontSize: '0.60rem' }}>
-                              <p className="mb-1"><strong>Sensor:</strong> {sentinelMetadata.platform}</p>
-                              <p className="mb-1"><strong>Captura:</strong> {new Date(sentinelMetadata.date).toLocaleDateString('es-MX')}</p>
+                              <p className="mb-1"><strong>Sensor:</strong> {String(sentinelMetadata.platform)}</p>
+                              <p className="mb-1"><strong>Captura:</strong> {new Date(String(sentinelMetadata.date)).toLocaleDateString('es-MX')}</p>
                               <p className="mb-0"><strong>Nubosidad:</strong> {Number(sentinelMetadata.cloudCover).toFixed(2)}%</p>
                             </div>
                           </div>
@@ -1024,7 +1017,6 @@ export const GeoViewer: React.FC = () => {
                       </>
                     )}
 
-                    {/* VISTA PLANO 2 */}
                     {currentPlano === 2 && (
                       <>
                         <div className="bg-white mb-2 border border-dark">
@@ -1046,9 +1038,9 @@ export const GeoViewer: React.FC = () => {
                                 ))}
                               </>
                             ) : (
-                              <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>
+                              <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
                                 {isLoadingR2 ? 'Buscando intersecciones...' : 'Ningún polígono ecológico dentro de los 10 km'}
-                              </div>
+                              </output>
                             )}
                           </div>
                         </div>
@@ -1059,14 +1051,14 @@ export const GeoViewer: React.FC = () => {
                       </>
                     )}
 
-                    {/* VISTA PLANO 3 */}
                     {currentPlano === 3 && (
                       <>
                         <div className="bg-white mb-2 border border-dark">
                           <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#65a30d', fontSize: '0.75rem', padding: '2px' }}>Datos de Vegetación</div>
                           <div className="p-2">
-                            <label className="fw-bold mb-1" style={{ fontSize: '0.65rem' }}>Serie INEGI a evaluar:</label>
+                            <label htmlFor="vegSerieSelect" className="fw-bold mb-1" style={{ fontSize: '0.65rem' }}>Serie INEGI a evaluar:</label>
                             <select
+                              id="vegSerieSelect"
                               className="form-select form-select-sm ignore-print"
                               style={{ fontSize: '0.7rem' }}
                               value={selectedVegSerie}
@@ -1088,16 +1080,16 @@ export const GeoViewer: React.FC = () => {
                             </div>
                             
                             {activeVegLegend.length > 0 ? (
-                              activeVegLegend.map((item, idx) => (
-                                <div key={`sym-veg-${idx}`} className="d-flex align-items-center mt-1">
+                              activeVegLegend.map((item) => (
+                                <div key={`sym-veg-${item.label}`} className="d-flex align-items-center mt-1">
                                   <div style={{ width: '12px', height: '12px', border: `2px solid ${item.color}`, backgroundColor: `${item.color}80`, marginRight: '8px', flexShrink: 0 }}></div>
                                   <span style={{ fontSize: '0.60rem', lineHeight: '1.1' }}>{item.label}</span>
                                 </div>
                               ))
                             ) : (
-                              <div className="text-center text-muted mt-2" style={{ fontSize: '0.65rem' }}>
+                              <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
                                 {isLoadingR2 ? 'Cargando coberturas...' : 'Sin coberturas visibles en este encuadre'}
-                              </div>
+                              </output>
                             )}
                           </div>
                         </div>
@@ -1118,7 +1110,6 @@ export const GeoViewer: React.FC = () => {
             </div>
           </div>
 
-          {/* TOOLBAR */}
           {geoJsonData && (
             <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '900px', borderTop: '4px solid #d6b56a', height: '60px' }}>
               <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
