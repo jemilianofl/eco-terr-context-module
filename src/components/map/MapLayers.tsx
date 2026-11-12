@@ -15,14 +15,12 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
         if (f.geometry.type !== 'Point' && turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)) {
           const polyId = f.properties?.polyId || '';
           
-          // Calculamos el área
           let areaHtml = '';
           try {
             const areaSqMeters = turf.area(f);
             areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
           } catch { /* ignorar */ }
 
-          // Restauramos las propiedades del archivo original
           let propsHtml = '';
           Object.entries(f.properties || {}).forEach(([key, val]) => {
             if (key !== 'polyId' && key !== 'style' && val !== null && val !== undefined && val !== '') {
@@ -49,17 +47,17 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
   return (
     <GeoJSON 
       data={geoJsonData} 
-      style={() => ({ color: '#ff0000', weight: 2.5, fillColor: '#ff0000', fillOpacity: 0 })}
-      // Esto evita que Leaflet ponga el marcador azul por defecto y dibuja tu punto rojo
-      pointToLayer={(_, latlng) => L.circleMarker(latlng, { 
-        radius: 5, 
+      // Ignoramos completamente los vértices/puntos sueltos que vengan en el KML/ZIP
+      filter={(feature) => feature.geometry.type !== 'Point' && feature.geometry.type !== 'MultiPoint'}
+      style={() => ({ 
+        color: '#ff0000', 
+        weight: 2.5, 
         fillColor: '#ff0000', 
-        color: '#ffffff', 
-        weight: 1.5, 
-        opacity: 1, 
-        fillOpacity: 1, 
-        pane: 'markerPane' 
-      })} 
+        fillOpacity: 0,
+        // Suaviza las uniones del contorno para que no se vean picudas o cortadas
+        lineJoin: 'round',
+        lineCap: 'round'
+      })}
     />
   );
 };
