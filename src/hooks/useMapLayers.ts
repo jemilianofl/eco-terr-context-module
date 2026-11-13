@@ -41,10 +41,17 @@ export interface LayerFeatureProperties {
   TIPO_C?: string;
   CLAVE_WRB?: string;
   GRUPO1?: string;
+  GRUPO2?: string;
+  GRUPO3?: string;
   N_G1?: string;
+  N_G2?: string;
+  N_G3?: string;
   N_CS_G1?: string;
   N_CP_G1?: string;
+  CLASE_TEX?: number | string;
   TEXTURA?: string;
+  F_SUPERF?: string;
+  FRUDICA?: string;
   TIP_INFO?: string;
   [key: string]: unknown;
 }
@@ -270,6 +277,39 @@ export const useClimateLayers = (buffer10km: Feature<Polygon | MultiPolygon> | n
   return { climateNearby, isLoadingClimate: isLoading };
 };
 
+const FASES_SUPERFICIALES: Record<string, string> = {
+  L: 'Somero (< 50 cm, fase lítica - roca continua)',
+  PL: 'Somero (< 50 cm, fase paralítica - roca blanda)',
+  PD: 'Somero (< 50 cm, fase petrodúrica - tepetate)',
+  PC: 'Somero (< 50 cm, fase petrocálcica - caliche)',
+  PG: 'Somero (< 50 cm, fase petrogypsica - yeso)',
+};
+
+const inferirProfundidadEdafica = (props: LayerFeatureProperties): string => {
+  const grupo = typeof props.N_G1 === 'string' ? props.N_G1.toUpperCase() : '';
+  if (grupo.includes('LEPTOSOL') || props.GRUPO1 === 'LP') {
+    return 'Muy somero (≤ 25 cm, por grupo Leptosol)';
+  }
+
+  const fase = typeof props.F_SUPERF === 'string' ? props.F_SUPERF.trim().toUpperCase() : 'N';
+  if (fase && fase !== 'N') {
+    return FASES_SUPERFICIALES[fase] ?? `Limitada (< 50 cm, fase ${fase})`;
+  }
+
+  const calificadores = `${String(props.N_CP_G1 ?? '')} ${String(props.N_CS_G1 ?? '')}`.toLowerCase();
+  if (calificadores.includes('epiléptic') || calificadores.includes('epileptic')) {
+    return '25 a 50 cm (calificador Epiléptico)';
+  }
+  if (calificadores.includes('endoléptic') || calificadores.includes('endoleptic')) {
+    return '50 a 100 cm (calificador Endoléptico)';
+  }
+  if (calificadores.includes('léptic') || calificadores.includes('leptic')) {
+    return '25 a 100 cm (calificador Léptico)';
+  }
+
+  return 'Sin limitante superficial (> 50 cm)';
+};
+
 export const useEdafologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null) => {
   const [edafologiaNearby, setEdafologiaNearby] = useState<TypedMapFeature[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -285,6 +325,7 @@ export const useEdafologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
         const raw = await queryFgbLayer('edafologia.fgb', { minX, minY, maxX, maxY });
         const filtered: TypedMapFeature[] = raw
           .filter((f) => {
+            if (!f.geometry) return false;
             try {
               return turf.booleanIntersects(f, buffer10km);
             } catch {
@@ -293,29 +334,42 @@ export const useEdafologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
           })
           .map((f): TypedMapFeature => {
             const props = (f.properties ?? {}) as LayerFeatureProperties;
-            const grupo = typeof props.N_G1 === 'string' && props.N_G1 !== 'N' ? props.N_G1.trim() : '';
+            const grupo1 = typeof props.N_G1 === 'string' && props.N_G1 !== 'N' ? props.N_G1.trim() : '';
             const tipInfo = typeof props.TIP_INFO === 'string' ? props.TIP_INFO.trim() : '';
             const claveWrb = typeof props.CLAVE_WRB === 'string' ? props.CLAVE_WRB.trim() : '';
 
             let soilLabel = 'Unidad Edafológica';
-            if (grupo) {
-              soilLabel = grupo;
+            if (grupo1) {
+              soilLabel = grupo1;
             } else if (tipInfo && tipInfo !== 'UNIDAD EDAFOLOGICA') {
               soilLabel = tipInfo;
             } else if (claveWrb) {
               soilLabel = claveWrb;
             }
 
+            const secundarios = [props.N_G2, props.N_G3]
+              .filter((g): g is string => typeof g === 'string' && g.trim() !== '' && g !== 'N')
+              .map((g) => g.trim());
+
             const detalles: string[] = [];
-            if (claveWrb) detalles.push(`Clave WRB: ${claveWrb}`);
-            if (typeof props.N_CS_G1 === 'string' && props.N_CS_G1 !== 'N') {
-              detalles.push(`Calif. Sec.: ${props.N_CS_G1}`);
-            }
-            if (typeof props.N_CP_G1 === 'string' && props.N_CP_G1 !== 'N') {
-              detalles.push(`Calif. Prin.: ${props.N_CP_G1}`);
+            if (claveWrb) detalles.push(`<strong>Clave WRB:</strong> ${claveWrb}`);
+            if (secundarios.length > 0) {
+              detalles.push(`<strong>Suelos asociados:</strong> ${secundarios.join(', ')}`);
             }
             if (typeof props.TEXTURA === 'string' && props.TEXTURA !== 'N') {
-              detalles.push(`Textura: ${props.TEXTURA}`);
+              const codTex = props.CLASE_TEX !== undefined && props.CLASE_TEX !== 'N' ? ` (Clase ${String(props.CLASE_TEX)})` : '';
+              detalles.push(`<strong>Clase textural:</strong> ${props.TEXTURA}${codTex}`);
+            }
+            detalles.push(`<strong>Profundidad est.:</strong> ${inferirProfundidadEdafica(props)}`);
+
+            const califs = [props.N_CP_G1, props.N_CS_G1]
+              .filter((c): c is string => typeof c === 'string' && c.trim() !== '' && c !== 'N')
+              .map((c) => c.trim());
+            if (califs.length > 0) {
+              detalles.push(`<strong>Calificadores:</strong> ${califs.join(', ')}`);
+            }
+            if (typeof props.FRUDICA === 'string' && props.FRUDICA !== 'N') {
+              detalles.push(`<strong>Fase rúdica:</strong> ${props.FRUDICA}`);
             }
 
             return {
@@ -323,7 +377,7 @@ export const useEdafologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
               properties: {
                 ...props,
                 _type: soilLabel,
-                _subtitle: detalles.join(' | '),
+                _subtitle: detalles.join('<br/>'),
                 _color: getColorForEdafologia(soilLabel),
               },
             };
