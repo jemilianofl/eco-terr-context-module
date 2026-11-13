@@ -27,6 +27,37 @@ interface LegendVegetacionProps {
   isExporting?: boolean;
 }
 
+function getVisibleTypesInViewport(
+  features: TypedMapFeature[],
+  currentViewportBbox: [number, number, number, number] | null
+): { label: string; color: string }[] {
+  if (features.length === 0) return [];
+  let viewportPolygon: Feature<Polygon> | null = null;
+  if (currentViewportBbox) {
+    try {
+      viewportPolygon = turf.bboxPolygon(currentViewportBbox);
+    } catch {
+      viewportPolygon = null;
+    }
+  }
+  const uniqueTypes = new Map<string, string>();
+  features.forEach((f) => {
+    if (!f?.geometry) return;
+    let isVisible = true;
+    if (viewportPolygon) {
+      try {
+        isVisible = turf.booleanIntersects(f, viewportPolygon);
+      } catch {
+        isVisible = false;
+      }
+    }
+    if (isVisible && f.properties?._type && f.properties?._color) {
+      uniqueTypes.set(f.properties._type, f.properties._color);
+    }
+  });
+  return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
+}
+
 export const LegendUbicacion = ({
   previewData,
   sentinelMetadata,
@@ -149,6 +180,7 @@ export const LegendEcologica = ({
     const foundIds = new Set<string>();
 
     ecoNearby.forEach((f) => {
+      if (!f?.geometry) return;
       let isVisible = true;
       if (viewportPolygon) {
         try {
@@ -240,32 +272,10 @@ export const LegendVegetacion = ({
   isLoading,
   isExporting = false,
 }: LegendVegetacionProps) => {
-  const activeVegLegend = useMemo(() => {
-    if (vegNearby.length === 0) return [];
-    let viewportPolygon: Feature<Polygon> | null = null;
-    if (currentViewportBbox) {
-      try {
-        viewportPolygon = turf.bboxPolygon(currentViewportBbox);
-      } catch {
-        viewportPolygon = null;
-      }
-    }
-    const uniqueTypes = new Map<string, string>();
-    vegNearby.forEach((f) => {
-      let isVisible = true;
-      if (viewportPolygon) {
-        try {
-          isVisible = turf.booleanIntersects(f, viewportPolygon);
-        } catch {
-          isVisible = false;
-        }
-      }
-      if (isVisible && f.properties?._type && f.properties?._color) {
-        uniqueTypes.set(f.properties._type, f.properties._color);
-      }
-    });
-    return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
-  }, [vegNearby, currentViewportBbox]);
+  const activeVegLegend = useMemo(
+    () => getVisibleTypesInViewport(vegNearby, currentViewportBbox),
+    [vegNearby, currentViewportBbox]
+  );
 
   const activeSerieLabel = useMemo(() => {
     const serieLabels: Record<string, string> = {
@@ -274,7 +284,7 @@ export const LegendVegetacion = ({
       serie_3: 'Serie III (2005)',
       serie_4: 'Serie IV (2009)',
       serie_5: 'Serie V (2013)',
-      serie_6: 'Serie VI (2014)',
+      serie_6: 'Serie VI (2016)',
       serie_7: 'Serie VII (2021)',
     };
 
@@ -370,6 +380,180 @@ export const LegendVegetacion = ({
                   }}
                 ></div>
                 <span style={{ fontSize: '0.60rem' }}>{compactarNombreVeg(item.label)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="border border-dark mb-2 p-1 text-center bg-white"
+        style={{ fontSize: '0.65rem' }}
+      >
+        <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
+      </div>
+    </>
+  );
+};
+
+interface LegendClimaProps {
+  climateNearby: TypedMapFeature[];
+  isLoading: boolean;
+  targetDate?: string;
+  currentViewportBbox: [number, number, number, number] | null;
+}
+
+export const LegendClima = ({
+  climateNearby,
+  isLoading,
+  targetDate,
+  currentViewportBbox,
+}: LegendClimaProps) => {
+  const activeClimateLegend = useMemo(
+    () => getVisibleTypesInViewport(climateNearby, currentViewportBbox),
+    [climateNearby, currentViewportBbox]
+  );
+
+  return (
+    <>
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#0284c7', fontSize: '0.75rem' }}
+        >
+          Unidades Climáticas
+        </div>
+        <div className="p-2">
+          <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>
+            Capa extraída de: CONABIO (García - 1998)
+          </p>
+
+          <div className="mt-2" style={{ maxHeight: '165px', overflowY: 'auto' }}>
+            <div className="d-flex align-items-center mb-1">
+              <div
+                style={{
+                  width: '12px',
+                  height: '12px',
+                  backgroundColor: 'transparent',
+                  border: '2px solid #ff0000',
+                  marginRight: '8px',
+                  flexShrink: 0,
+                }}
+              ></div>
+              <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+                Polígono(s) Inspeccionado(s)
+              </span>
+            </div>
+
+            {activeClimateLegend.length === 0 && !isLoading && (
+              <output
+                className="text-center text-muted mt-2 d-block"
+                style={{ fontSize: '0.65rem' }}
+              >
+                Sin unidades climáticas visibles en encuadre
+              </output>
+            )}
+
+            {activeClimateLegend.map((item) => (
+              <div key={item.label} className="d-flex align-items-center mt-1">
+                <div
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    border: `2px solid ${item.color}`,
+                    backgroundColor: `${item.color}80`,
+                    marginRight: '8px',
+                    flexShrink: 0,
+                  }}
+                ></div>
+                <span style={{ fontSize: '0.60rem' }}>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="border border-dark mb-2 p-1 text-center bg-white"
+        style={{ fontSize: '0.65rem' }}
+      >
+        <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
+      </div>
+    </>
+  );
+};
+
+interface LegendEdafologiaProps {
+  edafologiaNearby: TypedMapFeature[];
+  isLoading: boolean;
+  targetDate?: string;
+  currentViewportBbox: [number, number, number, number] | null;
+}
+
+export const LegendEdafologia = ({
+  edafologiaNearby,
+  isLoading,
+  targetDate,
+  currentViewportBbox,
+}: LegendEdafologiaProps) => {
+  const activeEdafologiaLegend = useMemo(
+    () => getVisibleTypesInViewport(edafologiaNearby, currentViewportBbox),
+    [edafologiaNearby, currentViewportBbox]
+  );
+
+  return (
+    <>
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#92400e', fontSize: '0.75rem' }}
+        >
+          Edafología (Serie II)
+        </div>
+        <div className="p-2">
+          <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>
+            Capa extraída de: INEGI (Esc. 1:250,000)
+          </p>
+
+          <div className="mt-2" style={{ maxHeight: '165px', overflowY: 'auto' }}>
+            <div className="d-flex align-items-center mb-1">
+              <div
+                style={{
+                  width: '12px',
+                  height: '12px',
+                  backgroundColor: 'transparent',
+                  border: '2px solid #ff0000',
+                  marginRight: '8px',
+                  flexShrink: 0,
+                }}
+              ></div>
+              <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+                Polígono(s) Inspeccionado(s)
+              </span>
+            </div>
+
+            {activeEdafologiaLegend.length === 0 && !isLoading && (
+              <output
+                className="text-center text-muted mt-2 d-block"
+                style={{ fontSize: '0.65rem' }}
+              >
+                Sin unidades edafológicas visibles en encuadre
+              </output>
+            )}
+
+            {activeEdafologiaLegend.map((item) => (
+              <div key={item.label} className="d-flex align-items-center mt-1">
+                <div
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    border: `2px solid ${item.color}`,
+                    backgroundColor: `${item.color}80`,
+                    marginRight: '8px',
+                    flexShrink: 0,
+                  }}
+                ></div>
+                <span style={{ fontSize: '0.60rem' }}>{item.label}</span>
               </div>
             ))}
           </div>

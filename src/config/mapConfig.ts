@@ -36,21 +36,7 @@ export const toDMS = (deg: number, isLat: boolean) => {
   return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
-// Paleta de colores ajustada para asemejarse más a las cartas oficiales
-export const getColorForVegetation = (str: string) => {
-  const typeVeg = str.toUpperCase();
-
-  if (typeVeg.includes('AGRICULTURA')) return '#fde047'; // Amarillo claro
-  if (typeVeg.includes('BOSQUE')) return '#22c55e'; // Verde bosque
-  if (typeVeg.includes('SELVA')) return '#a855f7'; // Morado
-  if (typeVeg.includes('MANGLAR')) return '#4c1d95'; // Morado muy oscuro
-  if (typeVeg.includes('PASTIZAL')) return '#bbf7d0'; // Verde muy claro
-  if (typeVeg.includes('MATORRAL')) return '#f59e0b'; // Naranja/Marrón claro
-  if (typeVeg.includes('URBANA') || typeVeg.includes('ASENTAMIENTOS')) return '#9ca3af'; // Gris
-  if (typeVeg.includes('AGUA') || typeVeg.includes('ACUÍCOLA')) return '#3b82f6'; // Azul
-  if (typeVeg.includes('DESPROVISTO')) return '#fbcfe8'; // Rosa muy pálido (casi blanco)
-  if (typeVeg.includes('VEGETACIÓN SECUNDARIA')) return '#f472b6'; // Rosa
-
+const getHashColor = (str: string): string => {
   const colors = [
     '#a3e635', '#4ade80', '#fbbf24', '#f87171', '#60a5fa', '#c084fc',
     '#f472b6', '#fb923c', '#38bdf8', '#34d399', '#a78bfa', '#fbb6ce',
@@ -61,6 +47,69 @@ export const getColorForVegetation = (str: string) => {
     hash = (str.codePointAt(i) ?? 0) + ((hash << 5) - hash);
   }
   return colors[Math.abs(hash) % colors.length];
+};
+
+// Paleta de colores ajustada para asemejarse más a las cartas oficiales
+export const getColorForVegetation = (str: string) => {
+  const typeVeg = str.toUpperCase();
+
+  if (typeVeg.includes('AGRICULTURA')) return '#fde047';
+  if (typeVeg.includes('BOSQUE')) return '#22c55e';
+  if (typeVeg.includes('SELVA')) return '#a855f7';
+  if (typeVeg.includes('MANGLAR')) return '#4c1d95';
+  if (typeVeg.includes('PASTIZAL')) return '#bbf7d0';
+  if (typeVeg.includes('MATORRAL')) return '#f59e0b';
+  if (typeVeg.includes('URBANA') || typeVeg.includes('ASENTAMIENTOS')) return '#9ca3af';
+  if (typeVeg.includes('AGUA') || typeVeg.includes('ACUÍCOLA')) return '#3b82f6';
+  if (typeVeg.includes('DESPROVISTO')) return '#fbcfe8';
+  if (typeVeg.includes('VEGETACIÓN SECUNDARIA')) return '#f472b6';
+
+  return getHashColor(str);
+};
+
+// Paleta cartográfica para Unidades Climáticas (García - CONABIO)
+export const getColorForClimate = (clave: string, tipoC: string): string => {
+  const tipo = tipoC.toUpperCase();
+  const c = clave.toUpperCase();
+
+  if (tipo.includes('MUY SECO') || c.startsWith('BW')) return '#dc2626';
+  if (tipo.includes('SEMISECO') || tipo.includes('SECO') || c.startsWith('BS')) return '#f97316';
+  if (tipo.includes('CÁLIDO HÚMEDO') || c.startsWith('AF') || c.startsWith('AM')) return '#15803d';
+  if (tipo.includes('CÁLIDO SUBHÚMEDO') || c.startsWith('AW')) return '#84cc16';
+  if (tipo.includes('SEMICÁLIDO') || c.startsWith('(A)C')) return '#eab308';
+  if (tipo.includes('TEMPLADO HÚMEDO') || c.startsWith('CF') || c.startsWith('CM')) return '#0d9488';
+  if (tipo.includes('TEMPLADO SUBHÚMEDO') || c.startsWith('CW')) return '#22c55e';
+  if (tipo.includes('SEMIFRÍO') || c.includes('C(E)')) return '#3b82f6';
+  if (tipo.includes('FRÍO') || c.startsWith('E')) return '#6366f1';
+
+  return getHashColor(`${clave}-${tipoC}`);
+};
+
+// Paleta cartográfica para Edafología INEGI Serie II (WRB)
+export const getColorForEdafologia = (grupo: string): string => {
+  const g = grupo.toUpperCase();
+
+  if (g.includes('REGOSOL')) return '#eab308';
+  if (g.includes('LEPTOSOL')) return '#a8a29e';
+  if (g.includes('VERTISOL')) return '#57534e';
+  if (g.includes('PHAEOZEM') || g.includes('FEOZEM')) return '#78350f';
+  if (g.includes('CAMBISOL')) return '#d97706';
+  if (g.includes('LUVISOL')) return '#dc2626';
+  if (g.includes('CALCISOL')) return '#fde047';
+  if (g.includes('ANDOSOL')) return '#7c3aed';
+  if (g.includes('SOLONCHAK')) return '#f472b6';
+  if (g.includes('GLEYSOL')) return '#0284c7';
+  if (g.includes('ARENOSOL')) return '#fed7aa';
+  if (g.includes('FLUVISOL')) return '#38bdf8';
+  if (g.includes('KASTANOZEM')) return '#92400e';
+  if (g.includes('ACRISOL')) return '#ea580c';
+  if (g.includes('PLANOSOL')) return '#94a3b8';
+  if (g.includes('NITISOL')) return '#b91c1c';
+  if (g.includes('HISTOSOL')) return '#3f6212';
+  if (g.includes('AGUA')) return '#3b82f6';
+  if (g.includes('URBANA')) return '#9ca3af';
+
+  return getHashColor(grupo);
 };
 
 // Función para abreviar/compactar nombres largos de vegetación

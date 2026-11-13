@@ -9,9 +9,21 @@ import domtoimage from 'dom-to-image';
 import * as turf from '@turf/turf';
 
 import { toDMS } from '../../config/mapConfig';
-import { useSentinelData, useEcoLayers, useVegetationLayers } from '../../hooks/useMapLayers';
-import { UserPolygonLayer, EcoLayer, VegLayer } from './MapLayers';
-import { LegendUbicacion, LegendEcologica, LegendVegetacion } from './MapLegends';
+import {
+  useSentinelData,
+  useEcoLayers,
+  useVegetationLayers,
+  useClimateLayers,
+  useEdafologiaLayers,
+} from '../../hooks/useMapLayers';
+import { UserPolygonLayer, EcoLayer, VegLayer, ClimateLayer, EdafologiaLayer } from './MapLayers';
+import {
+  LegendUbicacion,
+  LegendEcologica,
+  LegendVegetacion,
+  LegendClima,
+  LegendEdafologia,
+} from './MapLegends';
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
@@ -114,7 +126,7 @@ const MapUpdater: React.FC<{
       const layer = L.geoJSON(data);
       const bounds = layer.getBounds();
       if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
-    } else if ((plano === 2 || plano === 3) && buffer10km) {
+    } else if (plano >= 2 && buffer10km) {
       const bbox = turf.bbox(buffer10km);
       map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
     }
@@ -141,7 +153,6 @@ const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string;
     <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
       <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
-        {/* preferCanvas activado */}
         <MapContainer center={center} zoom={6} zoomControl={false} dragging={false} scrollWheelZoom={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
           <InvalidateMap dependencies={[]} />
           <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
@@ -239,6 +250,8 @@ export const GeoViewer: React.FC = () => {
   const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
   const { ecoNearby, isLoadingEco } = useEcoLayers(buffer10km);
   const { vegNearby, isLoadingVeg } = useVegetationLayers(buffer10km, selectedVegSerie);
+  const { climateNearby, isLoadingClimate } = useClimateLayers(buffer10km);
+  const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(buffer10km);
 
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
@@ -310,9 +323,14 @@ export const GeoViewer: React.FC = () => {
       })
       .then((dataUrl) => {
         const link = document.createElement('a');
-        let planoName = 'Ubicacion_Geografica';
-        if (currentPlano === 2) planoName = 'Relevancia_Ecologica';
-        if (currentPlano === 3) planoName = 'Tipo_Vegetacion';
+        const planoNames: Record<number, string> = {
+          1: 'Ubicacion_Geografica',
+          2: 'Relevancia_Ecologica',
+          3: 'Tipo_Vegetacion',
+          4: 'Unidades_Climaticas',
+          5: 'Edafologia',
+        };
+        const planoName = planoNames[currentPlano] ?? 'Ubicacion_Geografica';
         link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
         link.href = dataUrl;
         link.click();
@@ -397,8 +415,9 @@ export const GeoViewer: React.FC = () => {
     return elements;
   };
 
-  const nombresPlanos = ['Plano 1', 'Plano 2', 'Plano 3'];
+  const nombresPlanos = ['Plano 1', 'Plano 2', 'Plano 3', 'Plano 4', 'Plano 5'];
   const nombreActual = nombresPlanos[currentPlano - 1];
+  const isAnyLayerLoading = isLoadingEco || isLoadingVeg || isLoadingClimate || isLoadingEdafologia;
 
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
@@ -493,7 +512,7 @@ export const GeoViewer: React.FC = () => {
                     </svg>
                   </div>
 
-                  {(isLoadingEco || isLoadingVeg) && (
+                  {isAnyLayerLoading && (
                     <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
                       <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
                       <span className="small fw-semibold text-dark">Consultando coberturas en R2...</span>
@@ -523,6 +542,8 @@ export const GeoViewer: React.FC = () => {
 
                     {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}`} ecoNearby={ecoNearby} />}
                     {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
+                    {currentPlano === 4 && <ClimateLayer key={`climate-${currentPlano}`} climateNearby={climateNearby} />}
+                    {currentPlano === 5 && <EdafologiaLayer key={`edafologia-${currentPlano}`} edafologiaNearby={edafologiaNearby} />}
 
                     {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
                     {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
@@ -552,6 +573,8 @@ export const GeoViewer: React.FC = () => {
                           isExporting={isExporting}
                         />
                       )}
+                      {currentPlano === 4 && <LegendClima climateNearby={climateNearby} isLoading={isLoadingClimate} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                      {currentPlano === 5 && <LegendEdafologia edafologiaNearby={edafologiaNearby} isLoading={isLoadingEdafologia} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
 
                       <div className="bg-white mb-2 border border-dark mt-2">
                         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
@@ -565,7 +588,7 @@ export const GeoViewer: React.FC = () => {
           </div>
 
           {geoJsonData && (
-            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '900px', borderTop: '4px solid #d6b56a', height: '60px' }}>
+            <div className="bg-dark text-white p-3 d-flex flex-wrap justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '1050px', borderTop: '4px solid #d6b56a' }}>
               <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
               <button type="button" onClick={() => setCurrentPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
@@ -575,6 +598,12 @@ export const GeoViewer: React.FC = () => {
               </button>
               <button type="button" onClick={() => setCurrentPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
+              </button>
+              <button type="button" onClick={() => setCurrentPlano(4)} className={`btn btn-sm ${currentPlano === 4 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                <i className="bi bi-cloud-sun me-1"></i> Unidades Climáticas
+              </button>
+              <button type="button" onClick={() => setCurrentPlano(5)} className={`btn btn-sm ${currentPlano === 5 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                <i className="bi bi-layers me-1"></i> Edafología
               </button>
 
               <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
