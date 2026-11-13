@@ -297,6 +297,9 @@ export const GeoViewer: React.FC = () => {
       domtoimage.toJpeg(printRef.current!, {
         quality: 0.95,
         bgcolor: '#ffffff',
+        style: {
+          margin: '0',
+        },
         filter: (node: Node) => {
           if (node instanceof HTMLElement) {
             return !node.classList.contains('ignore-print') &&
@@ -468,89 +471,95 @@ export const GeoViewer: React.FC = () => {
             </button>
           )}
 
-          <div ref={printRef} className="bg-white position-relative d-flex align-items-center justify-content-center" style={{ padding: '40px', boxSizing: 'border-box', width: '11in', height: '8.5in', marginTop: '40px' }}>
-            <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
-              {renderLabels()}
-              {renderZebraFrame()}
+          <div style={{ marginTop: '40px', marginBottom: '20px' }}>
+            <div
+              ref={printRef}
+              className="bg-white position-relative d-flex align-items-center justify-content-center"
+              style={{ padding: '40px', boxSizing: 'border-box', width: '11in', height: '8.5in' }}
+            >
+              <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
+                {renderLabels()}
+                {renderZebraFrame()}
 
-              <div className="h-100 w-100 position-relative bg-white" style={{ outline: '1px solid black' }}>
-                <div aria-hidden="true" style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 1000, pointerEvents: 'none' }}>
-                  <svg width="45" height="45" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                    <polygon points="50,0 60,40 50,50 40,40" fill="black" />
-                    <polygon points="50,100 60,60 50,50 40,60" fill="white" stroke="black" />
-                    <polygon points="100,50 60,60 50,50 60,40" fill="black" />
-                    <polygon points="0,50 40,60 50,50 40,40" fill="white" stroke="black" />
-                    <circle cx="50" cy="50" r="8" fill="white" stroke="black" />
-                    <text x="50" y="-5" fontSize="22" textAnchor="middle" fill="black" fontWeight="bold">N</text>
-                  </svg>
-                </div>
+                <div className="h-100 w-100 position-relative bg-white" style={{ outline: '1px solid black' }}>
+                  <div aria-hidden="true" style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 1000, pointerEvents: 'none' }}>
+                    <svg width="45" height="45" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                      <polygon points="50,0 60,40 50,50 40,40" fill="black" />
+                      <polygon points="50,100 60,60 50,50 40,60" fill="white" stroke="black" />
+                      <polygon points="100,50 60,60 50,50 60,40" fill="black" />
+                      <polygon points="0,50 40,60 50,50 40,40" fill="white" stroke="black" />
+                      <circle cx="50" cy="50" r="8" fill="white" stroke="black" />
+                      <text x="50" y="-5" fontSize="22" textAnchor="middle" fill="black" fontWeight="bold">N</text>
+                    </svg>
+                  </div>
 
-                {(isLoadingEco || isLoadingVeg) && (
-                  <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
-                    <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
-                    <span className="small fw-semibold text-dark">Consultando coberturas en R2...</span>
-                  </output>
-                )}
-
-                <MapContainer ref={setMapRef} center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={false} style={{ height: '100%', width: '100%' }}>
-                  <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
-
-                  {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
-                  <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
-
-                  {useSentinel && sentinelUrl && currentPlano === 1 ? (
-                    <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
-                  ) : (
-                    <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
+                  {(isLoadingEco || isLoadingVeg) && (
+                    <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
+                      <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
+                      <span className="small fw-semibold text-dark">Consultando coberturas en R2...</span>
+                    </output>
                   )}
 
-                  <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
+                  <MapContainer ref={setMapRef} center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={false} style={{ height: '100%', width: '100%' }}>
+                    <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
 
-                  <GraticuleEngine />
-                  <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} trigger={recenterTrigger} />
+                    {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
+                    <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
 
-                  <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
-                    <ScaleControl position="bottomleft" imperial={false} />
-                  </div>
-
-                  {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}`} ecoNearby={ecoNearby} />}
-                  {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
-
-                  {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
-                  {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
-
-                </MapContainer>
-
-                {previewData && (
-                  <div className="position-absolute bg-white p-3 shadow-sm" style={{ top: '15px', right: '15px', width: '290px', zIndex: 1000, border: '1px solid #000' }}>
-                    <div className="text-center mb-3 d-flex flex-column align-items-center">
-                      <img src={profepaLogo} alt="PROFEPA" style={{ height: '35px', marginBottom: '8px' }} />
-                      <h6 className="fw-bold mb-0" style={{ fontSize: '0.75rem', color: '#000' }}>PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE</h6>
-                      <span className="text-muted" style={{ fontSize: '0.6rem' }}>Subprocuraduría de Recursos Naturales</span>
-                    </div>
-
-                    <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
-
-                    {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
-                    {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
-                    {currentPlano === 3 && (
-                      <LegendVegetacion
-                        vegNearby={vegNearby}
-                        selectedVegSerie={selectedVegSerie}
-                        setSelectedVegSerie={setSelectedVegSerie}
-                        currentViewportBbox={currentViewportBbox}
-                        targetDate={previewData.targetDate}
-                        isLoading={isLoadingVeg}
-                        isExporting={isExporting}
-                      />
+                    {useSentinel && sentinelUrl && currentPlano === 1 ? (
+                      <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
+                    ) : (
+                      <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
                     )}
 
-                    <div className="bg-white mb-2 border border-dark mt-2">
-                      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
-                      <p className="mb-0 text-center p-1" style={{ fontSize: '0.65rem' }}>DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator</p>
+                    <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
+
+                    <GraticuleEngine />
+                    <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} trigger={recenterTrigger} />
+
+                    <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
+                      <ScaleControl position="bottomleft" imperial={false} />
                     </div>
-                  </div>
-                )}
+
+                    {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}`} ecoNearby={ecoNearby} />}
+                    {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
+
+                    {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
+                    {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
+
+                  </MapContainer>
+
+                  {previewData && (
+                    <div className="position-absolute bg-white p-3 shadow-sm" style={{ top: '15px', right: '15px', width: '290px', zIndex: 1000, border: '1px solid #000' }}>
+                      <div className="text-center mb-3 d-flex flex-column align-items-center">
+                        <img src={profepaLogo} alt="PROFEPA" style={{ height: '35px', marginBottom: '8px' }} />
+                        <h6 className="fw-bold mb-0" style={{ fontSize: '0.75rem', color: '#000' }}>PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE</h6>
+                        <span className="text-muted" style={{ fontSize: '0.6rem' }}>Subprocuraduría de Recursos Naturales</span>
+                      </div>
+
+                      <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
+
+                      {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
+                      {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                      {currentPlano === 3 && (
+                        <LegendVegetacion
+                          vegNearby={vegNearby}
+                          selectedVegSerie={selectedVegSerie}
+                          setSelectedVegSerie={setSelectedVegSerie}
+                          currentViewportBbox={currentViewportBbox}
+                          targetDate={previewData.targetDate}
+                          isLoading={isLoadingVeg}
+                          isExporting={isExporting}
+                        />
+                      )}
+
+                      <div className="bg-white mb-2 border border-dark mt-2">
+                        <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
+                        <p className="mb-0 text-center p-1" style={{ fontSize: '0.65rem' }}>DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
