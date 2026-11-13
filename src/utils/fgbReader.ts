@@ -16,18 +16,17 @@ export async function queryFgbLayer(
   fileName: string,
   bbox: BoundingBox
 ): Promise<Feature[]> {
-  const baseUrl = (import.meta.env.VITE_R2_PUBLIC_URL || '').replace(/\/\$/, '');
+  const rawBaseUrl: unknown = import.meta.env.VITE_R2_PUBLIC_URL;
+  const baseUrl = (typeof rawBaseUrl === 'string' ? rawBaseUrl : '').replace(/\/$/, '');
   const url = `${baseUrl}/${fileName}`;
   const features: Feature[] = [];
 
   try {
-    // Se envuelve en rect y se castea a never para evitar el error TS2559
-    // provocado por un desfase en los @types de flatgeobuf 3.x
     const options = { rect: bbox };
-    const iterator = deserialize(url, options as never);
-    
+    const iterator = deserialize(url, options);
+
     for await (const feature of iterator) {
-      features.push(feature as Feature);
+      features.push(feature);
     }
   } catch (error) {
     console.warn(`Error al consultar ${fileName} desde R2:`, error);

@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, useMap, ScaleControl, CircleMarker, useMapEven
 import { useForm } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
-import type { FeatureCollection, Feature, GeoJsonObject } from 'geojson';
+import type { FeatureCollection, Feature, GeoJsonObject, Polygon, MultiPolygon, Point } from 'geojson';
 import L from 'leaflet';
 import domtoimage from 'dom-to-image';
 import * as turf from '@turf/turf';
@@ -92,21 +92,26 @@ const GraticuleEngine: React.FC = () => {
   );
 };
 
-const MapUpdater: React.FC<{ data: FeatureCollection | null; plano: number; buffer10km: Feature | null; trigger: number }> = ({ data, plano, buffer10km, trigger }) => {
+const MapUpdater: React.FC<{
+  data: FeatureCollection | null;
+  plano: number;
+  buffer10km: Feature<Polygon | MultiPolygon> | null;
+  trigger: number;
+}> = ({ data, plano, buffer10km, trigger }) => {
   const map = useMap();
   useEffect(() => {
     if (!data || data.features.length === 0) return;
     const paddingOpts = { paddingBottomRight: [330, 30] as [number, number], paddingTopLeft: [40, 40] as [number, number] };
 
     if (trigger > 0) {
-      const layer = L.geoJSON(data as GeoJsonObject);
+      const layer = L.geoJSON(data);
       const bounds = layer.getBounds();
       if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 16 });
       return;
     }
 
     if (plano === 1) {
-      const layer = L.geoJSON(data as GeoJsonObject);
+      const layer = L.geoJSON(data);
       const bounds = layer.getBounds();
       if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
     } else if ((plano === 2 || plano === 3) && buffer10km) {
@@ -131,7 +136,7 @@ const InvalidateMap: React.FC<{ dependencies: unknown[] }> = ({ dependencies }) 
 
 const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string; municipio: string }> = ({ data, estado, municipio }) => {
   if (!data || data.features.length === 0) return null;
-  const center = L.geoJSON(data as GeoJsonObject).getBounds().getCenter();
+  const center = L.geoJSON(data).getBounds().getCenter();
   return (
     <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
@@ -155,11 +160,11 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
   return (
     <>
       {data.features.map((f, i) => {
-        if (f.geometry.type === 'Point') return null;
-        const polyId = f.properties?.polyId;
+        if (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon') return null;
+        const polyId = typeof f.properties?.polyId === 'string' ? f.properties.polyId : null;
         if (!polyId) return null;
         try {
-          const centroid = turf.centroid(f as any);
+          const centroid = turf.centroid(f);
           const [lon, lat] = centroid.geometry.coordinates;
           const angles = [45, 135, 315, 225, 0, 180, 90, 270];
           const angleRad = angles[i % angles.length] * (Math.PI / 180);
@@ -191,7 +196,7 @@ export const GeoViewer: React.FC = () => {
   const [currentPlano, setCurrentPlano] = useState<number>(1);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
-  const [mapRef, setMapRef] = useState<L.Map | null>(null); // <--- NUEVA LÍNEA
+  const [mapRef, setMapRef] = useState<L.Map | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
   const [recenterTrigger, setRecenterTrigger] = useState<number>(0);
@@ -204,18 +209,30 @@ export const GeoViewer: React.FC = () => {
     return () => document.removeEventListener('mapFrameUpdated', handler);
   }, []);
 
-  const buffer10km = useMemo(() => {
+  const buffer10km = useMemo<Feature<Polygon | MultiPolygon> | null>(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
     try {
-      const polys = turf.featureCollection(geoJsonData.features.filter((f) => f.geometry.type !== 'Point'));
-      return turf.buffer(polys, 10, { units: 'kilometers' }) as unknown as Feature;
-    } catch { return null; }
+      const polys = turf.featureCollection(
+        geoJsonData.features.filter((f) => f.geometry.type !== 'Point')
+      );
+      const buffered = turf.buffer(polys, 10, { units: 'kilometers' });
+      if (!buffered || buffered.features.length === 0) return null;
+      if (buffered.features.length === 1) return buffered.features[0];
+      const coords = buffered.features.flatMap((feat) =>
+        feat.geometry.type === 'Polygon'
+          ? [feat.geometry.coordinates]
+          : feat.geometry.coordinates
+      );
+      return turf.multiPolygon(coords);
+    } catch {
+      return null;
+    }
   }, [geoJsonData]);
 
-  const predioCentroid = useMemo(() => {
+  const predioCentroid = useMemo<Feature<Point> | null>(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
     try {
-      return turf.centroid(geoJsonData as any);
+      return turf.centroid(geoJsonData);
     } catch { return null; }
   }, [geoJsonData]);
 
@@ -258,7 +275,7 @@ export const GeoViewer: React.FC = () => {
         return finalF;
       });
 
-      setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures } as FeatureCollection);
+      setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures });
       setIsSidebarOpen(false);
     } catch (err) {
       console.warn('Error procesando el archivo espacial:', err);
@@ -268,8 +285,7 @@ export const GeoViewer: React.FC = () => {
 
   const handleDownloadImage = () => {
     if (!printRef.current) return;
-    
-    // 1. Desencadenar el re-render para ocultar elementos de UI
+
     setIsExporting(true);
     window.scrollTo(0, 0);
 
@@ -277,16 +293,13 @@ export const GeoViewer: React.FC = () => {
       mapRef.setView(mapRef.getCenter(), mapRef.getZoom(), { animate: false });
     }
 
-    // 2. Darle tiempo a React para aplicar el estado isExporting y a Leaflet para centrar
-    // Aumenta ligeramente este tiempo a 1200ms para asegurar la sincronización
     setTimeout(() => {
       domtoimage.toJpeg(printRef.current!, {
         quality: 0.95,
         bgcolor: '#ffffff',
         filter: (node: Node) => {
-          // Excluir elementos que no queremos en la captura
           if (node instanceof HTMLElement) {
-            return !node.classList.contains('ignore-print') && 
+            return !node.classList.contains('ignore-print') &&
                    !node.classList.contains('leaflet-control-container');
           }
           return true;
@@ -302,13 +315,13 @@ export const GeoViewer: React.FC = () => {
         link.click();
       })
       .catch((error) => {
-        console.error("Error al exportar la imagen:", error);
+        console.error('Error al exportar la imagen:', error);
         alert('Error al generar la imagen.');
       })
       .finally(() => {
         setIsExporting(false);
       });
-    }, 800); 
+    }, 800);
   };
 
   const { totalArea, areaDetails } = useMemo(() => {
@@ -317,9 +330,9 @@ export const GeoViewer: React.FC = () => {
     const details: { name: string; area: string }[] = [];
     geoJsonData.features.forEach((f) => {
       if (f.geometry.type === 'Point') return;
-      const polyId = f.properties?.polyId;
+      const polyId = typeof f.properties?.polyId === 'string' ? f.properties.polyId : null;
       try {
-        const a = turf.area(f as any);
+        const a = turf.area(f);
         areaSum += a;
         if (polyId) details.push({ name: `Polígono ${polyId}`, area: a.toFixed(2) });
       } catch { /* ignored */ }
@@ -395,7 +408,12 @@ export const GeoViewer: React.FC = () => {
             <button type="button" className="btn-close" onClick={() => setIsSidebarOpen(false)} aria-label="Close"></button>
           </div>
           <div className="p-3">
-            <form onSubmit={handleSubmit(onSubmit)} className="d-flex flex-column gap-3">
+            <form
+              onSubmit={(e) => {
+                void handleSubmit(onSubmit)(e);
+              }}
+              className="d-flex flex-column gap-3"
+            >
               <div>
                 <label htmlFor="expId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Expediente</label>
                 <input id="expId" type="text" className="form-control form-control-sm" {...register('expediente', { required: true })} />
@@ -474,7 +492,6 @@ export const GeoViewer: React.FC = () => {
                   </output>
                 )}
 
-                {/* Añade ref={setMapRef} al MapContainer */}
                 <MapContainer ref={setMapRef} center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={false} style={{ height: '100%', width: '100%' }}>
                   <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
 
@@ -514,7 +531,7 @@ export const GeoViewer: React.FC = () => {
 
                     <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
 
-                    {currentPlano === 1 && <LegendUbicacion previewData={previewData as any} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
+                    {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
                     {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
                     {currentPlano === 3 && (
                       <LegendVegetacion

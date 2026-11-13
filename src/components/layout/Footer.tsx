@@ -27,8 +27,8 @@ export const Footer: React.FC = () => {
                             <p className="mb-1">PROFEPA © 2026</p>
                             <p className="small text-muted mb-0">Ciudad de México, México</p>
                             <div className="mt-2">
-                                <a href="#" className="text-muted small text-decoration-none me-3">Aviso de Privacidad</a>
-                                <a href="#" className="text-muted small text-decoration-none">Términos y Condiciones</a>
+                                <button type="button" className="btn btn-link p-0 border-0 text-muted small text-decoration-none me-3">Aviso de Privacidad</button>
+                                <button type="button" className="btn btn-link p-0 border-0 text-muted small text-decoration-none">Términos y Condiciones</button>
                             </div>
                         </div>
                     </div>

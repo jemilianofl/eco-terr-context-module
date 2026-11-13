@@ -25,14 +25,21 @@ export const toDMS = (deg: number, isLat: boolean) => {
   const minutesFloat = (absolute - degrees) * 60;
   const minutes = Math.floor(minutesFloat);
   const seconds = Math.floor((minutesFloat - minutes) * 60);
-  const direction = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
+
+  let direction: string;
+  if (isLat) {
+    direction = deg >= 0 ? 'N' : 'S';
+  } else {
+    direction = deg >= 0 ? 'E' : 'W';
+  }
+
   return `${degrees}°${minutes}'${seconds}"${direction}`;
 };
 
 // Paleta de colores ajustada para asemejarse más a las cartas oficiales
 export const getColorForVegetation = (str: string) => {
   const typeVeg = str.toUpperCase();
-  
+
   if (typeVeg.includes('AGRICULTURA')) return '#fde047'; // Amarillo claro
   if (typeVeg.includes('BOSQUE')) return '#22c55e'; // Verde bosque
   if (typeVeg.includes('SELVA')) return '#a855f7'; // Morado
@@ -45,13 +52,13 @@ export const getColorForVegetation = (str: string) => {
   if (typeVeg.includes('VEGETACIÓN SECUNDARIA')) return '#f472b6'; // Rosa
 
   const colors = [
-    '#a3e635', '#4ade80', '#fbbf24', '#f87171', '#60a5fa', '#c084fc', 
-    '#f472b6', '#fb923c', '#38bdf8', '#34d399', '#a78bfa', '#fbb6ce', 
-    '#86efac', '#fde047', '#14b8a6', '#f43f5e', '#8b5cf6', '#d946ef'
+    '#a3e635', '#4ade80', '#fbbf24', '#f87171', '#60a5fa', '#c084fc',
+    '#f472b6', '#fb923c', '#38bdf8', '#34d399', '#a78bfa', '#fbb6ce',
+    '#86efac', '#fde047', '#14b8a6', '#f43f5e', '#8b5cf6', '#d946ef',
   ];
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
-    hash = str.codePointAt(i) || 0 + ((hash << 5) - hash);
+    hash = (str.codePointAt(i) ?? 0) + ((hash << 5) - hash);
   }
   return colors[Math.abs(hash) % colors.length];
 };

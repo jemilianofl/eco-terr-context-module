@@ -1,8 +1,12 @@
 import { GeoJSON, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import * as turf from '@turf/turf';
-import type { FeatureCollection, Feature, Polygon, MultiPolygon } from 'geojson';
+import type { FeatureCollection, Feature, Polygon, MultiPolygon, Geometry } from 'geojson';
 import { useMemo } from 'react';
+import type {
+  TypedMapFeature,
+  LayerFeatureProperties as LayerFeatureProps,
+} from '../../hooks/useMapLayers';
 
 interface UserPolygonLayerProps {
   geoJsonData: FeatureCollection;
@@ -13,17 +17,27 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
     click(e) {
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
       for (const f of geoJsonData.features) {
-        if (f.geometry.type !== 'Point' && turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)) {
-          const polyId = f.properties?.polyId || '';
+        if (
+          (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon') &&
+          turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)
+        ) {
+          const polyId = typeof f.properties?.polyId === 'string' ? f.properties.polyId : '';
           let areaHtml = '';
           try {
             const areaSqMeters = turf.area(f);
             areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
-          } catch { /* ignorar */ }
+          } catch {
+            /* ignorar */
+          }
 
           let propsHtml = '';
-          Object.entries(f.properties || {}).forEach(([key, val]) => {
-            if (key !== 'polyId' && key !== 'style' && val !== null && val !== undefined && val !== '') {
+          Object.entries(f.properties ?? {}).forEach(([key, val]) => {
+            if (
+              key !== 'polyId' &&
+              key !== 'style' &&
+              (typeof val === 'string' || typeof val === 'number') &&
+              val !== ''
+            ) {
               propsHtml += `<strong>${key}:</strong> ${val}<br/>`;
             }
           });
@@ -33,75 +47,105 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
           return;
         }
       }
-    }
+    },
   });
 
-  if (!geoJsonData || !geoJsonData.features || geoJsonData.features.length === 0) return null;
+  if (!geoJsonData?.features?.length) return null;
 
-  const layerKey = `user-layer-${geoJsonData.features.length}-${geoJsonData.features[0]?.properties?.polyId || '0'}`;
+  const firstPolyId =
+    typeof geoJsonData.features[0]?.properties?.polyId === 'string'
+      ? geoJsonData.features[0].properties.polyId
+      : '0';
+  const layerKey = `user-layer-${geoJsonData.features.length}-${firstPolyId}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={geoJsonData}
-      filter={(feature) => feature.geometry.type !== 'Point' && feature.geometry.type !== 'MultiPoint'}
+      filter={(feature) =>
+        feature.geometry.type !== 'Point' && feature.geometry.type !== 'MultiPoint'
+      }
       style={() => ({
-        color: '#ff0000', // Color del contorno (rojo)
-        weight: 3,        // Grosor del contorno
-        fill: false,      // <-- AÑADIDO: Desactiva el relleno por completo
-        // fillColor: '#ff0000', // (Opcional, puedes borrar o comentar esta línea si usas fill: false)
-        // fillOpacity: 0.3,     // (Opcional, puedes borrar o comentar esta línea si usas fill: false)
+        color: '#ff0000',
+        weight: 3,
+        fill: false,
         lineJoin: 'round',
-        lineCap: 'round'
+        lineCap: 'round',
       })}
     />
   );
 };
 
 interface EcoLayerProps {
-  ecoNearby: Feature[];
+  ecoNearby: TypedMapFeature[];
 }
+
+const getEcoAreaName = (props?: LayerFeatureProps | null): string => {
+  const candidates = [
+    props?.NOMBRE,
+    props?.NOM_AICA,
+    props?.nombre,
+    props?.Name,
+    props?.NAME,
+    props?.NOM,
+    props?.SITIO,
+  ];
+  const found = candidates.find(
+    (v): v is string => typeof v === 'string' && v.trim().length > 0
+  );
+  return found ?? 'Área Protegida';
+};
 
 export const EcoLayer = ({ ecoNearby }: EcoLayerProps) => {
   const map = useMapEvents({
     click(e) {
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
       for (const f of ecoNearby) {
-        if (turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)) {
-          const title = f.properties?._title || 'Área Protegida';
-          const name = f.properties?.NOMBRE || f.properties?.NOM_AICA || f.properties?.nombre || f.properties?.Name || f.properties?.NAME || f.properties?.NOM || f.properties?.SITIO || 'Área Protegida';
-          L.popup().setLatLng(e.latlng).setContent(`<div><strong style="color:${f.properties?._color || '#000'}">${title}</strong><br/>${name}</div>`).openOn(map);
+        if (
+          (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon') &&
+          turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)
+        ) {
+          const title = f.properties?._title ?? 'Área Protegida';
+          const name = getEcoAreaName(f.properties);
+          const color = f.properties?._color ?? '#000';
+          L.popup()
+            .setLatLng(e.latlng)
+            .setContent(`<div><strong style="color:${color}">${title}</strong><br/>${name}</div>`)
+            .openOn(map);
           return;
         }
       }
-    }
+    },
   });
-  
-  const data = useMemo(() => {
-    if (!ecoNearby || ecoNearby.length === 0) return { type: 'FeatureCollection', features: [] } as FeatureCollection;
-    return turf.featureCollection(ecoNearby) as FeatureCollection;
+
+  const data = useMemo<FeatureCollection<Geometry, LayerFeatureProps>>(() => {
+    if (!ecoNearby?.length) return { type: 'FeatureCollection', features: [] };
+    return turf.featureCollection(ecoNearby);
   }, [ecoNearby]);
 
-  if (!data.features || data.features.length === 0) return null;
+  if (!data.features.length) return null;
 
-  const layerKey = `eco-layer-${data.features.length}-${data.features[0]?.properties?._layerId || '0'}`;
+  const layerKey = `eco-layer-${data.features.length}-${data.features[0]?.properties?._layerId ?? '0'}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={data}
-      style={(f) => ({
-        color: f?.properties?._color,
-        weight: 1.5,
-        fillColor: f?.properties?._color,
-        fillOpacity: 0.15
-      })}
+      style={(f) => {
+        const props = f?.properties as LayerFeatureProps | undefined;
+        return {
+          color: props?._color,
+          weight: 1.5,
+          fillColor: props?._color,
+          fillOpacity: 0.15,
+        };
+      }}
     />
   );
 };
 
 interface VegLayerProps {
-  vegNearby: Feature[];
+  vegNearby: TypedMapFeature[];
 }
 
 export const VegLayer = ({ vegNearby }: VegLayerProps) => {
@@ -109,33 +153,43 @@ export const VegLayer = ({ vegNearby }: VegLayerProps) => {
     click(e) {
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
       for (const f of vegNearby) {
-        if (turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)) {
-          L.popup().setLatLng(e.latlng).setContent(`<div><strong>Uso de Suelo</strong><br/>${f.properties?._type}</div>`).openOn(map);
+        if (
+          (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon') &&
+          turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)
+        ) {
+          const tipo = f.properties?._type ?? '';
+          L.popup()
+            .setLatLng(e.latlng)
+            .setContent(`<div><strong>Uso de Suelo</strong><br/>${tipo}</div>`)
+            .openOn(map);
           return;
         }
       }
-    }
+    },
   });
 
-  const data = useMemo(() => {
-    if (!vegNearby || vegNearby.length === 0) return { type: 'FeatureCollection', features: [] } as FeatureCollection;
-    return turf.featureCollection(vegNearby) as FeatureCollection;
+  const data = useMemo<FeatureCollection<Geometry, LayerFeatureProps>>(() => {
+    if (!vegNearby?.length) return { type: 'FeatureCollection', features: [] };
+    return turf.featureCollection(vegNearby);
   }, [vegNearby]);
 
-  if (!data.features || data.features.length === 0) return null;
+  if (!data.features.length) return null;
 
-  const layerKey = `veg-layer-${data.features.length}-${data.features[0]?.properties?._type || '0'}`;
+  const layerKey = `veg-layer-${data.features.length}-${data.features[0]?.properties?._type ?? '0'}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={data}
-      style={(f) => ({
-        color: f?.properties?._color,
-        weight: 1.5,
-        fillColor: f?.properties?._color,
-        fillOpacity: 0.35
-      })}
+      style={(f) => {
+        const props = f?.properties as LayerFeatureProps | undefined;
+        return {
+          color: props?._color,
+          weight: 1.5,
+          fillColor: props?._color,
+          fillOpacity: 0.35,
+        };
+      }}
     />
   );
 };

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import * as turf from '@turf/turf';
 import { ECO_LAYERS_CONFIG, vegSeriesOptions, compactarNombreVeg } from '../../config/mapConfig';
-import type { Feature, Polygon, MultiPolygon } from 'geojson';
+import type { Feature, Polygon } from 'geojson';
+import type { SentinelMetadata, TypedMapFeature } from '../../hooks/useMapLayers';
 
 interface PreviewData {
   acta?: string;
@@ -10,14 +11,14 @@ interface PreviewData {
 
 interface LegendUbicacionProps {
   previewData: PreviewData;
-  sentinelMetadata: Record<string, unknown> | null;
+  sentinelMetadata: SentinelMetadata | null;
   areaDetails: { name: string; area: string }[];
   totalArea: string;
   useSentinel: boolean;
 }
 
 interface LegendVegetacionProps {
-  vegNearby: Feature[];
+  vegNearby: TypedMapFeature[];
   selectedVegSerie: string;
   setSelectedVegSerie: (val: string) => void;
   currentViewportBbox: [number, number, number, number] | null;
@@ -26,61 +27,117 @@ interface LegendVegetacionProps {
   isExporting?: boolean;
 }
 
-export const LegendUbicacion = ({ previewData, sentinelMetadata, areaDetails, totalArea, useSentinel }: LegendUbicacionProps) => (
+export const LegendUbicacion = ({
+  previewData,
+  sentinelMetadata,
+  areaDetails,
+  totalArea,
+  useSentinel,
+}: LegendUbicacionProps) => (
   <>
     <div className="bg-white mb-2 border border-dark">
-      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}>Datos de Inspección</div>
+      <div
+        className="fw-bold text-white text-center mb-1"
+        style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+      >
+        Datos de Inspección
+      </div>
       <div className="p-2 text-center" style={{ fontSize: '0.65rem' }}>
-        <p className="mb-1"><strong>Acta:</strong> {previewData.acta || 'N/A'}</p>
-        <p className="mb-0"><strong>Fecha:</strong> {previewData.targetDate || 'N/A'}</p>
+        <p className="mb-1">
+          <strong>Acta:</strong> {previewData.acta || 'N/A'}
+        </p>
+        <p className="mb-0">
+          <strong>Fecha:</strong> {previewData.targetDate || 'N/A'}
+        </p>
       </div>
     </div>
 
     {useSentinel && sentinelMetadata && (
       <div className="bg-white mb-2 border border-dark">
-        <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}>Metadatos Satelitales</div>
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}
+        >
+          Metadatos Satelitales
+        </div>
         <div className="p-2 text-center" style={{ fontSize: '0.60rem' }}>
-          <p className="mb-1"><strong>Sensor:</strong> {String(sentinelMetadata.platform)}</p>
-          <p className="mb-1"><strong>Captura:</strong> {new Date(String(sentinelMetadata.date)).toLocaleDateString('es-MX')}</p>
+          <p className="mb-1">
+            <strong>Sensor:</strong> {sentinelMetadata.platform ?? 'N/A'}
+          </p>
+          <p className="mb-1">
+            <strong>Captura:</strong>{' '}
+            {sentinelMetadata.date
+              ? new Date(sentinelMetadata.date).toLocaleDateString('es-MX')
+              : 'N/A'}
+          </p>
         </div>
       </div>
     )}
 
     <div className="bg-white mb-2 border border-dark">
-      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}>Simbología</div>
+      <div
+        className="fw-bold text-white text-center mb-1"
+        style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+      >
+        Simbología
+      </div>
       <div className="p-2">
         <div className="d-flex align-items-center mb-1">
-          <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px' }}></div>
-          <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono(s) Inspeccionado(s)</span>
+          <div
+            style={{
+              width: '12px',
+              height: '12px',
+              backgroundColor: 'transparent',
+              border: '2px solid #ff0000',
+              marginRight: '8px',
+            }}
+          ></div>
+          <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>
+            Polígono(s) Inspeccionado(s)
+          </span>
         </div>
       </div>
     </div>
 
     <div className="bg-white mb-2 border border-dark">
-      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem' }}>Superficie:</div>
+      <div
+        className="fw-bold text-white text-center mb-1"
+        style={{ backgroundColor: '#163f37', fontSize: '0.75rem' }}
+      >
+        Superficie:
+      </div>
       <div className="p-2 text-center">
         {areaDetails.map((item) => (
-          <p key={`area-${item.name}`} className="mb-1" style={{ fontSize: '0.65rem' }}><strong>{item.name}:</strong> {item.area} m²</p>
+          <p key={`area-${item.name}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
+            <strong>{item.name}:</strong> {item.area} m²
+          </p>
         ))}
         <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
-        <p className="mb-0" style={{ fontSize: '0.7rem' }}><strong>Total:</strong> {totalArea} m²</p>
+        <p className="mb-0" style={{ fontSize: '0.7rem' }}>
+          <strong>Total:</strong> {totalArea} m²
+        </p>
       </div>
     </div>
   </>
 );
 
 interface LegendEcologicaProps {
-  ecoNearby: Feature[];
+  ecoNearby: TypedMapFeature[];
   isLoading: boolean;
   targetDate?: string;
   currentViewportBbox: [number, number, number, number] | null;
 }
 
-export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewportBbox }: LegendEcologicaProps) => {
+export const LegendEcologica = ({
+  ecoNearby,
+  isLoading,
+  targetDate,
+  currentViewportBbox,
+}: LegendEcologicaProps) => {
   const activeEcoLegend = useMemo(() => {
     if (ecoNearby.length === 0) return [];
 
-    let viewportPolygon: any = null;
+    let viewportPolygon: Feature<Polygon> | null = null;
     if (currentViewportBbox) {
       try {
         viewportPolygon = turf.bboxPolygon(currentViewportBbox);
@@ -95,7 +152,7 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
       let isVisible = true;
       if (viewportPolygon) {
         try {
-          isVisible = turf.booleanIntersects(f as any, viewportPolygon);
+          isVisible = turf.booleanIntersects(f, viewportPolygon);
         } catch {
           isVisible = false;
         }
@@ -112,30 +169,62 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
   return (
     <>
       <div className="bg-white mb-2 border border-dark">
-        <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}>Simbología</div>
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+        >
+          Simbología
+        </div>
         <div className="p-2">
-          <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>Capa extraída de: CONABIO/CONANP</p>
+          <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>
+            Capa extraída de: CONABIO/CONANP
+          </p>
           <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-            <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: 'transparent',
+                border: '2px solid #ff0000',
+                marginRight: '8px',
+                flexShrink: 0,
+              }}
+            ></div>
             <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
           </div>
 
           {activeEcoLegend.length > 0 ? (
             activeEcoLegend.map((layer) => (
               <div key={layer.id} className="d-flex align-items-center mb-1">
-                <div style={{ width: '12px', height: '12px', border: `2px solid ${layer.color}`, backgroundColor: `${layer.color}40`, marginRight: '8px' }}></div>
+                <div
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    border: `2px solid ${layer.color}`,
+                    backgroundColor: `${layer.color}40`,
+                    marginRight: '8px',
+                  }}
+                ></div>
                 <span style={{ fontSize: '0.60rem' }}>{layer.title}</span>
               </div>
             ))
           ) : (
-            <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
-              {isLoading ? 'Buscando intersecciones...' : 'Sin polígonos ecológicos visibles en encuadre'}
+            <output
+              className="text-center text-muted mt-2 d-block"
+              style={{ fontSize: '0.65rem' }}
+            >
+              {isLoading
+                ? 'Buscando intersecciones...'
+                : 'Sin polígonos ecológicos visibles en encuadre'}
             </output>
           )}
         </div>
       </div>
 
-      <div className="border border-dark mb-2 p-1 text-center bg-white" style={{ fontSize: '0.65rem' }}>
+      <div
+        className="border border-dark mb-2 p-1 text-center bg-white"
+        style={{ fontSize: '0.65rem' }}
+      >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
     </>
@@ -149,24 +238,29 @@ export const LegendVegetacion = ({
   currentViewportBbox,
   targetDate,
   isLoading,
-  isExporting = false
+  isExporting = false,
 }: LegendVegetacionProps) => {
-
   const activeVegLegend = useMemo(() => {
     if (vegNearby.length === 0) return [];
     let viewportPolygon: Feature<Polygon> | null = null;
     if (currentViewportBbox) {
-      try { viewportPolygon = turf.bboxPolygon(currentViewportBbox); }
-      catch { viewportPolygon = null; }
+      try {
+        viewportPolygon = turf.bboxPolygon(currentViewportBbox);
+      } catch {
+        viewportPolygon = null;
+      }
     }
     const uniqueTypes = new Map<string, string>();
     vegNearby.forEach((f) => {
       let isVisible = true;
       if (viewportPolygon) {
-        try { isVisible = turf.booleanIntersects(f as Feature<Polygon | MultiPolygon>, viewportPolygon); }
-        catch { isVisible = false; }
+        try {
+          isVisible = turf.booleanIntersects(f, viewportPolygon);
+        } catch {
+          isVisible = false;
+        }
       }
-      if (isVisible && f.properties?._type) {
+      if (isVisible && f.properties?._type && f.properties?._color) {
         uniqueTypes.set(f.properties._type, f.properties._color);
       }
     });
@@ -175,13 +269,13 @@ export const LegendVegetacion = ({
 
   const activeSerieLabel = useMemo(() => {
     const serieLabels: Record<string, string> = {
-      'serie_1': 'Serie I (1997)',
-      'serie_2': 'Serie II (2001)',
-      'serie_3': 'Serie III (2005)',
-      'serie_4': 'Serie IV (2009)',
-      'serie_5': 'Serie V (2013)',
-      'serie_6': 'Serie VI (2014)',
-      'serie_7': 'Serie VII (2021)'
+      serie_1: 'Serie I (1997)',
+      serie_2: 'Serie II (2001)',
+      serie_3: 'Serie III (2005)',
+      serie_4: 'Serie IV (2009)',
+      serie_5: 'Serie V (2013)',
+      serie_6: 'Serie VI (2014)',
+      serie_7: 'Serie VII (2021)',
     };
 
     if (serieLabels[selectedVegSerie]) {
@@ -201,16 +295,30 @@ export const LegendVegetacion = ({
   return (
     <>
       <div className="bg-white mb-2 border border-dark">
-        <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#65a30d', fontSize: '0.75rem' }}>Datos de Vegetación</div>
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#65a30d', fontSize: '0.75rem' }}
+        >
+          Datos de Vegetación
+        </div>
         <div className="p-2">
-          <label className="fw-bold mb-1 d-block text-muted" style={{ fontSize: '0.60rem' }}>Capa extraída de: INEGI</label>
+          <span
+            className="fw-bold mb-1 d-block text-muted"
+            style={{ fontSize: '0.60rem' }}
+          >
+            Capa extraída de: INEGI
+          </span>
 
           {isExporting ? (
-            <div className="fw-bold text-dark text-center border-bottom pb-2 mb-2" style={{ fontSize: '0.65rem' }}>
+            <div
+              className="fw-bold text-dark text-center border-bottom pb-2 mb-2"
+              style={{ fontSize: '0.65rem' }}
+            >
               {activeSerieLabel}
             </div>
           ) : (
             <select
+              aria-label="Seleccionar serie de vegetación INEGI"
               className="form-select form-select-sm ignore-print mb-2"
               value={selectedVegSerie}
               onChange={(e) => setSelectedVegSerie(e.target.value)}
@@ -225,19 +333,42 @@ export const LegendVegetacion = ({
 
           <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
             <div className="d-flex align-items-center mb-1">
-              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
-              <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>Polígono(s) Inspeccionado(s)</span>
+              <div
+                style={{
+                  width: '12px',
+                  height: '12px',
+                  backgroundColor: 'transparent',
+                  border: '2px solid #ff0000',
+                  marginRight: '8px',
+                  flexShrink: 0,
+                }}
+              ></div>
+              <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+                Polígono(s) Inspeccionado(s)
+              </span>
             </div>
 
             {activeVegLegend.length === 0 && !isLoading && (
-              <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
+              <output
+                className="text-center text-muted mt-2 d-block"
+                style={{ fontSize: '0.65rem' }}
+              >
                 Sin coberturas visibles en encuadre
               </output>
             )}
 
             {activeVegLegend.map((item) => (
               <div key={item.label} className="d-flex align-items-center mt-1">
-                <div style={{ width: '12px', height: '12px', border: `2px solid ${item.color}`, backgroundColor: `${item.color}80`, marginRight: '8px', flexShrink: 0 }}></div>
+                <div
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    border: `2px solid ${item.color}`,
+                    backgroundColor: `${item.color}80`,
+                    marginRight: '8px',
+                    flexShrink: 0,
+                  }}
+                ></div>
                 <span style={{ fontSize: '0.60rem' }}>{compactarNombreVeg(item.label)}</span>
               </div>
             ))}
@@ -245,7 +376,10 @@ export const LegendVegetacion = ({
         </div>
       </div>
 
-      <div className="border border-dark mb-2 p-1 text-center bg-white" style={{ fontSize: '0.65rem' }}>
+      <div
+        className="border border-dark mb-2 p-1 text-center bg-white"
+        style={{ fontSize: '0.65rem' }}
+      >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
     </>
