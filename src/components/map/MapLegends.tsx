@@ -174,17 +174,31 @@ export const LegendVegetacion = ({
   }, [vegNearby, currentViewportBbox]);
 
   const activeSerieLabel = useMemo(() => {
-    // Si la serie actual es la 7, fuerza su etiqueta correcta
+    // Aseguramos una búsqueda segura en vegSeriesOptions (asumiendo que es un array de objetos {value, label})
+    if (!vegSeriesOptions || !Array.isArray(vegSeriesOptions)) return selectedVegSerie;
+
+    const opt = vegSeriesOptions.find((o: any) => {
+      // Extraemos el valor de la opción de forma segura
+      const val = o && typeof o === 'object' && o.value !== undefined 
+                    ? String(o.value) 
+                    : (typeof o === 'string' ? o : null);
+      
+      return val === selectedVegSerie;
+    });
+
+    // Si encontramos la opción, devolvemos su label, si no, un fallback
+    if (opt) {
+       return typeof opt === 'object' && opt.label !== undefined 
+                ? String(opt.label) 
+                : String(opt);
+    }
+    
+    // Fallbacks manuales por si la configuración falla
     if (selectedVegSerie === 'serie_7') return 'Serie VII (2021)';
     if (selectedVegSerie === 'serie_6') return 'Serie VI (2014)';
     
-    // Fallback original si no coinciden las de arriba
-    const opt = vegSeriesOptions?.find((o: any) => {
-      const val = o?.value !== undefined ? String(o.value) : (typeof o === 'string' ? o : '');
-      return val === selectedVegSerie;
-    });
-    return opt?.label !== undefined ? String(opt.label) : selectedVegSerie;
-  }, [selectedVegSerie, vegSeriesOptions]); // <- Importante agregar dependencias
+    return selectedVegSerie;
+  }, [selectedVegSerie]);
 
   return (
     <>

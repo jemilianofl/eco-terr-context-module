@@ -46,10 +46,11 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
       data={geoJsonData}
       filter={(feature) => feature.geometry.type !== 'Point' && feature.geometry.type !== 'MultiPoint'}
       style={() => ({
-        color: '#ff0000',
-        weight: 3,
-        fillColor: '#ff0000',
-        fillOpacity: 0.3,
+        color: '#ff0000', // Color del contorno (rojo)
+        weight: 3,        // Grosor del contorno
+        fill: false,      // <-- AÑADIDO: Desactiva el relleno por completo
+        // fillColor: '#ff0000', // (Opcional, puedes borrar o comentar esta línea si usas fill: false)
+        // fillOpacity: 0.3,     // (Opcional, puedes borrar o comentar esta línea si usas fill: false)
         lineJoin: 'round',
         lineCap: 'round'
       })}
