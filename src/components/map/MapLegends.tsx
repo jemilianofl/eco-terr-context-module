@@ -174,30 +174,37 @@ export const LegendVegetacion = ({
   }, [vegNearby, currentViewportBbox]);
 
   const activeSerieLabel = useMemo(() => {
-    // Aseguramos una búsqueda segura en vegSeriesOptions (asumiendo que es un array de objetos {value, label})
-    if (!vegSeriesOptions || !Array.isArray(vegSeriesOptions)) return selectedVegSerie;
+    // Definimos un diccionario local fijo para garantizar que NUNCA 
+    // se pierda la referencia al exportar
+    const serieLabels: Record<string, string> = {
+      'serie_1': 'Serie I',
+      'serie_2': 'Serie II',
+      'serie_3': 'Serie III',
+      'serie_4': 'Serie IV',
+      'serie_5': 'Serie V',
+      'serie_6': 'Serie VI (2014)',
+      'serie_7': 'Serie VII (2021)'
+    };
 
-    const opt = vegSeriesOptions.find((o: any) => {
-      // Extraemos el valor de la opción de forma segura
-      const val = o && typeof o === 'object' && o.value !== undefined 
-                    ? String(o.value) 
-                    : (typeof o === 'string' ? o : null);
-      
-      return val === selectedVegSerie;
-    });
+    // 1. Intentamos usar el diccionario local seguro
+    if (serieLabels[selectedVegSerie]) {
+      return serieLabels[selectedVegSerie];
+    }
 
-    // Si encontramos la opción, devolvemos su label, si no, un fallback
-    if (opt) {
-       return typeof opt === 'object' && opt.label !== undefined 
-                ? String(opt.label) 
-                : String(opt);
+    // 2. Si es una serie desconocida, intentamos buscarla en la configuración externa
+    if (vegSeriesOptions && Array.isArray(vegSeriesOptions)) {
+      const option = vegSeriesOptions.find(opt => {
+          const optValue = typeof opt === 'object' ? opt.value : opt;
+          return optValue === selectedVegSerie;
+      });
+
+      if (option) {
+          return typeof option === 'object' ? option.label : String(option);
+      }
     }
     
-    // Fallbacks manuales por si la configuración falla
-    if (selectedVegSerie === 'serie_7') return 'Serie VII (2021)';
-    if (selectedVegSerie === 'serie_6') return 'Serie VI (2014)';
-    
-    return selectedVegSerie;
+    // 3. Fallback de emergencia
+    return selectedVegSerie; 
   }, [selectedVegSerie]);
 
   return (
@@ -214,8 +221,9 @@ export const LegendVegetacion = ({
           ) : (
             <select className="form-select form-select-sm ignore-print mb-2" value={selectedVegSerie} onChange={(e) => setSelectedVegSerie(e.target.value)}>
               {vegSeriesOptions?.map((opt: any, i: number) => {
-                const val = opt?.value !== undefined ? String(opt.value) : (typeof opt === 'string' ? opt : `serie_${i}`);
-                const lbl = opt?.label !== undefined ? String(opt.label) : (typeof opt === 'string' ? opt : `Opción ${i}`);
+                // CORRECCIÓN CRÍTICA: i + 1 para que el índice coincida con el número de serie (ej. index 6 = serie_7)
+                const val = opt?.value !== undefined ? String(opt.value) : (typeof opt === 'string' ? opt : `serie_${i + 1}`);
+                const lbl = opt?.label !== undefined ? String(opt.label) : (typeof opt === 'string' ? opt : `Opción ${i + 1}`);
                 return (
                   <option key={`veg-opt-${val}`} value={val}>
                     {lbl}
@@ -226,10 +234,10 @@ export const LegendVegetacion = ({
           )}
           
           <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
-            <div className="d-flex align-items-center mb-2 border-bottom pb-2">
-              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
-              <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
-            </div>
+            <div className="d-flex align-items-center mb-1">
+  <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+  <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>Polígono(s) Inspeccionado(s)</span>
+</div>
 
             {activeVegLegend.length === 0 && !isLoading && (
               <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>

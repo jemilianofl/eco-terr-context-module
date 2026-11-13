@@ -268,15 +268,18 @@ export const GeoViewer: React.FC = () => {
 
   const handleDownloadImage = () => {
     if (!printRef.current) return;
-    setIsExporting(true);
     
-    // Forzamos un redraw limpio sin CSS temporal
+    // 1. Desencadenar el re-render para ocultar elementos de UI
+    setIsExporting(true);
+    window.scrollTo(0, 0);
+
     if (mapRef) {
       mapRef.setView(mapRef.getCenter(), mapRef.getZoom(), { animate: false });
     }
 
+    // 2. Darle tiempo a React para aplicar el estado isExporting y a Leaflet para centrar
+    // Aumenta ligeramente este tiempo a 1200ms para asegurar la sincronización
     setTimeout(() => {
-      // Usamos domtoimage que maneja las matrices 3D de forma nativa
       domtoimage.toJpeg(printRef.current!, {
         quality: 0.95,
         bgcolor: '#ffffff',
