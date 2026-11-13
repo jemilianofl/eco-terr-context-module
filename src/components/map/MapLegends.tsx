@@ -142,28 +142,28 @@ export const LegendEcologica = ({ ecoNearby, isLoading, targetDate, currentViewp
   );
 };
 
-export const LegendVegetacion = ({ 
-  vegNearby, 
-  selectedVegSerie, 
-  setSelectedVegSerie, 
-  currentViewportBbox, 
-  targetDate, 
-  isLoading, 
+export const LegendVegetacion = ({
+  vegNearby,
+  selectedVegSerie,
+  setSelectedVegSerie,
+  currentViewportBbox,
+  targetDate,
+  isLoading,
   isExporting = false
 }: LegendVegetacionProps) => {
-  
+
   const activeVegLegend = useMemo(() => {
     if (vegNearby.length === 0) return [];
     let viewportPolygon: Feature<Polygon> | null = null;
     if (currentViewportBbox) {
-      try { viewportPolygon = turf.bboxPolygon(currentViewportBbox); } 
+      try { viewportPolygon = turf.bboxPolygon(currentViewportBbox); }
       catch { viewportPolygon = null; }
     }
     const uniqueTypes = new Map<string, string>();
     vegNearby.forEach((f) => {
       let isVisible = true;
       if (viewportPolygon) {
-        try { isVisible = turf.booleanIntersects(f as Feature<Polygon | MultiPolygon>, viewportPolygon); } 
+        try { isVisible = turf.booleanIntersects(f as Feature<Polygon | MultiPolygon>, viewportPolygon); }
         catch { isVisible = false; }
       }
       if (isVisible && f.properties?._type) {
@@ -174,37 +174,28 @@ export const LegendVegetacion = ({
   }, [vegNearby, currentViewportBbox]);
 
   const activeSerieLabel = useMemo(() => {
-    // Definimos un diccionario local fijo para garantizar que NUNCA 
-    // se pierda la referencia al exportar
     const serieLabels: Record<string, string> = {
-      'serie_1': 'Serie I',
-      'serie_2': 'Serie II',
-      'serie_3': 'Serie III',
-      'serie_4': 'Serie IV',
-      'serie_5': 'Serie V',
+      'serie_1': 'Serie I (1997)',
+      'serie_2': 'Serie II (2001)',
+      'serie_3': 'Serie III (2005)',
+      'serie_4': 'Serie IV (2009)',
+      'serie_5': 'Serie V (2013)',
       'serie_6': 'Serie VI (2014)',
       'serie_7': 'Serie VII (2021)'
     };
 
-    // 1. Intentamos usar el diccionario local seguro
     if (serieLabels[selectedVegSerie]) {
       return serieLabels[selectedVegSerie];
     }
 
-    // 2. Si es una serie desconocida, intentamos buscarla en la configuración externa
     if (vegSeriesOptions && Array.isArray(vegSeriesOptions)) {
-      const option = vegSeriesOptions.find(opt => {
-          const optValue = typeof opt === 'object' ? opt.value : opt;
-          return optValue === selectedVegSerie;
-      });
-
+      const option = vegSeriesOptions.find((opt) => opt.id === selectedVegSerie);
       if (option) {
-          return typeof option === 'object' ? option.label : String(option);
+        return option.label;
       }
     }
-    
-    // 3. Fallback de emergencia
-    return selectedVegSerie; 
+
+    return selectedVegSerie;
   }, [selectedVegSerie]);
 
   return (
@@ -213,31 +204,30 @@ export const LegendVegetacion = ({
         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#65a30d', fontSize: '0.75rem' }}>Datos de Vegetación</div>
         <div className="p-2">
           <label className="fw-bold mb-1 d-block text-muted" style={{ fontSize: '0.60rem' }}>Capa extraída de: INEGI</label>
-          
+
           {isExporting ? (
             <div className="fw-bold text-dark text-center border-bottom pb-2 mb-2" style={{ fontSize: '0.65rem' }}>
               {activeSerieLabel}
             </div>
           ) : (
-            <select className="form-select form-select-sm ignore-print mb-2" value={selectedVegSerie} onChange={(e) => setSelectedVegSerie(e.target.value)}>
-              {vegSeriesOptions?.map((opt: any, i: number) => {
-                // CORRECCIÓN CRÍTICA: i + 1 para que el índice coincida con el número de serie (ej. index 6 = serie_7)
-                const val = opt?.value !== undefined ? String(opt.value) : (typeof opt === 'string' ? opt : `serie_${i + 1}`);
-                const lbl = opt?.label !== undefined ? String(opt.label) : (typeof opt === 'string' ? opt : `Opción ${i + 1}`);
-                return (
-                  <option key={`veg-opt-${val}`} value={val}>
-                    {lbl}
-                  </option>
-                );
-              })}
+            <select
+              className="form-select form-select-sm ignore-print mb-2"
+              value={selectedVegSerie}
+              onChange={(e) => setSelectedVegSerie(e.target.value)}
+            >
+              {vegSeriesOptions?.map((opt) => (
+                <option key={`veg-opt-${opt.id}`} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           )}
-          
+
           <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
             <div className="d-flex align-items-center mb-1">
-  <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
-  <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>Polígono(s) Inspeccionado(s)</span>
-</div>
+              <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+              <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>Polígono(s) Inspeccionado(s)</span>
+            </div>
 
             {activeVegLegend.length === 0 && !isLoading && (
               <output className="text-center text-muted mt-2 d-block" style={{ fontSize: '0.65rem' }}>
