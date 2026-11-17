@@ -77,6 +77,8 @@ export interface LayerFeatureProperties {
 
 export type TypedMapFeature = Feature<Geometry, LayerFeatureProperties>;
 
+const EMPTY_FEATURES: TypedMapFeature[] = [];
+
 export const useSentinelData = (
   predioCentroid: Feature<Point> | null,
   targetDate: string | undefined
@@ -127,10 +129,7 @@ export const useEcoLayers = (filterGeometry: Feature<Polygon | MultiPolygon> | n
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!filterGeometry) {
-      setEcoNearby([]);
-      return;
-    }
+    if (!filterGeometry) return;
     let isCancelled = false;
 
     const loadEcoData = async () => {
@@ -172,7 +171,10 @@ export const useEcoLayers = (filterGeometry: Feature<Polygon | MultiPolygon> | n
     };
   }, [filterGeometry]);
 
-  return { ecoNearby, isLoadingEco: isLoading };
+  return {
+    ecoNearby: filterGeometry ? ecoNearby : EMPTY_FEATURES,
+    isLoadingEco: Boolean(filterGeometry) && isLoading,
+  };
 };
 
 export const useVegetationLayers = (
@@ -183,10 +185,7 @@ export const useVegetationLayers = (
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!filterGeometry) {
-      setVegNearby([]);
-      return;
-    }
+    if (!filterGeometry) return;
     let isCancelled = false;
 
     const loadVegData = async () => {
@@ -237,7 +236,10 @@ export const useVegetationLayers = (
     };
   }, [filterGeometry, selectedVegSerie]);
 
-  return { vegNearby, isLoadingVeg: isLoading };
+  return {
+    vegNearby: filterGeometry ? vegNearby : EMPTY_FEATURES,
+    isLoadingVeg: Boolean(filterGeometry) && isLoading,
+  };
 };
 
 export const useClimateLayers = (filterGeometry: Feature<Polygon | MultiPolygon> | null) => {
@@ -245,10 +247,7 @@ export const useClimateLayers = (filterGeometry: Feature<Polygon | MultiPolygon>
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!filterGeometry) {
-      setClimateNearby([]);
-      return;
-    }
+    if (!filterGeometry) return;
     let isCancelled = false;
 
     const loadClimateData = async () => {
@@ -302,7 +301,10 @@ export const useClimateLayers = (filterGeometry: Feature<Polygon | MultiPolygon>
     };
   }, [filterGeometry]);
 
-  return { climateNearby, isLoadingClimate: isLoading };
+  return {
+    climateNearby: filterGeometry ? climateNearby : EMPTY_FEATURES,
+    isLoadingClimate: Boolean(filterGeometry) && isLoading,
+  };
 };
 
 const FASES_SUPERFICIALES: Record<string, string> = {
@@ -343,10 +345,7 @@ export const useEdafologiaLayers = (filterGeometry: Feature<Polygon | MultiPolyg
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!filterGeometry) {
-      setEdafologiaNearby([]);
-      return;
-    }
+    if (!filterGeometry) return;
     let isCancelled = false;
 
     const loadEdafologiaData = async () => {
@@ -426,7 +425,10 @@ export const useEdafologiaLayers = (filterGeometry: Feature<Polygon | MultiPolyg
     };
   }, [filterGeometry]);
 
-  return { edafologiaNearby, isLoadingEdafologia: isLoading };
+  return {
+    edafologiaNearby: filterGeometry ? edafologiaNearby : EMPTY_FEATURES,
+    isLoadingEdafologia: Boolean(filterGeometry) && isLoading,
+  };
 };
 
 export const useHidrologiaLayers = (filterGeometry: Feature<Polygon | MultiPolygon> | null) => {
@@ -437,13 +439,7 @@ export const useHidrologiaLayers = (filterGeometry: Feature<Polygon | MultiPolyg
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!filterGeometry) {
-      setCuencasNearby([]);
-      setSubcuencasNearby([]);
-      setCuerposAguaNearby([]);
-      setCorrientesNearby([]);
-      return;
-    }
+    if (!filterGeometry) return;
     let isCancelled = false;
 
     const loadHidrologiaData = async () => {
@@ -542,10 +538,10 @@ export const useHidrologiaLayers = (filterGeometry: Feature<Polygon | MultiPolyg
   }, [filterGeometry]);
 
   return {
-    cuencasNearby,
-    subcuencasNearby,
-    cuerposAguaNearby,
-    corrientesNearby,
-    isLoadingHidrologia: isLoading,
+    cuencasNearby: filterGeometry ? cuencasNearby : EMPTY_FEATURES,
+    subcuencasNearby: filterGeometry ? subcuencasNearby : EMPTY_FEATURES,
+    cuerposAguaNearby: filterGeometry ? cuerposAguaNearby : EMPTY_FEATURES,
+    corrientesNearby: filterGeometry ? corrientesNearby : EMPTY_FEATURES,
+    isLoadingHidrologia: Boolean(filterGeometry) && isLoading,
   };
 };
