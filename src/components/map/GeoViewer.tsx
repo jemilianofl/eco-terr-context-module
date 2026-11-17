@@ -461,7 +461,8 @@ export const GeoViewer: React.FC = () => {
   };
 
   const handleDownloadImage = () => {
-    if (!printRef.current) return;
+    const node = printRef.current;
+    if (!node) return;
 
     setIsExporting(true);
     window.scrollTo(0, 0);
@@ -470,43 +471,56 @@ export const GeoViewer: React.FC = () => {
       mapRef.setView(mapRef.getCenter(), mapRef.getZoom(), { animate: false });
     }
 
+    // Supermuestreo 3x sobre lienzo Carta (1056x816 px) -> 3168x2448 px (~288 DPI)
+    const EXPORT_SCALE = 3;
+    const baseWidth = node.offsetWidth || 1056;
+    const baseHeight = node.offsetHeight || 816;
+
     setTimeout(() => {
-      domtoimage.toJpeg(printRef.current!, {
-        quality: 0.95,
-        bgcolor: '#ffffff',
-        style: {
-          margin: '0',
-        },
-        filter: (node: Node) => {
-          if (node instanceof HTMLElement) {
-            return !node.classList.contains('ignore-print') &&
-                   !node.classList.contains('leaflet-control-container');
-          }
-          return true;
-        }
-      })
-      .then((dataUrl) => {
-        const link = document.createElement('a');
-        const planoNames: Record<number, string> = {
-          1: 'Ubicacion_Geografica',
-          2: 'Relevancia_Ecologica',
-          3: 'Tipo_Vegetacion',
-          4: 'Unidades_Climaticas',
-          5: 'Edafologia',
-          6: 'Hidrologia_Cuencas_Corrientes',
-        };
-        const planoName = planoNames[currentPlano] ?? 'Ubicacion_Geografica';
-        link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
-        link.href = dataUrl;
-        link.click();
-      })
-      .catch((error) => {
-        console.error('Error al exportar la imagen:', error);
-        alert('Error al generar la imagen.');
-      })
-      .finally(() => {
-        setIsExporting(false);
-      });
+      domtoimage
+        .toPng(node, {
+          bgcolor: '#ffffff',
+          width: baseWidth * EXPORT_SCALE,
+          height: baseHeight * EXPORT_SCALE,
+          style: {
+            margin: '0',
+            width: `${baseWidth}px`,
+            height: `${baseHeight}px`,
+            transform: `scale(${EXPORT_SCALE})`,
+            transformOrigin: 'top left',
+          },
+          filter: (domNode: Node) => {
+            if (domNode instanceof HTMLElement) {
+              return (
+                !domNode.classList.contains('ignore-print') &&
+                !domNode.classList.contains('leaflet-control-container')
+              );
+            }
+            return true;
+          },
+        })
+        .then((dataUrl) => {
+          const link = document.createElement('a');
+          const planoNames: Record<number, string> = {
+            1: 'Ubicacion_Geografica',
+            2: 'Relevancia_Ecologica',
+            3: 'Tipo_Vegetacion',
+            4: 'Unidades_Climaticas',
+            5: 'Edafologia',
+            6: 'Hidrologia_Cuencas_Corrientes',
+          };
+          const planoName = planoNames[currentPlano] ?? 'Ubicacion_Geografica';
+          link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.png`;
+          link.href = dataUrl;
+          link.click();
+        })
+        .catch((error) => {
+          console.error('Error al exportar la imagen:', error);
+          alert('Error al generar la imagen.');
+        })
+        .finally(() => {
+          setIsExporting(false);
+        });
     }, 800);
   };
 
