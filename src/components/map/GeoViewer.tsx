@@ -40,6 +40,8 @@ import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 // CRÍTICO: Forzamos a Leaflet a no usar animaciones 3D que confunden a html2canvas
 (L.Browser as unknown as { any3d: boolean }).any3d = false;
 
+type LayerFilterMode = 'intersect' | 'buffer10km';
+
 interface FormData {
   targetDate: string;
   polygonFile: FileList;
@@ -141,8 +143,9 @@ const MapUpdater: React.FC<{
   data: FeatureCollection | null;
   plano: number;
   buffer10km: Feature<Polygon | MultiPolygon> | null;
+  filterMode: LayerFilterMode;
   trigger: number;
-}> = ({ data, plano, buffer10km, trigger }) => {
+}> = ({ data, plano, buffer10km, filterMode, trigger }) => {
   const map = useMap();
   useEffect(() => {
     if (!data || data.features.length === 0) return;
@@ -159,11 +162,17 @@ const MapUpdater: React.FC<{
       const layer = L.geoJSON(data);
       const bounds = layer.getBounds();
       if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
-    } else if (plano >= 2 && buffer10km) {
-      const bbox = turf.bbox(buffer10km);
-      map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
+    } else if (plano >= 2) {
+      if (filterMode === 'intersect') {
+        const layer = L.geoJSON(data);
+        const bounds = layer.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 15 });
+      } else if (buffer10km) {
+        const bbox = turf.bbox(buffer10km);
+        map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
+      }
     }
-  }, [data, plano, buffer10km, map, trigger]);
+  }, [data, plano, buffer10km, filterMode, map, trigger]);
   return null;
 };
 
@@ -328,6 +337,7 @@ export const GeoViewer: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentPlano, setCurrentPlano] = useState<number>(1);
   const [activatedPlanos, setActivatedPlanos] = useState<Record<number, boolean>>({ 1: true });
+  const [layerFilterMode, setLayerFilterMode] = useState<LayerFilterMode>('buffer10km');
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const [mapRef, setMapRef] = useState<L.Map | null>(null);
@@ -347,6 +357,29 @@ export const GeoViewer: React.FC = () => {
     document.addEventListener('mapFrameUpdated', handler);
     return () => document.removeEventListener('mapFrameUpdated', handler);
   }, []);
+
+  const userPolygonGeom = useMemo<Feature<Polygon | MultiPolygon> | null>(() => {
+    if (!geoJsonData || geoJsonData.features.length === 0) return null;
+    try {
+      const polys = geoJsonData.features.filter(
+        (f): f is Feature<Polygon | MultiPolygon> =>
+          f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
+      );
+      if (polys.length === 1) return polys[0];
+      if (polys.length > 1) {
+        const coords = polys.flatMap((feat) =>
+          feat.geometry.type === 'Polygon'
+            ? [feat.geometry.coordinates]
+            : feat.geometry.coordinates
+        );
+        return turf.multiPolygon(coords);
+      }
+      const tinyBuffer = turf.buffer(geoJsonData, 0.001, { units: 'kilometers' });
+      return tinyBuffer?.features[0] ?? null;
+    } catch {
+      return null;
+    }
+  }, [geoJsonData]);
 
   const buffer10km = useMemo<Feature<Polygon | MultiPolygon> | null>(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
@@ -368,6 +401,9 @@ export const GeoViewer: React.FC = () => {
     }
   }, [geoJsonData]);
 
+  const activeFilterGeometry =
+    layerFilterMode === 'intersect' ? userPolygonGeom : buffer10km;
+
   const predioCentroid = useMemo<Feature<Point> | null>(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
     try {
@@ -376,17 +412,17 @@ export const GeoViewer: React.FC = () => {
   }, [geoJsonData]);
 
   const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
-  const { ecoNearby, isLoadingEco } = useEcoLayers(activatedPlanos[2] ? buffer10km : null);
-  const { vegNearby, isLoadingVeg } = useVegetationLayers(activatedPlanos[3] ? buffer10km : null, selectedVegSerie);
-  const { climateNearby, isLoadingClimate } = useClimateLayers(activatedPlanos[4] ? buffer10km : null);
-  const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(activatedPlanos[5] ? buffer10km : null);
+  const { ecoNearby, isLoadingEco } = useEcoLayers(activatedPlanos[2] ? activeFilterGeometry : null);
+  const { vegNearby, isLoadingVeg } = useVegetationLayers(activatedPlanos[3] ? activeFilterGeometry : null, selectedVegSerie);
+  const { climateNearby, isLoadingClimate } = useClimateLayers(activatedPlanos[4] ? activeFilterGeometry : null);
+  const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(activatedPlanos[5] ? activeFilterGeometry : null);
   const {
     cuencasNearby,
     subcuencasNearby,
     cuerposAguaNearby,
     corrientesNearby,
     isLoadingHidrologia,
-  } = useHidrologiaLayers(activatedPlanos[6] ? buffer10km : null);
+  } = useHidrologiaLayers(activatedPlanos[6] ? activeFilterGeometry : null);
 
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
@@ -659,30 +695,36 @@ export const GeoViewer: React.FC = () => {
                     <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
 
                     {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
-                    <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
+                    <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie, layerFilterMode]} />
 
                     {useSentinel && sentinelUrl && currentPlano === 1 ? (
                       <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
                     ) : (
-                      <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
+                      <TileLayer opacity={currentPlano === 1 ? 0.85 : 0.55} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
                     )}
 
                     <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
 
                     <GraticuleEngine />
-                    <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} trigger={recenterTrigger} />
+                    <MapUpdater
+                      data={geoJsonData}
+                      plano={currentPlano}
+                      buffer10km={buffer10km}
+                      filterMode={layerFilterMode}
+                      trigger={recenterTrigger}
+                    />
 
                     <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
                       <ScaleControl position="bottomleft" imperial={false} />
                     </div>
 
-                    {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}`} ecoNearby={ecoNearby} />}
-                    {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
-                    {currentPlano === 4 && <ClimateLayer key={`climate-${currentPlano}`} climateNearby={climateNearby} />}
-                    {currentPlano === 5 && <EdafologiaLayer key={`edafologia-${currentPlano}`} edafologiaNearby={edafologiaNearby} />}
+                    {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}-${layerFilterMode}`} ecoNearby={ecoNearby} />}
+                    {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}-${layerFilterMode}`} vegNearby={vegNearby} />}
+                    {currentPlano === 4 && <ClimateLayer key={`climate-${currentPlano}-${layerFilterMode}`} climateNearby={climateNearby} />}
+                    {currentPlano === 5 && <EdafologiaLayer key={`edafologia-${currentPlano}-${layerFilterMode}`} edafologiaNearby={edafologiaNearby} />}
                     {currentPlano === 6 && (
                       <HidrologiaLayer
-                        key={`hidrologia-${currentPlano}`}
+                        key={`hidrologia-${currentPlano}-${layerFilterMode}`}
                         cuencasNearby={cuencasNearby}
                         subcuencasNearby={subcuencasNearby}
                         cuerposAguaNearby={cuerposAguaNearby}
@@ -762,41 +804,99 @@ export const GeoViewer: React.FC = () => {
           </div>
 
           {geoJsonData && (
-            <div className="bg-dark text-white p-3 d-flex flex-wrap justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '1050px', borderTop: '4px solid #d6b56a' }}>
-              <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
-              <button type="button" onClick={() => handleSelectPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
-              </button>
-              <button type="button" onClick={() => handleSelectPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-tree me-1"></i> Relevancia Ecológica
-              </button>
-              <button type="button" onClick={() => handleSelectPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
-              </button>
-              <button type="button" onClick={() => handleSelectPlano(4)} className={`btn btn-sm ${currentPlano === 4 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-cloud-sun me-1"></i> Unidades Climáticas
-              </button>
-              <button type="button" onClick={() => handleSelectPlano(5)} className={`btn btn-sm ${currentPlano === 5 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-layers me-1"></i> Edafología
-              </button>
-              <button type="button" onClick={() => handleSelectPlano(6)} className={`btn btn-sm ${currentPlano === 6 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-water me-1"></i> Hidrología
-              </button>
+            <div
+              className="w-100 d-flex flex-column align-items-center gap-2 ignore-print mb-4"
+              style={{ maxWidth: '1050px' }}
+            >
+              {/* SUBMENÚ EXTERNO: CRITERIO DE ACTIVACIÓN DE CAPAS */}
+              <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap justify-content-between align-items-center gap-3 w-100">
+                <div className="d-flex align-items-center gap-2">
+                  <i className="bi bi-funnel-fill" style={{ color: '#163f37' }}></i>
+                  <span className="fw-bold text-dark" style={{ fontSize: '0.85rem' }}>
+                    Criterio de activación de capas:
+                  </span>
+                </div>
 
-              <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
-
-              <button type="button" onClick={() => setRecenterTrigger(prev => prev + 1)} className="btn btn-sm btn-outline-warning" title="Encuadrar la vista sobre el polígono inspeccionado">
-                <i className="bi bi-arrows-collapse me-1"></i> Centrar Polígono
-              </button>
-
-              {sentinelUrl && currentPlano === 1 && (
-                <>
-                  <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
-                  <button type="button" onClick={() => setUseSentinel(!useSentinel)} className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}>
-                    <i className="bi bi-satellite me-1"></i> {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
+                <div className="btn-group btn-group-sm" aria-label="Criterio de activación de capas">
+                  <button
+                    type="button"
+                    onClick={() => setLayerFilterMode('intersect')}
+                    className={`btn ${
+                      layerFilterMode === 'intersect' ? 'text-white fw-bold' : 'btn-outline-secondary'
+                    }`}
+                    style={
+                      layerFilterMode === 'intersect'
+                        ? { backgroundColor: '#163f37', borderColor: '#163f37' }
+                        : undefined
+                    }
+                  >
+                    <i className="bi bi-bullseye me-1"></i>
+                    Capas intersectadas
                   </button>
-                </>
-              )}
+                  <button
+                    type="button"
+                    onClick={() => setLayerFilterMode('buffer10km')}
+                    className={`btn ${
+                      layerFilterMode === 'buffer10km' ? 'text-white fw-bold' : 'btn-outline-secondary'
+                    }`}
+                    style={
+                      layerFilterMode === 'buffer10km'
+                        ? { backgroundColor: '#163f37', borderColor: '#163f37' }
+                        : undefined
+                    }
+                  >
+                    <i className="bi bi-record-circle me-1"></i>
+                    Buffer 10 KM
+                  </button>
+                </div>
+
+                <span className="text-muted" style={{ fontSize: '0.78rem' }}>
+                  {layerFilterMode === 'intersect'
+                    ? 'Activa solo las capas y coberturas que intersectan el polígono.'
+                    : 'Activa todas las coberturas dentro del radio de 10 km.'}
+                </span>
+              </div>
+
+              {/* BARRA DE VISTAS / PLANOS */}
+              <div
+                className="bg-dark text-white p-3 d-flex flex-wrap justify-content-center align-items-center gap-2 shadow rounded w-100"
+                style={{ borderTop: '4px solid #d6b56a' }}
+              >
+                <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
+                <button type="button" onClick={() => handleSelectPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-tree me-1"></i> Relevancia Ecológica
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(4)} className={`btn btn-sm ${currentPlano === 4 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-cloud-sun me-1"></i> Unidades Climáticas
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(5)} className={`btn btn-sm ${currentPlano === 5 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-layers me-1"></i> Edafología
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(6)} className={`btn btn-sm ${currentPlano === 6 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-water me-1"></i> Hidrología
+                </button>
+
+                <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
+
+                <button type="button" onClick={() => setRecenterTrigger(prev => prev + 1)} className="btn btn-sm btn-outline-warning" title="Encuadrar la vista sobre el polígono inspeccionado">
+                  <i className="bi bi-arrows-collapse me-1"></i> Centrar Polígono
+                </button>
+
+                {sentinelUrl && currentPlano === 1 && (
+                  <>
+                    <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
+                    <button type="button" onClick={() => setUseSentinel(!useSentinel)} className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}>
+                      <i className="bi bi-satellite me-1"></i> {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>

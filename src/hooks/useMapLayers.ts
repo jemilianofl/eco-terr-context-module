@@ -122,17 +122,20 @@ export const useSentinelData = (
   return { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel };
 };
 
-export const useEcoLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null) => {
+export const useEcoLayers = (filterGeometry: Feature<Polygon | MultiPolygon> | null) => {
   const [ecoNearby, setEcoNearby] = useState<TypedMapFeature[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!buffer10km) return;
+    if (!filterGeometry) {
+      setEcoNearby([]);
+      return;
+    }
     let isCancelled = false;
 
     const loadEcoData = async () => {
       setIsLoading(true);
-      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      const [minX, minY, maxX, maxY] = turf.bbox(filterGeometry);
       try {
         const results = await Promise.all(
           ECO_LAYERS_CONFIG.map(async (layer): Promise<TypedMapFeature[]> => {
@@ -140,7 +143,7 @@ export const useEcoLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null)
             return raw
               .filter((f) => {
                 try {
-                  return turf.booleanIntersects(f, buffer10km);
+                  return turf.booleanIntersects(f, filterGeometry);
                 } catch {
                   return false;
                 }
@@ -167,25 +170,28 @@ export const useEcoLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null)
     return () => {
       isCancelled = true;
     };
-  }, [buffer10km]);
+  }, [filterGeometry]);
 
   return { ecoNearby, isLoadingEco: isLoading };
 };
 
 export const useVegetationLayers = (
-  buffer10km: Feature<Polygon | MultiPolygon> | null,
+  filterGeometry: Feature<Polygon | MultiPolygon> | null,
   selectedVegSerie: string
 ) => {
   const [vegNearby, setVegNearby] = useState<TypedMapFeature[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!buffer10km) return;
+    if (!filterGeometry) {
+      setVegNearby([]);
+      return;
+    }
     let isCancelled = false;
 
     const loadVegData = async () => {
       setIsLoading(true);
-      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      const [minX, minY, maxX, maxY] = turf.bbox(filterGeometry);
       try {
         const raw = await queryFgbLayer(`usv_${selectedVegSerie}.fgb`, {
           minX,
@@ -197,7 +203,7 @@ export const useVegetationLayers = (
           .filter((f) => {
             if (!f.geometry) return false;
             try {
-              return turf.booleanIntersects(f, buffer10km);
+              return turf.booleanIntersects(f, filterGeometry);
             } catch {
               return false;
             }
@@ -229,22 +235,25 @@ export const useVegetationLayers = (
     return () => {
       isCancelled = true;
     };
-  }, [buffer10km, selectedVegSerie]);
+  }, [filterGeometry, selectedVegSerie]);
 
   return { vegNearby, isLoadingVeg: isLoading };
 };
 
-export const useClimateLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null) => {
+export const useClimateLayers = (filterGeometry: Feature<Polygon | MultiPolygon> | null) => {
   const [climateNearby, setClimateNearby] = useState<TypedMapFeature[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!buffer10km) return;
+    if (!filterGeometry) {
+      setClimateNearby([]);
+      return;
+    }
     let isCancelled = false;
 
     const loadClimateData = async () => {
       setIsLoading(true);
-      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      const [minX, minY, maxX, maxY] = turf.bbox(filterGeometry);
       try {
         const raw = await queryFgbLayer('climas.fgb', { minX, minY, maxX, maxY });
         const filtered: TypedMapFeature[] = raw
@@ -252,7 +261,7 @@ export const useClimateLayers = (buffer10km: Feature<Polygon | MultiPolygon> | n
             const props = (f.properties ?? {}) as LayerFeatureProperties;
             if (props.TIPO_C === 'País extranjero' || props.CLAVE === 'P/E') return false;
             try {
-              return turf.booleanIntersects(f, buffer10km);
+              return turf.booleanIntersects(f, filterGeometry);
             } catch {
               return false;
             }
@@ -291,7 +300,7 @@ export const useClimateLayers = (buffer10km: Feature<Polygon | MultiPolygon> | n
     return () => {
       isCancelled = true;
     };
-  }, [buffer10km]);
+  }, [filterGeometry]);
 
   return { climateNearby, isLoadingClimate: isLoading };
 };
@@ -329,24 +338,27 @@ const inferirProfundidadEdafica = (props: LayerFeatureProperties): string => {
   return 'Sin limitante superficial (> 50 cm)';
 };
 
-export const useEdafologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null) => {
+export const useEdafologiaLayers = (filterGeometry: Feature<Polygon | MultiPolygon> | null) => {
   const [edafologiaNearby, setEdafologiaNearby] = useState<TypedMapFeature[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!buffer10km) return;
+    if (!filterGeometry) {
+      setEdafologiaNearby([]);
+      return;
+    }
     let isCancelled = false;
 
     const loadEdafologiaData = async () => {
       setIsLoading(true);
-      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      const [minX, minY, maxX, maxY] = turf.bbox(filterGeometry);
       try {
         const raw = await queryFgbLayer('edafologia.fgb', { minX, minY, maxX, maxY });
         const filtered: TypedMapFeature[] = raw
           .filter((f) => {
             if (!f.geometry) return false;
             try {
-              return turf.booleanIntersects(f, buffer10km);
+              return turf.booleanIntersects(f, filterGeometry);
             } catch {
               return false;
             }
@@ -412,12 +424,12 @@ export const useEdafologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
     return () => {
       isCancelled = true;
     };
-  }, [buffer10km]);
+  }, [filterGeometry]);
 
   return { edafologiaNearby, isLoadingEdafologia: isLoading };
 };
 
-export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null) => {
+export const useHidrologiaLayers = (filterGeometry: Feature<Polygon | MultiPolygon> | null) => {
   const [cuencasNearby, setCuencasNearby] = useState<TypedMapFeature[]>([]);
   const [subcuencasNearby, setSubcuencasNearby] = useState<TypedMapFeature[]>([]);
   const [cuerposAguaNearby, setCuerposAguaNearby] = useState<TypedMapFeature[]>([]);
@@ -425,12 +437,18 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!buffer10km) return;
+    if (!filterGeometry) {
+      setCuencasNearby([]);
+      setSubcuencasNearby([]);
+      setCuerposAguaNearby([]);
+      setCorrientesNearby([]);
+      return;
+    }
     let isCancelled = false;
 
     const loadHidrologiaData = async () => {
       setIsLoading(true);
-      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      const [minX, minY, maxX, maxY] = turf.bbox(filterGeometry);
       const rect = { minX, minY, maxX, maxY };
 
       try {
@@ -441,16 +459,16 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
           queryFgbLayer('red_hidrografica_50k.fgb', rect),
         ]);
 
-        const intersectsBuffer = (f: Feature): boolean => {
+        const intersectsGeometry = (f: Feature): boolean => {
           if (!f.geometry) return false;
           try {
-            return turf.booleanIntersects(f, buffer10km);
+            return turf.booleanIntersects(f, filterGeometry);
           } catch {
             return false;
           }
         };
 
-        const filteredCuencas = rawCuencas.filter(intersectsBuffer).map((f): TypedMapFeature => {
+        const filteredCuencas = rawCuencas.filter(intersectsGeometry).map((f): TypedMapFeature => {
           const props = (f.properties ?? {}) as LayerFeatureProperties;
           const rawName = props.NOM_CUENCA ?? props.CUENCA ?? props.NOMBRE ?? props.NOM_CUE;
           const nombreCuenca =
@@ -467,7 +485,7 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
           };
         });
 
-        const filteredSubcuencas = rawSubcuencas.filter(intersectsBuffer).map((f): TypedMapFeature => {
+        const filteredSubcuencas = rawSubcuencas.filter(intersectsGeometry).map((f): TypedMapFeature => {
           const props = (f.properties ?? {}) as LayerFeatureProperties;
           const nombreSubc = typeof props.SUBCUENCA === 'string' ? props.SUBCUENCA.trim() : 'Subcuenca';
           return {
@@ -480,7 +498,7 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
           };
         });
 
-        const filteredCuerposAgua = rawCuerposAgua.filter(intersectsBuffer).map((f): TypedMapFeature => {
+        const filteredCuerposAgua = rawCuerposAgua.filter(intersectsGeometry).map((f): TypedMapFeature => {
           const props = (f.properties ?? {}) as LayerFeatureProperties;
           const cond = typeof props.CONDICION === 'string' ? props.CONDICION.trim() : 'Cuerpo de agua';
           return {
@@ -493,7 +511,7 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
           };
         });
 
-        const filteredCorrientes = rawCorrientes.filter(intersectsBuffer).map((f): TypedMapFeature => {
+        const filteredCorrientes = rawCorrientes.filter(intersectsGeometry).map((f): TypedMapFeature => {
           const props = (f.properties ?? {}) as LayerFeatureProperties;
           return {
             ...f,
@@ -521,7 +539,7 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
     return () => {
       isCancelled = true;
     };
-  }, [buffer10km]);
+  }, [filterGeometry]);
 
   return {
     cuencasNearby,
