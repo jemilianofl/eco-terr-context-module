@@ -9,18 +9,43 @@ import domtoimage from 'dom-to-image';
 import * as turf from '@turf/turf';
 
 import { toDMS } from '../../config/mapConfig';
-import { useSentinelData, useEcoLayers, useVegetationLayers } from '../../hooks/useMapLayers';
-import { UserPolygonLayer, EcoLayer, VegLayer } from './MapLayers';
-import { LegendUbicacion, LegendEcologica, LegendVegetacion } from './MapLegends';
+import {
+  useSentinelData,
+  useEcoLayers,
+  useVegetationLayers,
+  useClimateLayers,
+  useEdafologiaLayers,
+  useHidrologiaLayers,
+  type TypedMapFeature,
+} from '../../hooks/useMapLayers';
+import {
+  UserPolygonLayer,
+  EcoLayer,
+  VegLayer,
+  ClimateLayer,
+  EdafologiaLayer,
+  HidrologiaLayer,
+} from './MapLayers';
+import {
+  LegendUbicacion,
+  LegendEcologica,
+  LegendVegetacion,
+  LegendClima,
+  LegendEdafologia,
+  LegendHidrologia,
+} from './MapLegends';
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
 // CRÍTICO: Forzamos a Leaflet a no usar animaciones 3D que confunden a html2canvas
 (L.Browser as unknown as { any3d: boolean }).any3d = false;
 
+type LayerFilterMode = 'intersect' | 'buffer10km';
+
 interface FormData {
   targetDate: string;
   polygonFile: FileList;
+  microcuencaFile?: FileList;
   expediente: string;
   acta: string;
   estado: string;
@@ -33,6 +58,28 @@ interface FrameData {
   h: number;
   xTicks: { lon: number; x: number }[];
   yTicks: { lat: number; y: number }[];
+}
+
+async function parseSpatialFileList(files: FileList): Promise<FeatureCollection> {
+  let parsedData: unknown = null;
+  const fileArray = Array.from(files);
+  const zipFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.zip'));
+  const kmlFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.kml'));
+  const geoJsonFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.geojson'));
+
+  if (zipFile) {
+    parsedData = await shp(await zipFile.arrayBuffer());
+    if (Array.isArray(parsedData)) parsedData = parsedData[0];
+  } else if (kmlFile) {
+    parsedData = kml(new DOMParser().parseFromString(await kmlFile.text(), 'text/xml'));
+  } else if (geoJsonFile) {
+    parsedData = JSON.parse(await geoJsonFile.text());
+  }
+
+  if ((parsedData as GeoJsonObject)?.type !== 'FeatureCollection') {
+    return { type: 'FeatureCollection', features: [parsedData as Feature] };
+  }
+  return parsedData as FeatureCollection;
 }
 
 const ViewportWatcher: React.FC<{ onBoundsChange: (bbox: [number, number, number, number]) => void }> = ({ onBoundsChange }) => {
@@ -96,8 +143,9 @@ const MapUpdater: React.FC<{
   data: FeatureCollection | null;
   plano: number;
   buffer10km: Feature<Polygon | MultiPolygon> | null;
+  filterMode: LayerFilterMode;
   trigger: number;
-}> = ({ data, plano, buffer10km, trigger }) => {
+}> = ({ data, plano, buffer10km, filterMode, trigger }) => {
   const map = useMap();
   useEffect(() => {
     if (!data || data.features.length === 0) return;
@@ -114,11 +162,17 @@ const MapUpdater: React.FC<{
       const layer = L.geoJSON(data);
       const bounds = layer.getBounds();
       if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
-    } else if ((plano === 2 || plano === 3) && buffer10km) {
-      const bbox = turf.bbox(buffer10km);
-      map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
+    } else if (plano >= 2) {
+      if (filterMode === 'intersect') {
+        const layer = L.geoJSON(data);
+        const bounds = layer.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 15 });
+      } else if (buffer10km) {
+        const bbox = turf.bbox(buffer10km);
+        map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
+      }
     }
-  }, [data, plano, buffer10km, map, trigger]);
+  }, [data, plano, buffer10km, filterMode, map, trigger]);
   return null;
 };
 
@@ -134,18 +188,105 @@ const InvalidateMap: React.FC<{ dependencies: unknown[] }> = ({ dependencies }) 
   return null;
 };
 
-const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string; municipio: string }> = ({ data, estado, municipio }) => {
+const MiniMapViewSync: React.FC<{
+  center: L.LatLngExpression;
+  plano: number;
+  buffer10km: Feature<Polygon | MultiPolygon> | null;
+}> = ({ center, plano, buffer10km }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (plano >= 2 && buffer10km) {
+      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      map.fitBounds(
+        [
+          [minY, minX],
+          [maxY, maxX],
+        ],
+        { padding: [6, 6], maxZoom: 10, animate: false }
+      );
+    } else {
+      map.setView(center, 6, { animate: false });
+    }
+  }, [map, center, plano, buffer10km]);
+  return null;
+};
+
+interface MiniMapLocatorProps {
+  data: FeatureCollection | null;
+  buffer10km: Feature<Polygon | MultiPolygon> | null;
+  currentPlano: number;
+  selectedVegSerie: string;
+  ecoNearby: TypedMapFeature[];
+  vegNearby: TypedMapFeature[];
+  climateNearby: TypedMapFeature[];
+  edafologiaNearby: TypedMapFeature[];
+  cuencasNearby: TypedMapFeature[];
+  subcuencasNearby: TypedMapFeature[];
+  cuerposAguaNearby: TypedMapFeature[];
+  corrientesNearby: TypedMapFeature[];
+  microcuencaData: FeatureCollection | null;
+  estado: string;
+  municipio: string;
+}
+
+const MiniMapLocator: React.FC<MiniMapLocatorProps> = ({
+  data,
+  buffer10km,
+  currentPlano,
+  selectedVegSerie,
+  ecoNearby,
+  vegNearby,
+  climateNearby,
+  edafologiaNearby,
+  cuencasNearby,
+  subcuencasNearby,
+  cuerposAguaNearby,
+  corrientesNearby,
+  microcuencaData,
+  estado,
+  municipio,
+}) => {
   if (!data || data.features.length === 0) return null;
   const center = L.geoJSON(data).getBounds().getCenter();
+
   return (
     <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
       <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
-        {/* preferCanvas activado */}
-        <MapContainer center={center} zoom={6} zoomControl={false} dragging={false} scrollWheelZoom={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
-          <InvalidateMap dependencies={[]} />
+        <MapContainer
+          center={center}
+          zoom={6}
+          zoomControl={false}
+          dragging={false}
+          scrollWheelZoom={false}
+          doubleClickZoom={false}
+          boxZoom={false}
+          keyboard={false}
+          preferCanvas={false}
+          style={{ height: '100%', width: '100%' }}
+        >
+          <InvalidateMap dependencies={[data, currentPlano, selectedVegSerie]} />
+          <MiniMapViewSync center={center} plano={currentPlano} buffer10km={buffer10km} />
           <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
-          <CircleMarker center={center} radius={4} color="black" weight={1} fillColor="red" fillOpacity={1} />
+
+          {currentPlano === 2 && <EcoLayer key="mini-eco" ecoNearby={ecoNearby} interactive={false} />}
+          {currentPlano === 3 && <VegLayer key={`mini-veg-${selectedVegSerie}`} vegNearby={vegNearby} interactive={false} />}
+          {currentPlano === 4 && <ClimateLayer key="mini-climate" climateNearby={climateNearby} interactive={false} />}
+          {currentPlano === 5 && <EdafologiaLayer key="mini-edaf" edafologiaNearby={edafologiaNearby} interactive={false} />}
+          {currentPlano === 6 && (
+            <HidrologiaLayer
+              key="mini-hidro"
+              cuencasNearby={cuencasNearby}
+              subcuencasNearby={subcuencasNearby}
+              cuerposAguaNearby={cuerposAguaNearby}
+              corrientesNearby={corrientesNearby}
+              microcuencaData={microcuencaData}
+              interactive={false}
+            />
+          )}
+
+          <UserPolygonLayer geoJsonData={data} interactive={false} />
+          <CircleMarker center={center} radius={3.5} color="black" weight={1} fillColor="red" fillOpacity={1} interactive={false} />
         </MapContainer>
       </div>
       <div className="text-center mt-1" style={{ fontSize: '0.65rem', lineHeight: '1.1' }}>
@@ -191,9 +332,12 @@ export const GeoViewer: React.FC = () => {
   const { register, handleSubmit } = useForm<FormData>();
   const [mapCenter] = useState<[number, number]>([19.4326, -99.1332]);
   const [geoJsonData, setGeoJsonData] = useState<FeatureCollection | null>(null);
+  const [microcuencaData, setMicrocuencaData] = useState<FeatureCollection | null>(null);
   const [previewData, setPreviewData] = useState<FormData | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentPlano, setCurrentPlano] = useState<number>(1);
+  const [activatedPlanos, setActivatedPlanos] = useState<Record<number, boolean>>({ 1: true });
+  const [layerFilterMode, setLayerFilterMode] = useState<LayerFilterMode>('buffer10km');
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const [mapRef, setMapRef] = useState<L.Map | null>(null);
@@ -203,11 +347,39 @@ export const GeoViewer: React.FC = () => {
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
 
+  const handleSelectPlano = useCallback((plano: number) => {
+    setCurrentPlano(plano);
+    setActivatedPlanos((prev) => (prev[plano] ? prev : { ...prev, [plano]: true }));
+  }, []);
+
   useEffect(() => {
     const handler = (e: Event) => setFrameData((e as CustomEvent<FrameData>).detail);
     document.addEventListener('mapFrameUpdated', handler);
     return () => document.removeEventListener('mapFrameUpdated', handler);
   }, []);
+
+  const userPolygonGeom = useMemo<Feature<Polygon | MultiPolygon> | null>(() => {
+    if (!geoJsonData || geoJsonData.features.length === 0) return null;
+    try {
+      const polys = geoJsonData.features.filter(
+        (f): f is Feature<Polygon | MultiPolygon> =>
+          f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
+      );
+      if (polys.length === 1) return polys[0];
+      if (polys.length > 1) {
+        const coords = polys.flatMap((feat) =>
+          feat.geometry.type === 'Polygon'
+            ? [feat.geometry.coordinates]
+            : feat.geometry.coordinates
+        );
+        return turf.multiPolygon(coords);
+      }
+      const tinyBuffer = turf.buffer(geoJsonData, 0.001, { units: 'kilometers' });
+      return tinyBuffer?.features[0] ?? null;
+    } catch {
+      return null;
+    }
+  }, [geoJsonData]);
 
   const buffer10km = useMemo<Feature<Polygon | MultiPolygon> | null>(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
@@ -229,6 +401,9 @@ export const GeoViewer: React.FC = () => {
     }
   }, [geoJsonData]);
 
+  const activeFilterGeometry =
+    layerFilterMode === 'intersect' ? userPolygonGeom : buffer10km;
+
   const predioCentroid = useMemo<Feature<Point> | null>(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
     try {
@@ -237,8 +412,17 @@ export const GeoViewer: React.FC = () => {
   }, [geoJsonData]);
 
   const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
-  const { ecoNearby, isLoadingEco } = useEcoLayers(buffer10km);
-  const { vegNearby, isLoadingVeg } = useVegetationLayers(buffer10km, selectedVegSerie);
+  const { ecoNearby, isLoadingEco } = useEcoLayers(activatedPlanos[2] ? activeFilterGeometry : null);
+  const { vegNearby, isLoadingVeg } = useVegetationLayers(activatedPlanos[3] ? activeFilterGeometry : null, selectedVegSerie);
+  const { climateNearby, isLoadingClimate } = useClimateLayers(activatedPlanos[4] ? activeFilterGeometry : null);
+  const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(activatedPlanos[5] ? activeFilterGeometry : null);
+  const {
+    cuencasNearby,
+    subcuencasNearby,
+    cuerposAguaNearby,
+    corrientesNearby,
+    isLoadingHidrologia,
+  } = useHidrologiaLayers(activatedPlanos[6] ? activeFilterGeometry : null);
 
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
@@ -246,26 +430,10 @@ export const GeoViewer: React.FC = () => {
     setPreviewData(data);
 
     try {
-      let parsedData: unknown = null;
-      const zipFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.zip'));
-      const kmlFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.kml'));
-      const geoJsonFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.geojson'));
-
-      if (zipFile) {
-        parsedData = await shp(await zipFile.arrayBuffer());
-        if (Array.isArray(parsedData)) parsedData = parsedData[0];
-      } else if (kmlFile) {
-        parsedData = kml(new DOMParser().parseFromString(await kmlFile.text(), 'text/xml'));
-      } else if (geoJsonFile) {
-        parsedData = JSON.parse(await geoJsonFile.text());
-      }
-
-      if ((parsedData as GeoJsonObject)?.type !== 'FeatureCollection') {
-        parsedData = { type: 'FeatureCollection', features: [parsedData as Feature] };
-      }
+      const parsedCollection = await parseSpatialFileList(files);
 
       let polyIndex = 0;
-      const cleanFeatures = (parsedData as FeatureCollection).features.map((f) => {
+      const cleanFeatures = parsedCollection.features.map((f) => {
         const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
         if (finalF.geometry.type !== 'Point') {
           finalF.properties = finalF.properties || {};
@@ -275,7 +443,16 @@ export const GeoViewer: React.FC = () => {
         return finalF;
       });
 
+      const microFiles = data.microcuencaFile;
+      if (microFiles && microFiles.length > 0) {
+        const parsedMicro = await parseSpatialFileList(microFiles);
+        setMicrocuencaData(parsedMicro);
+      } else {
+        setMicrocuencaData(null);
+      }
+
       setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures });
+      setActivatedPlanos({ [currentPlano]: true });
       setIsSidebarOpen(false);
     } catch (err) {
       console.warn('Error procesando el archivo espacial:', err);
@@ -310,9 +487,15 @@ export const GeoViewer: React.FC = () => {
       })
       .then((dataUrl) => {
         const link = document.createElement('a');
-        let planoName = 'Ubicacion_Geografica';
-        if (currentPlano === 2) planoName = 'Relevancia_Ecologica';
-        if (currentPlano === 3) planoName = 'Tipo_Vegetacion';
+        const planoNames: Record<number, string> = {
+          1: 'Ubicacion_Geografica',
+          2: 'Relevancia_Ecologica',
+          3: 'Tipo_Vegetacion',
+          4: 'Unidades_Climaticas',
+          5: 'Edafologia',
+          6: 'Hidrologia_Cuencas_Corrientes',
+        };
+        const planoName = planoNames[currentPlano] ?? 'Ubicacion_Geografica';
         link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
         link.href = dataUrl;
         link.click();
@@ -397,8 +580,10 @@ export const GeoViewer: React.FC = () => {
     return elements;
   };
 
-  const nombresPlanos = ['Plano 1', 'Plano 2', 'Plano 3'];
+  const nombresPlanos = ['Plano 1', 'Plano 2', 'Plano 3', 'Plano 4', 'Plano 5', 'Plano 6'];
   const nombreActual = nombresPlanos[currentPlano - 1];
+  const isAnyLayerLoading =
+    isLoadingEco || isLoadingVeg || isLoadingClimate || isLoadingEdafologia || isLoadingHidrologia;
 
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
@@ -447,6 +632,12 @@ export const GeoViewer: React.FC = () => {
                 <label htmlFor="fileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Cargar Archivos Espaciales</label>
                 <input id="fileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('polygonFile', { required: true })} />
               </div>
+              <div>
+                <label htmlFor="microFileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>
+                  Microcuenca SIATL <span className="text-muted fw-normal">(Opcional)</span>
+                </label>
+                <input id="microFileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('microcuencaFile')} />
+              </div>
               <button type="submit" className="btn text-white fw-bold mt-2" style={{ backgroundColor: '#163f37' }}>
                 Generar Previsualización
               </button>
@@ -493,7 +684,7 @@ export const GeoViewer: React.FC = () => {
                     </svg>
                   </div>
 
-                  {(isLoadingEco || isLoadingVeg) && (
+                  {isAnyLayerLoading && (
                     <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
                       <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
                       <span className="small fw-semibold text-dark">Consultando coberturas en R2...</span>
@@ -504,25 +695,43 @@ export const GeoViewer: React.FC = () => {
                     <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
 
                     {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
-                    <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie]} />
+                    <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie, layerFilterMode]} />
 
                     {useSentinel && sentinelUrl && currentPlano === 1 ? (
                       <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
                     ) : (
-                      <TileLayer opacity={0.75} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
+                      <TileLayer opacity={currentPlano === 1 ? 0.85 : 0.55} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
                     )}
 
                     <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
 
                     <GraticuleEngine />
-                    <MapUpdater data={geoJsonData} plano={currentPlano} buffer10km={buffer10km} trigger={recenterTrigger} />
+                    <MapUpdater
+                      data={geoJsonData}
+                      plano={currentPlano}
+                      buffer10km={buffer10km}
+                      filterMode={layerFilterMode}
+                      trigger={recenterTrigger}
+                    />
 
                     <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
                       <ScaleControl position="bottomleft" imperial={false} />
                     </div>
 
-                    {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}`} ecoNearby={ecoNearby} />}
-                    {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
+                    {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}-${layerFilterMode}`} ecoNearby={ecoNearby} />}
+                    {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}-${layerFilterMode}`} vegNearby={vegNearby} />}
+                    {currentPlano === 4 && <ClimateLayer key={`climate-${currentPlano}-${layerFilterMode}`} climateNearby={climateNearby} />}
+                    {currentPlano === 5 && <EdafologiaLayer key={`edafologia-${currentPlano}-${layerFilterMode}`} edafologiaNearby={edafologiaNearby} />}
+                    {currentPlano === 6 && (
+                      <HidrologiaLayer
+                        key={`hidrologia-${currentPlano}-${layerFilterMode}`}
+                        cuencasNearby={cuencasNearby}
+                        subcuencasNearby={subcuencasNearby}
+                        cuerposAguaNearby={cuerposAguaNearby}
+                        corrientesNearby={corrientesNearby}
+                        microcuencaData={microcuencaData}
+                      />
+                    )}
 
                     {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
                     {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
@@ -537,7 +746,23 @@ export const GeoViewer: React.FC = () => {
                         <span className="text-muted" style={{ fontSize: '0.6rem' }}>Subprocuraduría de Recursos Naturales</span>
                       </div>
 
-                      <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
+                      <MiniMapLocator
+                        data={geoJsonData}
+                        buffer10km={buffer10km}
+                        currentPlano={currentPlano}
+                        selectedVegSerie={selectedVegSerie}
+                        ecoNearby={ecoNearby}
+                        vegNearby={vegNearby}
+                        climateNearby={climateNearby}
+                        edafologiaNearby={edafologiaNearby}
+                        cuencasNearby={cuencasNearby}
+                        subcuencasNearby={subcuencasNearby}
+                        cuerposAguaNearby={cuerposAguaNearby}
+                        corrientesNearby={corrientesNearby}
+                        microcuencaData={microcuencaData}
+                        estado={previewData.estado}
+                        municipio={previewData.municipio}
+                      />
 
                       {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
                       {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
@@ -550,6 +775,20 @@ export const GeoViewer: React.FC = () => {
                           targetDate={previewData.targetDate}
                           isLoading={isLoadingVeg}
                           isExporting={isExporting}
+                        />
+                      )}
+                      {currentPlano === 4 && <LegendClima climateNearby={climateNearby} isLoading={isLoadingClimate} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                      {currentPlano === 5 && <LegendEdafologia edafologiaNearby={edafologiaNearby} isLoading={isLoadingEdafologia} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                      {currentPlano === 6 && (
+                        <LegendHidrologia
+                          cuencasNearby={cuencasNearby}
+                          subcuencasNearby={subcuencasNearby}
+                          corrientesNearby={corrientesNearby}
+                          cuerposAguaNearby={cuerposAguaNearby}
+                          hasMicrocuenca={Boolean(microcuencaData?.features?.length)}
+                          isLoading={isLoadingHidrologia}
+                          targetDate={previewData.targetDate}
+                          currentViewportBbox={currentViewportBbox}
                         />
                       )}
 
@@ -565,32 +804,99 @@ export const GeoViewer: React.FC = () => {
           </div>
 
           {geoJsonData && (
-            <div className="bg-dark text-white p-3 d-flex justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '900px', borderTop: '4px solid #d6b56a', height: '60px' }}>
-              <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
-              <button type="button" onClick={() => setCurrentPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
-              </button>
-              <button type="button" onClick={() => setCurrentPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-tree me-1"></i> Relevancia Ecológica
-              </button>
-              <button type="button" onClick={() => setCurrentPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
-              </button>
+            <div
+              className="w-100 d-flex flex-column align-items-center gap-2 ignore-print mb-4"
+              style={{ maxWidth: '1050px' }}
+            >
+              {/* SUBMENÚ EXTERNO: CRITERIO DE ACTIVACIÓN DE CAPAS */}
+              <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap justify-content-between align-items-center gap-3 w-100">
+                <div className="d-flex align-items-center gap-2">
+                  <i className="bi bi-funnel-fill" style={{ color: '#163f37' }}></i>
+                  <span className="fw-bold text-dark" style={{ fontSize: '0.85rem' }}>
+                    Criterio de activación de capas:
+                  </span>
+                </div>
 
-              <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
-
-              <button type="button" onClick={() => setRecenterTrigger(prev => prev + 1)} className="btn btn-sm btn-outline-warning" title="Encuadrar la vista sobre el polígono inspeccionado">
-                <i className="bi bi-arrows-collapse me-1"></i> Centrar Polígono
-              </button>
-
-              {sentinelUrl && currentPlano === 1 && (
-                <>
-                  <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
-                  <button type="button" onClick={() => setUseSentinel(!useSentinel)} className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}>
-                    <i className="bi bi-satellite me-1"></i> {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
+                <div className="btn-group btn-group-sm" aria-label="Criterio de activación de capas">
+                  <button
+                    type="button"
+                    onClick={() => setLayerFilterMode('intersect')}
+                    className={`btn ${
+                      layerFilterMode === 'intersect' ? 'text-white fw-bold' : 'btn-outline-secondary'
+                    }`}
+                    style={
+                      layerFilterMode === 'intersect'
+                        ? { backgroundColor: '#163f37', borderColor: '#163f37' }
+                        : undefined
+                    }
+                  >
+                    <i className="bi bi-bullseye me-1"></i>
+                    Capas intersectadas
                   </button>
-                </>
-              )}
+                  <button
+                    type="button"
+                    onClick={() => setLayerFilterMode('buffer10km')}
+                    className={`btn ${
+                      layerFilterMode === 'buffer10km' ? 'text-white fw-bold' : 'btn-outline-secondary'
+                    }`}
+                    style={
+                      layerFilterMode === 'buffer10km'
+                        ? { backgroundColor: '#163f37', borderColor: '#163f37' }
+                        : undefined
+                    }
+                  >
+                    <i className="bi bi-record-circle me-1"></i>
+                    Buffer 10 KM
+                  </button>
+                </div>
+
+                <span className="text-muted" style={{ fontSize: '0.78rem' }}>
+                  {layerFilterMode === 'intersect'
+                    ? 'Activa solo las capas y coberturas que intersectan el polígono.'
+                    : 'Activa todas las coberturas dentro del radio de 10 km.'}
+                </span>
+              </div>
+
+              {/* BARRA DE VISTAS / PLANOS */}
+              <div
+                className="bg-dark text-white p-3 d-flex flex-wrap justify-content-center align-items-center gap-2 shadow rounded w-100"
+                style={{ borderTop: '4px solid #d6b56a' }}
+              >
+                <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
+                <button type="button" onClick={() => handleSelectPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-tree me-1"></i> Relevancia Ecológica
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(4)} className={`btn btn-sm ${currentPlano === 4 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-cloud-sun me-1"></i> Unidades Climáticas
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(5)} className={`btn btn-sm ${currentPlano === 5 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-layers me-1"></i> Edafología
+                </button>
+                <button type="button" onClick={() => handleSelectPlano(6)} className={`btn btn-sm ${currentPlano === 6 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                  <i className="bi bi-water me-1"></i> Hidrología
+                </button>
+
+                <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
+
+                <button type="button" onClick={() => setRecenterTrigger(prev => prev + 1)} className="btn btn-sm btn-outline-warning" title="Encuadrar la vista sobre el polígono inspeccionado">
+                  <i className="bi bi-arrows-collapse me-1"></i> Centrar Polígono
+                </button>
+
+                {sentinelUrl && currentPlano === 1 && (
+                  <>
+                    <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
+                    <button type="button" onClick={() => setUseSentinel(!useSentinel)} className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}>
+                      <i className="bi bi-satellite me-1"></i> {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
