@@ -849,7 +849,7 @@ export const GeoViewer: React.FC = () => {
                     zoomControl={false}
                     scrollWheelZoom="center"
                     doubleClickZoom="center"
-                    preferCanvas={false}
+                    preferCanvas={true}
                     style={{ height: '100%', width: '100%' }}
                   >
                     <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
