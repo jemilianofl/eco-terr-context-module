@@ -1,11 +1,59 @@
-export const ECO_LAYERS_CONFIG = [
-  { id: 'aicas', file: 'aicas.fgb', title: 'Área de Importancia para la Conservación de las Aves (AICA)', color: '#d63384' },
-  { id: 'ramsar', file: 'ramsar.fgb', title: 'Sitio Ramsar', color: '#0d6efd' },
-  { id: 'anp_federal', file: 'anp_federal.fgb', title: 'Área Natural Protegida federal', color: '#198754' },
-  { id: 'anp_estatal', file: 'anp_estatal.fgb', title: 'Área Natural Protegida estatal o municipal', color: '#fd7e14' },
-  { id: 'advc', file: 'advc.fgb', title: 'Área Destinada Voluntariamente a la Conservación (ADVC)', color: '#65a30d' },
-  { id: 'rtp', file: 'rtp.fgb', title: 'Región Terrestre Prioritaria', color: '#ffc107' },
-  { id: 'rhp', file: 'rhp.fgb', title: 'Región Hídrica Prioritaria', color: '#0dcaf0' },
+export interface EcoLayerConfigItem {
+  id: string;
+  file: string;
+  title: string;
+  color: string;
+  dashArray?: string;
+}
+
+export const ECO_LAYERS_CONFIG: EcoLayerConfigItem[] = [
+  {
+    id: 'aicas',
+    file: 'aicas.fgb',
+    title: 'Área de Importancia para la Conservación de las Aves (AICA)',
+    color: '#e11d48',
+    dashArray: '6, 3',
+  },
+  {
+    id: 'ramsar',
+    file: 'ramsar.fgb',
+    title: 'Sitio Ramsar',
+    color: '#0284c7',
+    dashArray: '10, 4, 2, 4',
+  },
+  {
+    id: 'anp_federal',
+    file: 'anp_federal.fgb',
+    title: 'Área Natural Protegida federal',
+    color: '#00b050',
+  },
+  {
+    id: 'anp_estatal',
+    file: 'anp_estatal.fgb',
+    title: 'Área Natural Protegida estatal o municipal',
+    color: '#9333ea',
+  },
+  {
+    id: 'advc',
+    file: 'advc.fgb',
+    title: 'Área Destinada Voluntariamente a la Conservación (ADVC)',
+    color: '#0d9488',
+    dashArray: '4, 3',
+  },
+  {
+    id: 'rtp',
+    file: 'rtp.fgb',
+    title: 'Región Terrestre Prioritaria',
+    color: '#f97316',
+    dashArray: '8, 4',
+  },
+  {
+    id: 'rhp',
+    file: 'rhp.fgb',
+    title: 'Región Hídrica Prioritaria',
+    color: '#06b6d4',
+    dashArray: '8, 4',
+  },
 ];
 
 // Añadidos los años correspondientes a cada serie según INEGI
@@ -38,9 +86,9 @@ export const toDMS = (deg: number, isLat: boolean) => {
 
 const getHashColor = (str: string): string => {
   const colors = [
-    '#a3e635', '#4ade80', '#fbbf24', '#f87171', '#60a5fa', '#c084fc',
-    '#f472b6', '#fb923c', '#38bdf8', '#34d399', '#a78bfa', '#fbb6ce',
-    '#86efac', '#fde047', '#14b8a6', '#f43f5e', '#8b5cf6', '#d946ef',
+    '#65a30d', '#16a34a', '#d97706', '#dc2626', '#2563eb', '#9333ea',
+    '#db2777', '#ea580c', '#0284c7', '#059669', '#7c3aed', '#e11d48',
+    '#15803d', '#ca8a04', '#0d9488', '#be123c', '#6d28d9', '#c026d3',
   ];
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -49,20 +97,20 @@ const getHashColor = (str: string): string => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-// Paleta de colores ajustada para asemejarse más a las cartas oficiales
+// Paleta saturada para Uso de Suelo y Vegetación (INEGI)
 export const getColorForVegetation = (str: string) => {
   const typeVeg = str.toUpperCase();
 
-  if (typeVeg.includes('AGRICULTURA')) return '#fde047';
-  if (typeVeg.includes('BOSQUE')) return '#22c55e';
-  if (typeVeg.includes('SELVA')) return '#a855f7';
+  if (typeVeg.includes('AGRICULTURA')) return '#facc15';
+  if (typeVeg.includes('BOSQUE')) return '#16a34a';
+  if (typeVeg.includes('SELVA')) return '#9333ea';
   if (typeVeg.includes('MANGLAR')) return '#4c1d95';
-  if (typeVeg.includes('PASTIZAL')) return '#bbf7d0';
-  if (typeVeg.includes('MATORRAL')) return '#f59e0b';
-  if (typeVeg.includes('URBANA') || typeVeg.includes('ASENTAMIENTOS')) return '#9ca3af';
-  if (typeVeg.includes('AGUA') || typeVeg.includes('ACUÍCOLA')) return '#3b82f6';
-  if (typeVeg.includes('DESPROVISTO')) return '#fbcfe8';
-  if (typeVeg.includes('VEGETACIÓN SECUNDARIA')) return '#f472b6';
+  if (typeVeg.includes('PASTIZAL')) return '#4ade80';
+  if (typeVeg.includes('MATORRAL')) return '#ea580c';
+  if (typeVeg.includes('URBANA') || typeVeg.includes('ASENTAMIENTOS')) return '#64748b';
+  if (typeVeg.includes('AGUA') || typeVeg.includes('ACUÍCOLA')) return '#2563eb';
+  if (typeVeg.includes('DESPROVISTO')) return '#f472b6';
+  if (typeVeg.includes('VEGETACIÓN SECUNDARIA')) return '#e11d48';
 
   return getHashColor(str);
 };
@@ -73,41 +121,41 @@ export const getColorForClimate = (clave: string, tipoC: string): string => {
   const c = clave.toUpperCase();
 
   if (tipo.includes('MUY SECO') || c.startsWith('BW')) return '#dc2626';
-  if (tipo.includes('SEMISECO') || tipo.includes('SECO') || c.startsWith('BS')) return '#f97316';
+  if (tipo.includes('SEMISECO') || tipo.includes('SECO') || c.startsWith('BS')) return '#ea580c';
   if (tipo.includes('CÁLIDO HÚMEDO') || c.startsWith('AF') || c.startsWith('AM')) return '#15803d';
-  if (tipo.includes('CÁLIDO SUBHÚMEDO') || c.startsWith('AW')) return '#84cc16';
+  if (tipo.includes('CÁLIDO SUBHÚMEDO') || c.startsWith('AW')) return '#65a30d';
   if (tipo.includes('SEMICÁLIDO') || c.startsWith('(A)C')) return '#eab308';
   if (tipo.includes('TEMPLADO HÚMEDO') || c.startsWith('CF') || c.startsWith('CM')) return '#0d9488';
-  if (tipo.includes('TEMPLADO SUBHÚMEDO') || c.startsWith('CW')) return '#22c55e';
-  if (tipo.includes('SEMIFRÍO') || c.includes('C(E)')) return '#3b82f6';
-  if (tipo.includes('FRÍO') || c.startsWith('E')) return '#6366f1';
+  if (tipo.includes('TEMPLADO SUBHÚMEDO') || c.startsWith('CW')) return '#16a34a';
+  if (tipo.includes('SEMIFRÍO') || c.includes('C(E)')) return '#2563eb';
+  if (tipo.includes('FRÍO') || c.startsWith('E')) return '#4f46e5';
 
   return getHashColor(`${clave}-${tipoC}`);
 };
 
-// Paleta cartográfica para Edafología INEGI Serie II (WRB)
+// Paleta cartográfica saturada para Edafología INEGI Serie II (WRB)
 export const getColorForEdafologia = (grupo: string): string => {
   const g = grupo.toUpperCase();
 
   if (g.includes('REGOSOL')) return '#eab308';
-  if (g.includes('LEPTOSOL')) return '#a8a29e';
-  if (g.includes('VERTISOL')) return '#57534e';
+  if (g.includes('LEPTOSOL')) return '#78716c';
+  if (g.includes('VERTISOL')) return '#44403c';
   if (g.includes('PHAEOZEM') || g.includes('FEOZEM')) return '#78350f';
   if (g.includes('CAMBISOL')) return '#d97706';
   if (g.includes('LUVISOL')) return '#dc2626';
-  if (g.includes('CALCISOL')) return '#fde047';
+  if (g.includes('CALCISOL')) return '#facc15';
   if (g.includes('ANDOSOL')) return '#7c3aed';
-  if (g.includes('SOLONCHAK')) return '#f472b6';
+  if (g.includes('SOLONCHAK')) return '#db2777';
   if (g.includes('GLEYSOL')) return '#0284c7';
-  if (g.includes('ARENOSOL')) return '#fed7aa';
-  if (g.includes('FLUVISOL')) return '#38bdf8';
+  if (g.includes('ARENOSOL')) return '#fb923c';
+  if (g.includes('FLUVISOL')) return '#0ea5e9';
   if (g.includes('KASTANOZEM')) return '#92400e';
   if (g.includes('ACRISOL')) return '#ea580c';
-  if (g.includes('PLANOSOL')) return '#94a3b8';
+  if (g.includes('PLANOSOL')) return '#64748b';
   if (g.includes('NITISOL')) return '#b91c1c';
   if (g.includes('HISTOSOL')) return '#3f6212';
-  if (g.includes('AGUA')) return '#3b82f6';
-  if (g.includes('URBANA')) return '#9ca3af';
+  if (g.includes('AGUA')) return '#2563eb';
+  if (g.includes('URBANA')) return '#64748b';
 
   return getHashColor(grupo);
 };

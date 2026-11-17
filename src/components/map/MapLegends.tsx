@@ -38,15 +38,13 @@ function getVisibleTypesInViewport(
 ): { label: string; color: string }[] {
   if (features.length === 0) return [];
   let viewportPolygon: Feature<Polygon> | null = null;
-    if (currentViewportBbox) {
-      try {
-        const [minX, minY, maxX, maxY] = currentViewportBbox;
-        const visibleMaxX = minX + (maxX - minX) * 0.68;
-        viewportPolygon = turf.bboxPolygon([minX, minY, visibleMaxX, maxY]);
-      } catch {
-        viewportPolygon = null;
-      }
+  if (currentViewportBbox) {
+    try {
+      viewportPolygon = turf.bboxPolygon(currentViewportBbox);
+    } catch {
+      viewportPolygon = null;
     }
+  }
   const uniqueTypes = new Map<string, string>();
   features.forEach((f) => {
     if (!f?.geometry) return;
@@ -239,9 +237,10 @@ export const LegendEcologica = ({
                   style={{
                     width: '12px',
                     height: '12px',
-                    border: `2px solid ${layer.color}`,
-                    backgroundColor: `${layer.color}40`,
+                    border: `2px ${layer.dashArray ? 'dashed' : 'solid'} ${layer.color}`,
+                    backgroundColor: `${layer.color}70`,
                     marginRight: '8px',
+                    flexShrink: 0,
                   }}
                 ></div>
                 <span style={{ fontSize: '0.60rem' }}>{layer.title}</span>
@@ -381,7 +380,7 @@ export const LegendVegetacion = ({
                     width: '12px',
                     height: '12px',
                     border: `2px solid ${item.color}`,
-                    backgroundColor: `${item.color}80`,
+                    backgroundColor: `${item.color}99`,
                     marginRight: '8px',
                     flexShrink: 0,
                   }}
@@ -468,7 +467,7 @@ export const LegendClima = ({
                     width: '12px',
                     height: '12px',
                     border: `2px solid ${item.color}`,
-                    backgroundColor: `${item.color}80`,
+                    backgroundColor: `${item.color}99`,
                     marginRight: '8px',
                     flexShrink: 0,
                   }}
@@ -555,7 +554,7 @@ export const LegendEdafologia = ({
                     width: '12px',
                     height: '12px',
                     border: `2px solid ${item.color}`,
-                    backgroundColor: `${item.color}80`,
+                    backgroundColor: `${item.color}99`,
                     marginRight: '8px',
                     flexShrink: 0,
                   }}
@@ -602,7 +601,9 @@ export const LegendHidrologia = ({
     let viewportPolygon: Feature<Polygon> | null = null;
     if (currentViewportBbox) {
       try {
-        viewportPolygon = turf.bboxPolygon(currentViewportBbox);
+        const [minX, minY, maxX, maxY] = currentViewportBbox;
+        const visibleMaxX = minX + (maxX - minX) * 0.68;
+        viewportPolygon = turf.bboxPolygon([minX, minY, visibleMaxX, maxY]);
       } catch {
         viewportPolygon = null;
       }
@@ -703,7 +704,12 @@ export const LegendHidrologia = ({
             activeHydroContext.subcuencaNames.length > 0) && (
             <div
               className="mb-2 p-1 rounded"
-              style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '0.58rem', lineHeight: '1.25' }}
+              style={{
+                backgroundColor: '#f0f9ff',
+                border: '1px solid #bae6fd',
+                fontSize: '0.58rem',
+                lineHeight: '1.25',
+              }}
             >
               <div>
                 <strong>Cuenca:</strong> {activeHydroContext.cuencaNames.join(', ') || 'N/D'}
@@ -737,7 +743,7 @@ export const LegendHidrologia = ({
                 style={{
                   width: '14px',
                   height: '12px',
-                  backgroundColor: '#ede9fe88',
+                  backgroundColor: '#ede9fe99',
                   border: '2px dashed #6d28d9',
                   marginRight: '8px',
                   flexShrink: 0,
@@ -753,7 +759,7 @@ export const LegendHidrologia = ({
                 style={{
                   width: '14px',
                   height: '12px',
-                  backgroundColor: '#c8b59899',
+                  backgroundColor: '#c8b598aa',
                   border: '1.5px solid #5c4033',
                   marginRight: '8px',
                   flexShrink: 0,
@@ -768,7 +774,7 @@ export const LegendHidrologia = ({
               style={{
                 width: '14px',
                 height: '12px',
-                backgroundColor: '#d6c7a955',
+                backgroundColor: '#d6c7a966',
                 border: '1.5px dashed #78350f',
                 marginRight: '8px',
                 flexShrink: 0,
@@ -783,7 +789,7 @@ export const LegendHidrologia = ({
                 style={{
                   width: '14px',
                   height: '12px',
-                  backgroundColor: '#38bdf88c',
+                  backgroundColor: '#38bdf8a6',
                   border: '1px solid #0284c7',
                   marginRight: '8px',
                   flexShrink: 0,

@@ -7,7 +7,7 @@ import type {
   TypedMapFeature,
   LayerFeatureProperties as LayerFeatureProps,
 } from '../../hooks/useMapLayers';
-import { getStrahlerStyle } from '../../config/mapConfig';
+import { ECO_LAYERS_CONFIG, getStrahlerStyle } from '../../config/mapConfig';
 
 interface UserPolygonLayerProps {
   geoJsonData: FeatureCollection;
@@ -148,11 +148,13 @@ export const EcoLayer = ({ ecoNearby, interactive = true }: EcoLayerProps) => {
       interactive={interactive}
       style={(f) => {
         const props = f?.properties as LayerFeatureProps | undefined;
+        const layerCfg = ECO_LAYERS_CONFIG.find((c) => c.id === props?._layerId);
         return {
           color: props?._color,
-          weight: interactive ? 1.5 : 1,
+          weight: interactive ? 2.5 : 1.5,
+          dashArray: layerCfg?.dashArray,
           fillColor: props?._color,
-          fillOpacity: interactive ? 0.15 : 0.25,
+          fillOpacity: interactive ? 0.35 : 0.45,
         };
       }}
     />
@@ -204,9 +206,9 @@ export const VegLayer = ({ vegNearby, interactive = true }: VegLayerProps) => {
         const props = f?.properties as LayerFeatureProps | undefined;
         return {
           color: props?._color,
-          weight: interactive ? 1.5 : 0.8,
+          weight: interactive ? 1.8 : 1,
           fillColor: props?._color,
-          fillOpacity: interactive ? 0.35 : 0.45,
+          fillOpacity: interactive ? 0.52 : 0.58,
         };
       }}
     />
@@ -258,9 +260,9 @@ export const ClimateLayer = ({ climateNearby, interactive = true }: ClimateLayer
         const props = f?.properties as LayerFeatureProps | undefined;
         return {
           color: props?._color,
-          weight: interactive ? 1.5 : 0.8,
+          weight: interactive ? 2.0 : 1,
           fillColor: props?._color,
-          fillOpacity: interactive ? 0.35 : 0.45,
+          fillOpacity: interactive ? 0.5 : 0.55,
         };
       }}
     />
@@ -316,9 +318,9 @@ export const EdafologiaLayer = ({
         const props = f?.properties as LayerFeatureProps | undefined;
         return {
           color: props?._color,
-          weight: interactive ? 1.5 : 0.8,
+          weight: interactive ? 1.8 : 1,
           fillColor: props?._color,
-          fillOpacity: interactive ? 0.35 : 0.45,
+          fillOpacity: interactive ? 0.52 : 0.58,
         };
       }}
     />
@@ -459,7 +461,7 @@ export const HidrologiaLayer = ({
             weight: interactive ? 3 : 2,
             dashArray: '10, 5, 2, 5',
             fillColor: '#ede9fe',
-            fillOpacity: 0.1,
+            fillOpacity: 0.14,
           })}
           onEachFeature={interactive ? onEachCuenca : undefined}
         />
@@ -472,10 +474,10 @@ export const HidrologiaLayer = ({
           interactive={interactive}
           style={() => ({
             color: '#78350f',
-            weight: interactive ? 2 : 1.5,
+            weight: interactive ? 2.2 : 1.5,
             dashArray: '6, 4',
             fillColor: '#d6c7a9',
-            fillOpacity: microcuencaData?.features?.length ? 0.08 : 0.2,
+            fillOpacity: microcuencaData?.features?.length ? 0.12 : 0.25,
           })}
           onEachFeature={interactive ? onEachSubcuenca : undefined}
         />
@@ -493,9 +495,9 @@ export const HidrologiaLayer = ({
           }
           style={() => ({
             color: '#5c4033',
-            weight: interactive ? 2 : 1.5,
+            weight: interactive ? 2.2 : 1.5,
             fillColor: '#c8b598',
-            fillOpacity: 0.42,
+            fillOpacity: 0.48,
           })}
           onEachFeature={interactive ? onEachMicrocuenca : undefined}
         />
@@ -508,9 +510,9 @@ export const HidrologiaLayer = ({
           interactive={interactive}
           style={() => ({
             color: '#0284c7',
-            weight: interactive ? 1.2 : 0.8,
+            weight: interactive ? 1.5 : 1,
             fillColor: '#38bdf8',
-            fillOpacity: 0.55,
+            fillOpacity: 0.65,
           })}
           onEachFeature={interactive ? onEachCuerpoAgua : undefined}
         />
@@ -528,7 +530,7 @@ export const HidrologiaLayer = ({
               return {
                 color: '#ffffff',
                 weight: interactive ? style.weight + 2.2 : 2.2,
-                opacity: 0.85,
+                opacity: 0.9,
                 lineCap: 'round',
                 lineJoin: 'round',
               };
