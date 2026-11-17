@@ -10,6 +10,11 @@ import * as turf from '@turf/turf';
 
 import { toDMS, getStrahlerOrderNumber } from '../../config/mapConfig';
 import {
+  GisBackendUnavailableError,
+  parseSpatialFileViaBackend,
+  type LayerFilterMode,
+} from '../../utils/gisApiClient';
+import {
   useSentinelData,
   useEcoLayers,
   useVegetationLayers,
@@ -40,8 +45,6 @@ import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 // CRÍTICO: Forzamos a Leaflet a no usar animaciones 3D que confunden a html2canvas
 (L.Browser as unknown as { any3d: boolean }).any3d = false;
 
-type LayerFilterMode = 'intersect' | 'buffer10km';
-
 interface FormData {
   targetDate: string;
   polygonFile: FileList;
@@ -60,7 +63,7 @@ interface FrameData {
   yTicks: { lat: number; y: number }[];
 }
 
-async function parseSpatialFileList(files: FileList): Promise<FeatureCollection> {
+async function parseSpatialFileListLocal(files: FileList): Promise<FeatureCollection> {
   let parsedData: unknown = null;
   const fileArray = Array.from(files);
   const zipFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.zip'));
@@ -76,10 +79,39 @@ async function parseSpatialFileList(files: FileList): Promise<FeatureCollection>
     parsedData = JSON.parse(await geoJsonFile.text());
   }
 
+  let collection: FeatureCollection;
   if ((parsedData as GeoJsonObject)?.type !== 'FeatureCollection') {
-    return { type: 'FeatureCollection', features: [parsedData as Feature] };
+    collection = { type: 'FeatureCollection', features: [parsedData as Feature] };
+  } else {
+    collection = parsedData as FeatureCollection;
   }
-  return parsedData as FeatureCollection;
+
+  let polyIndex = 0;
+  const cleanFeatures = collection.features.map((f) => {
+    const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
+    if (finalF.geometry.type !== 'Point') {
+      finalF.properties = finalF.properties || {};
+      finalF.properties.polyId = String.fromCodePoint(65 + polyIndex);
+      polyIndex++;
+    }
+    return finalF;
+  });
+
+  return { type: 'FeatureCollection', features: cleanFeatures };
+}
+
+async function parseSpatialFilesWithFallback(files: FileList): Promise<FeatureCollection> {
+  if (files.length === 1) {
+    try {
+      const backendParsed = await parseSpatialFileViaBackend(files[0]);
+      return backendParsed.featureCollection;
+    } catch (error) {
+      if (!(error instanceof GisBackendUnavailableError)) {
+        throw error;
+      }
+    }
+  }
+  return await parseSpatialFileListLocal(files);
 }
 
 const ViewportWatcher: React.FC<{ onBoundsChange: (bbox: [number, number, number, number]) => void }> = ({ onBoundsChange }) => {
@@ -175,7 +207,6 @@ const ZoomCenterOnPolygon: React.FC<{ data: FeatureCollection | null }> = ({ dat
 
       const polyCenter = bounds.getCenter();
       const zoom = map.getZoom();
-      // Mantener el polígono en el centro del área despejada (compensando leyenda derecha de 330px)
       const paddingOffset = L.point((330 - 40) / 2, (30 - 40) / 2);
       const targetPoint = map.project(polyCenter, zoom).add(paddingOffset);
       const adjustedCenter = map.unproject(targetPoint, zoom);
@@ -418,9 +449,6 @@ export const GeoViewer: React.FC = () => {
     }
   }, [geoJsonData]);
 
-  const activeFilterGeometry =
-    layerFilterMode === 'intersect' ? userPolygonGeom : buffer10km;
-
   const predioCentroid = useMemo<Feature<Point> | null>(() => {
     if (!geoJsonData || geoJsonData.features.length === 0) return null;
     try {
@@ -429,17 +457,33 @@ export const GeoViewer: React.FC = () => {
   }, [geoJsonData]);
 
   const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
-  const { ecoNearby, isLoadingEco } = useEcoLayers(activatedPlanos[2] ? activeFilterGeometry : null);
-  const { vegNearby, isLoadingVeg } = useVegetationLayers(activatedPlanos[3] ? activeFilterGeometry : null, selectedVegSerie);
-  const { climateNearby, isLoadingClimate } = useClimateLayers(activatedPlanos[4] ? activeFilterGeometry : null);
-  const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(activatedPlanos[5] ? activeFilterGeometry : null);
+  const { ecoNearby, isLoadingEco } = useEcoLayers(
+    activatedPlanos[2] ? userPolygonGeom : null,
+    layerFilterMode,
+  );
+  const { vegNearby, isLoadingVeg } = useVegetationLayers(
+    activatedPlanos[3] ? userPolygonGeom : null,
+    layerFilterMode,
+    selectedVegSerie,
+  );
+  const { climateNearby, isLoadingClimate } = useClimateLayers(
+    activatedPlanos[4] ? userPolygonGeom : null,
+    layerFilterMode,
+  );
+  const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(
+    activatedPlanos[5] ? userPolygonGeom : null,
+    layerFilterMode,
+  );
   const {
     cuencasNearby,
     subcuencasNearby,
     cuerposAguaNearby,
     corrientesNearby,
     isLoadingHidrologia,
-  } = useHidrologiaLayers(activatedPlanos[6] ? activeFilterGeometry : null);
+  } = useHidrologiaLayers(
+    activatedPlanos[6] ? userPolygonGeom : null,
+    layerFilterMode,
+  );
 
   // Filtrar en el minimapa únicamente las capas visibles que aparecen en la leyenda
   const miniVisibleLayers = useMemo(() => {
@@ -532,33 +576,23 @@ export const GeoViewer: React.FC = () => {
     setPreviewData(data);
 
     try {
-      const parsedCollection = await parseSpatialFileList(files);
-
-      let polyIndex = 0;
-      const cleanFeatures = parsedCollection.features.map((f) => {
-        const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
-        if (finalF.geometry.type !== 'Point') {
-          finalF.properties = finalF.properties || {};
-          finalF.properties.polyId = String.fromCodePoint(65 + polyIndex);
-          polyIndex++;
-        }
-        return finalF;
-      });
+      const parsedPredio = await parseSpatialFilesWithFallback(files);
 
       const microFiles = data.microcuencaFile;
       if (microFiles && microFiles.length > 0) {
-        const parsedMicro = await parseSpatialFileList(microFiles);
+        const parsedMicro = await parseSpatialFilesWithFallback(microFiles);
         setMicrocuencaData(parsedMicro);
       } else {
         setMicrocuencaData(null);
       }
 
-      setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures });
+      setGeoJsonData(parsedPredio);
       setActivatedPlanos({ [currentPlano]: true });
       setIsSidebarOpen(false);
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error procesando el archivo espacial.';
       console.warn('Error procesando el archivo espacial:', err);
-      alert('Error procesando el archivo espacial.');
+      alert(msg);
     }
   };
 
@@ -803,7 +837,7 @@ export const GeoViewer: React.FC = () => {
                   {isAnyLayerLoading && (
                     <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
                       <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
-                      <span className="small fw-semibold text-dark">Consultando coberturas en R2...</span>
+                      <span className="small fw-semibold text-dark">Consultando coberturas SIG...</span>
                     </output>
                   )}
 
