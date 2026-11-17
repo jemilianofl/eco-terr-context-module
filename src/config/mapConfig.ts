@@ -100,17 +100,36 @@ const getHashColor = (str: string): string => {
 // Paleta saturada para Uso de Suelo y Vegetación (INEGI)
 export const getColorForVegetation = (str: string) => {
   const typeVeg = str.toUpperCase();
+  const isSecundaria = typeVeg.includes('SECUNDARIA') || typeVeg.startsWith('V.S.');
+
+  if (isSecundaria) {
+    const isArbustivaOHerbacea =
+      typeVeg.includes('ARBUSTIVA') || typeVeg.includes('HERBÁCEA') || typeVeg.includes('HERBACEA');
+
+    if (typeVeg.includes('SELVA')) {
+      return isArbustivaOHerbacea ? '#e879f9' : '#c084fc';
+    }
+    if (typeVeg.includes('BOSQUE')) {
+      return isArbustivaOHerbacea ? '#86efac' : '#4ade80';
+    }
+    if (typeVeg.includes('MATORRAL')) {
+      return '#fdba74';
+    }
+    if (typeVeg.includes('MANGLAR')) {
+      return '#a78bfa';
+    }
+    return '#fb7185';
+  }
 
   if (typeVeg.includes('AGRICULTURA')) return '#facc15';
-  if (typeVeg.includes('BOSQUE')) return '#16a34a';
-  if (typeVeg.includes('SELVA')) return '#9333ea';
+  if (typeVeg.includes('BOSQUE')) return '#15803d';
+  if (typeVeg.includes('SELVA')) return '#7e22ce';
   if (typeVeg.includes('MANGLAR')) return '#4c1d95';
-  if (typeVeg.includes('PASTIZAL')) return '#4ade80';
+  if (typeVeg.includes('PASTIZAL')) return '#84cc16';
   if (typeVeg.includes('MATORRAL')) return '#ea580c';
   if (typeVeg.includes('URBANA') || typeVeg.includes('ASENTAMIENTOS')) return '#64748b';
   if (typeVeg.includes('AGUA') || typeVeg.includes('ACUÍCOLA')) return '#2563eb';
   if (typeVeg.includes('DESPROVISTO')) return '#f472b6';
-  if (typeVeg.includes('VEGETACIÓN SECUNDARIA')) return '#e11d48';
 
   return getHashColor(str);
 };
