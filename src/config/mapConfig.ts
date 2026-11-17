@@ -134,12 +134,12 @@ export interface StrahlerOrderStyle {
 }
 
 export const STRAHLER_ORDER_CONFIG: StrahlerOrderStyle[] = [
-  { order: 1, label: '1', color: '#e0f2fe', weight: 1.0, opacity: 0.85 },
-  { order: 2, label: '2', color: '#bae6fd', weight: 1.4, opacity: 0.9 },
-  { order: 3, label: '3', color: '#7dd3fc', weight: 1.9, opacity: 0.95 },
-  { order: 4, label: '4', color: '#38bdf8', weight: 2.5, opacity: 1.0 },
-  { order: 5, label: '5', color: '#0284c7', weight: 3.2, opacity: 1.0 },
-  { order: 6, label: '6+', color: '#1e3a8a', weight: 4.0, opacity: 1.0 },
+  { order: 1, label: '1', color: '#0284c7', weight: 2.8, opacity: 1.0 },
+  { order: 2, label: '2', color: '#0369a1', weight: 3.5, opacity: 1.0 },
+  { order: 3, label: '3', color: '#1d4ed8', weight: 4.3, opacity: 1.0 },
+  { order: 4, label: '4', color: '#1e40af', weight: 5.1, opacity: 1.0 },
+  { order: 5, label: '5', color: '#1e3a8a', weight: 6.0, opacity: 1.0 },
+  { order: 6, label: '6+', color: '#172554', weight: 6.8, opacity: 1.0 },
 ];
 
 export const getStrahlerOrderNumber = (rawOrder: unknown): number => {

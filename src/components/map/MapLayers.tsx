@@ -1,4 +1,4 @@
-import { GeoJSON, useMapEvents } from 'react-leaflet';
+import { GeoJSON, Pane, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import * as turf from '@turf/turf';
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Geometry } from 'geojson';
@@ -303,6 +303,7 @@ export const EdafologiaLayer = ({ edafologiaNearby }: EdafologiaLayerProps) => {
 };
 
 interface HidrologiaLayerProps {
+  cuencasNearby: TypedMapFeature[];
   subcuencasNearby: TypedMapFeature[];
   cuerposAguaNearby: TypedMapFeature[];
   corrientesNearby: TypedMapFeature[];
@@ -310,11 +311,17 @@ interface HidrologiaLayerProps {
 }
 
 export const HidrologiaLayer = ({
+  cuencasNearby,
   subcuencasNearby,
   cuerposAguaNearby,
   corrientesNearby,
   microcuencaData,
 }: HidrologiaLayerProps) => {
+  const cuencasFc = useMemo<FeatureCollection<Geometry, LayerFeatureProps>>(() => {
+    const valid = (cuencasNearby ?? []).filter((f) => Boolean(f?.geometry));
+    return valid.length ? turf.featureCollection(valid) : { type: 'FeatureCollection', features: [] };
+  }, [cuencasNearby]);
+
   const subcuencasFc = useMemo<FeatureCollection<Geometry, LayerFeatureProps>>(() => {
     const valid = (subcuencasNearby ?? []).filter((f) => Boolean(f?.geometry));
     return valid.length ? turf.featureCollection(valid) : { type: 'FeatureCollection', features: [] };
@@ -329,6 +336,18 @@ export const HidrologiaLayer = ({
     const valid = (corrientesNearby ?? []).filter((f) => Boolean(f?.geometry));
     return valid.length ? turf.featureCollection(valid) : { type: 'FeatureCollection', features: [] };
   }, [corrientesNearby]);
+
+  const onEachCuenca = (feature: Feature<Geometry, LayerFeatureProps>, layer: L.Layer) => {
+    const p = feature.properties ?? {};
+    const nombre = typeof p._type === 'string' ? p._type : 'Cuenca Hidrográfica';
+    layer.bindPopup(
+      `<div style="font-size:0.82rem; min-width:190px;">
+        <strong style="color:#6d28d9;">Cuenca Hidrográfica</strong>
+        <div style="border-top:1px solid #ccc; margin:4px 0;"></div>
+        <strong>Nombre:</strong> ${nombre}
+      </div>`
+    );
+  };
 
   const onEachSubcuenca = (feature: Feature<Geometry, LayerFeatureProps>, layer: L.Layer) => {
     const p = feature.properties ?? {};
@@ -403,6 +422,21 @@ export const HidrologiaLayer = ({
 
   return (
     <>
+      {cuencasFc.features.length > 0 && (
+        <GeoJSON
+          key={`cuencas-cna-${cuencasFc.features.length}`}
+          data={cuencasFc}
+          style={() => ({
+            color: '#6d28d9',
+            weight: 3,
+            dashArray: '10, 5, 2, 5',
+            fillColor: '#ede9fe',
+            fillOpacity: 0.08,
+          })}
+          onEachFeature={onEachCuenca}
+        />
+      )}
+
       {subcuencasFc.features.length > 0 && (
         <GeoJSON
           key={`subcuencas-50k-${subcuencasFc.features.length}`}
@@ -412,7 +446,7 @@ export const HidrologiaLayer = ({
             weight: 2,
             dashArray: '6, 4',
             fillColor: '#d6c7a9',
-            fillOpacity: microcuencaData?.features?.length ? 0.08 : 0.24,
+            fillOpacity: microcuencaData?.features?.length ? 0.08 : 0.18,
           })}
           onEachFeature={onEachSubcuenca}
         />
@@ -443,7 +477,7 @@ export const HidrologiaLayer = ({
           data={cuerposAguaFc}
           style={() => ({
             color: '#0284c7',
-            weight: 1,
+            weight: 1.2,
             fillColor: '#38bdf8',
             fillOpacity: 0.55,
           })}
@@ -452,22 +486,42 @@ export const HidrologiaLayer = ({
       )}
 
       {corrientesFc.features.length > 0 && (
-        <GeoJSON
-          key={`corrientes-50k-${corrientesFc.features.length}`}
-          data={corrientesFc}
-          style={(f) => {
-            const props = f?.properties as LayerFeatureProps | undefined;
-            const style = getStrahlerStyle(props?.ORDER_1);
-            return {
-              color: style.color,
-              weight: style.weight,
-              opacity: style.opacity,
-              lineCap: 'round',
-              lineJoin: 'round',
-            };
-          }}
-          onEachFeature={onEachCorriente}
-        />
+        <Pane name="corrientes-pane" style={{ zIndex: 460 }}>
+          {/* Contorno blanco para separar el azul del follaje oscuro */}
+          <GeoJSON
+            key={`corrientes-halo-${corrientesFc.features.length}`}
+            data={corrientesFc}
+            interactive={false}
+            style={(f) => {
+              const props = f?.properties as LayerFeatureProps | undefined;
+              const style = getStrahlerStyle(props?.ORDER_1);
+              return {
+                color: '#ffffff',
+                weight: style.weight + 2.2,
+                opacity: 0.9,
+                lineCap: 'round',
+                lineJoin: 'round',
+              };
+            }}
+          />
+          {/* Trazo principal en azul saturado por Orden Strahler */}
+          <GeoJSON
+            key={`corrientes-50k-${corrientesFc.features.length}`}
+            data={corrientesFc}
+            style={(f) => {
+              const props = f?.properties as LayerFeatureProps | undefined;
+              const style = getStrahlerStyle(props?.ORDER_1);
+              return {
+                color: style.color,
+                weight: style.weight,
+                opacity: style.opacity,
+                lineCap: 'round',
+                lineJoin: 'round',
+              };
+            }}
+            onEachFeature={onEachCorriente}
+          />
+        </Pane>
       )}
     </>
   );

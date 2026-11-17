@@ -38,13 +38,15 @@ function getVisibleTypesInViewport(
 ): { label: string; color: string }[] {
   if (features.length === 0) return [];
   let viewportPolygon: Feature<Polygon> | null = null;
-  if (currentViewportBbox) {
-    try {
-      viewportPolygon = turf.bboxPolygon(currentViewportBbox);
-    } catch {
-      viewportPolygon = null;
+    if (currentViewportBbox) {
+      try {
+        const [minX, minY, maxX, maxY] = currentViewportBbox;
+        const visibleMaxX = minX + (maxX - minX) * 0.68;
+        viewportPolygon = turf.bboxPolygon([minX, minY, visibleMaxX, maxY]);
+      } catch {
+        viewportPolygon = null;
+      }
     }
-  }
   const uniqueTypes = new Map<string, string>();
   features.forEach((f) => {
     if (!f?.geometry) return;
@@ -576,6 +578,7 @@ export const LegendEdafologia = ({
 };
 
 interface LegendHidrologiaProps {
+  cuencasNearby: TypedMapFeature[];
   subcuencasNearby: TypedMapFeature[];
   corrientesNearby: TypedMapFeature[];
   cuerposAguaNearby: TypedMapFeature[];
@@ -586,6 +589,7 @@ interface LegendHidrologiaProps {
 }
 
 export const LegendHidrologia = ({
+  cuencasNearby,
   subcuencasNearby,
   corrientesNearby,
   cuerposAguaNearby,
@@ -614,7 +618,9 @@ export const LegendHidrologia = ({
       }
     };
 
+    const visibleCuencas = cuencasNearby.filter(isInView);
     const visibleSubcuencas = subcuencasNearby.filter(isInView);
+
     const subcuencaNames = Array.from(
       new Set(
         visibleSubcuencas
@@ -622,13 +628,25 @@ export const LegendHidrologia = ({
           .filter(Boolean)
       )
     );
-    const cuencaNames = Array.from(
+
+    const cuencaNamesFromSubc = Array.from(
       new Set(
         visibleSubcuencas
           .map((f) => (typeof f.properties?.CUENCA === 'string' ? f.properties.CUENCA.trim() : ''))
           .filter(Boolean)
       )
     );
+
+    const cuencaNames =
+      cuencaNamesFromSubc.length > 0
+        ? cuencaNamesFromSubc
+        : Array.from(
+            new Set(
+              visibleCuencas
+                .map((f) => (typeof f.properties?._type === 'string' ? f.properties._type.trim() : ''))
+                .filter(Boolean)
+            )
+          );
 
     const hasVisibleWaterBodies = cuerposAguaNearby.some(isInView);
     const visibleOrders = new Set<number>();
@@ -640,13 +658,32 @@ export const LegendHidrologia = ({
       }
     });
 
+    const displayedStrahlerItems =
+      visibleOrders.size > 0
+        ? STRAHLER_ORDER_CONFIG.filter((item) => visibleOrders.has(item.order))
+        : STRAHLER_ORDER_CONFIG;
+
     return {
+      hasCuenca: visibleCuencas.length > 0 || cuencaNames.length > 0,
       subcuencaNames,
       cuencaNames,
       hasVisibleWaterBodies,
-      visibleOrders,
+      displayedStrahlerItems,
     };
-  }, [subcuencasNearby, corrientesNearby, cuerposAguaNearby, currentViewportBbox]);
+  }, [cuencasNearby, subcuencasNearby, corrientesNearby, cuerposAguaNearby, currentViewportBbox]);
+
+  const rowStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    marginBottom: '5px',
+    minHeight: '15px',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: '0.60rem',
+    lineHeight: '1.2',
+    whiteSpace: 'nowrap',
+  };
 
   return (
     <>
@@ -659,85 +696,104 @@ export const LegendHidrologia = ({
         </div>
         <div className="p-2">
           <p className="mb-1 text-muted" style={{ fontSize: '0.58rem' }}>
-            Fuente: INEGI - SIATL (Esc. 1:50,000)
+            Fuente: INEGI - SIATL / CONAGUA
           </p>
 
-          {activeHydroContext.subcuencaNames.length > 0 && (
+          {(activeHydroContext.cuencaNames.length > 0 ||
+            activeHydroContext.subcuencaNames.length > 0) && (
             <div
               className="mb-2 p-1 rounded"
-              style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '0.58rem' }}
+              style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '0.58rem', lineHeight: '1.25' }}
             >
               <div>
                 <strong>Cuenca:</strong> {activeHydroContext.cuencaNames.join(', ') || 'N/D'}
               </div>
-              <div>
-                <strong>Subcuenca:</strong> {activeHydroContext.subcuencaNames.join(', ')}
-              </div>
+              {activeHydroContext.subcuencaNames.length > 0 && (
+                <div>
+                  <strong>Subcuenca:</strong> {activeHydroContext.subcuencaNames.join(', ')}
+                </div>
+              )}
             </div>
           )}
 
           {/* Polígonos */}
-          <div className="d-flex align-items-center mb-1">
+          <div style={rowStyle}>
             <div
               style={{
-                width: '12px',
+                width: '14px',
                 height: '12px',
                 backgroundColor: 'transparent',
                 border: '2px solid #ff0000',
                 marginRight: '8px',
                 flexShrink: 0,
               }}
-            ></div>
-            <span style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>Polígono(s) Inspeccionado(s)</span>
+            />
+            <span style={labelStyle}>Polígono(s) Inspeccionado(s)</span>
           </div>
 
-          {hasMicrocuenca && (
-            <div className="d-flex align-items-center mb-1">
+          {activeHydroContext.hasCuenca && (
+            <div style={rowStyle}>
               <div
                 style={{
-                  width: '12px',
+                  width: '14px',
+                  height: '12px',
+                  backgroundColor: '#ede9fe88',
+                  border: '2px dashed #6d28d9',
+                  marginRight: '8px',
+                  flexShrink: 0,
+                }}
+              />
+              <span style={labelStyle}>Cuenca Hidrográfica</span>
+            </div>
+          )}
+
+          {hasMicrocuenca && (
+            <div style={rowStyle}>
+              <div
+                style={{
+                  width: '14px',
                   height: '12px',
                   backgroundColor: '#c8b59899',
                   border: '1.5px solid #5c4033',
                   marginRight: '8px',
                   flexShrink: 0,
                 }}
-              ></div>
-              <span style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>Microcuenca (SIATL)</span>
+              />
+              <span style={labelStyle}>Microcuenca (SIATL)</span>
             </div>
           )}
 
-          <div className="d-flex align-items-center mb-1">
+          <div style={rowStyle}>
             <div
               style={{
-                width: '12px',
+                width: '14px',
                 height: '12px',
                 backgroundColor: '#d6c7a955',
                 border: '1.5px dashed #78350f',
                 marginRight: '8px',
                 flexShrink: 0,
               }}
-            ></div>
-            <span style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>Subcuenca 1:50,000</span>
+            />
+            <span style={labelStyle}>Subcuenca 1:50,000</span>
           </div>
 
           {activeHydroContext.hasVisibleWaterBodies && (
-            <div className="d-flex align-items-center mb-1">
+            <div style={rowStyle}>
               <div
                 style={{
-                  width: '12px',
+                  width: '14px',
                   height: '12px',
                   backgroundColor: '#38bdf88c',
                   border: '1px solid #0284c7',
                   marginRight: '8px',
                   flexShrink: 0,
                 }}
-              ></div>
-              <span style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>Cuerpos de agua</span>
+              />
+              <span style={labelStyle}>Cuerpos de agua</span>
             </div>
           )}
 
-          {/* Red Hidrográfica 1:50,000 - Orden Strahler */}
+          {/* Red Hidrográfica 1:50,000 - Orden Strahler visible en encuadre */}
           <div className="border-top mt-2 pt-1">
             <div className="fw-bold text-dark" style={{ fontSize: '0.62rem' }}>
               Red Hidrográfica 1:50,000
@@ -751,42 +807,35 @@ export const LegendHidrologia = ({
                 Cargando red hidrográfica...
               </output>
             ) : (
-              <div className="d-flex flex-column gap-1">
-                {STRAHLER_ORDER_CONFIG.map((item) => {
-                  const isPresent =
-                    activeHydroContext.visibleOrders.size === 0 ||
-                    activeHydroContext.visibleOrders.has(item.order);
-                  return (
+              <div>
+                {activeHydroContext.displayedStrahlerItems.map((item) => (
+                  <div key={`strahler-${item.order}`} style={rowStyle}>
                     <div
-                      key={`strahler-${item.order}`}
-                      className="d-flex align-items-center"
-                      style={{ opacity: isPresent ? 1 : 0.4 }}
+                      style={{
+                        width: '24px',
+                        height: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: '#f1f5f9',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '2px',
+                        marginRight: '8px',
+                        padding: '0 3px',
+                        flexShrink: 0,
+                      }}
                     >
-                      <div
+                      <span
                         style={{
-                          width: '22px',
-                          height: '10px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: '#334155',
-                          borderRadius: '2px',
-                          marginRight: '8px',
-                          padding: '0 3px',
+                          width: '100%',
+                          borderTop: `${item.weight}px solid ${item.color}`,
+                          display: 'block',
                         }}
-                      >
-                        <span
-                          style={{
-                            width: '100%',
-                            borderTop: `${item.weight}px solid ${item.color}`,
-                            display: 'block',
-                          }}
-                        />
-                      </div>
-                      <span style={{ fontSize: '0.60rem' }}>Orden {item.label}</span>
+                      />
                     </div>
-                  );
-                })}
+                    <span style={labelStyle}>Orden {item.label}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

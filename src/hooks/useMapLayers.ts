@@ -418,6 +418,7 @@ export const useEdafologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
 };
 
 export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null) => {
+  const [cuencasNearby, setCuencasNearby] = useState<TypedMapFeature[]>([]);
   const [subcuencasNearby, setSubcuencasNearby] = useState<TypedMapFeature[]>([]);
   const [cuerposAguaNearby, setCuerposAguaNearby] = useState<TypedMapFeature[]>([]);
   const [corrientesNearby, setCorrientesNearby] = useState<TypedMapFeature[]>([]);
@@ -433,7 +434,8 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
       const rect = { minX, minY, maxX, maxY };
 
       try {
-        const [rawSubcuencas, rawCuerposAgua, rawCorrientes] = await Promise.all([
+        const [rawCuencas, rawSubcuencas, rawCuerposAgua, rawCorrientes] = await Promise.all([
+          queryFgbLayer('cuencas_cna.fgb', rect),
           queryFgbLayer('subcuencas_50k.fgb', rect),
           queryFgbLayer('cuerpos_agua_50k.fgb', rect),
           queryFgbLayer('red_hidrografica_50k.fgb', rect),
@@ -447,6 +449,23 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
             return false;
           }
         };
+
+        const filteredCuencas = rawCuencas.filter(intersectsBuffer).map((f): TypedMapFeature => {
+          const props = (f.properties ?? {}) as LayerFeatureProperties;
+          const rawName = props.NOM_CUENCA ?? props.CUENCA ?? props.NOMBRE ?? props.NOM_CUE;
+          const nombreCuenca =
+            typeof rawName === 'string' && rawName.trim().length > 0
+              ? rawName.trim()
+              : 'Cuenca Hidrográfica';
+          return {
+            ...f,
+            properties: {
+              ...props,
+              _type: nombreCuenca,
+              _color: '#6d28d9',
+            },
+          };
+        });
 
         const filteredSubcuencas = rawSubcuencas.filter(intersectsBuffer).map((f): TypedMapFeature => {
           const props = (f.properties ?? {}) as LayerFeatureProperties;
@@ -486,6 +505,7 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
         });
 
         if (!isCancelled) {
+          setCuencasNearby(filteredCuencas);
           setSubcuencasNearby(filteredSubcuencas);
           setCuerposAguaNearby(filteredCuerposAgua);
           setCorrientesNearby(filteredCorrientes);
@@ -504,6 +524,7 @@ export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
   }, [buffer10km]);
 
   return {
+    cuencasNearby,
     subcuencasNearby,
     cuerposAguaNearby,
     corrientesNearby,

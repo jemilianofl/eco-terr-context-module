@@ -292,6 +292,7 @@ export const GeoViewer: React.FC = () => {
   const { climateNearby, isLoadingClimate } = useClimateLayers(activatedPlanos[4] ? buffer10km : null);
   const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(activatedPlanos[5] ? buffer10km : null);
   const {
+    cuencasNearby,
     subcuencasNearby,
     cuerposAguaNearby,
     corrientesNearby,
@@ -593,6 +594,7 @@ export const GeoViewer: React.FC = () => {
                     {currentPlano === 6 && (
                       <HidrologiaLayer
                         key={`hidrologia-${currentPlano}`}
+                        cuencasNearby={cuencasNearby}
                         subcuencasNearby={subcuencasNearby}
                         cuerposAguaNearby={cuerposAguaNearby}
                         corrientesNearby={corrientesNearby}
@@ -632,6 +634,7 @@ export const GeoViewer: React.FC = () => {
                       {currentPlano === 5 && <LegendEdafologia edafologiaNearby={edafologiaNearby} isLoading={isLoadingEdafologia} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
                       {currentPlano === 6 && (
                         <LegendHidrologia
+                          cuencasNearby={cuencasNearby}
                           subcuencasNearby={subcuencasNearby}
                           corrientesNearby={corrientesNearby}
                           cuerposAguaNearby={cuerposAguaNearby}
