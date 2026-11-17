@@ -54,6 +54,25 @@ export interface LayerFeatureProperties {
   FRUDICA?: string;
   TIP_INFO?: string;
   [key: string]: unknown;
+  // Campos SIATL 1:50,000 (Subcuencas, Cuerpos de Agua y Red Hidrográfica)
+  CVE_SUBCUE?: string;
+  CVE_RH?: string;
+  RH?: string;
+  CVE_CUE?: string;
+  CUENCA?: string;
+  CVE_SUBC?: string;
+  SUBCUENCA?: string;
+  AREA_KM2?: number | string;
+  PERIMETRO?: number | string;
+  TIPO?: string;
+  DRENAJE1?: string;
+  CONDICION?: string;
+  ENTIDAD?: string;
+  ORDER_1?: number | string;
+  LEVEL_1?: number | string;
+  LENGTHM?: number | string;
+  ARBSUM_1?: number | string;
+  PATHL_1?: number | string;
 }
 
 export type TypedMapFeature = Feature<Geometry, LayerFeatureProperties>;
@@ -396,4 +415,98 @@ export const useEdafologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> 
   }, [buffer10km]);
 
   return { edafologiaNearby, isLoadingEdafologia: isLoading };
+};
+
+export const useHidrologiaLayers = (buffer10km: Feature<Polygon | MultiPolygon> | null) => {
+  const [subcuencasNearby, setSubcuencasNearby] = useState<TypedMapFeature[]>([]);
+  const [cuerposAguaNearby, setCuerposAguaNearby] = useState<TypedMapFeature[]>([]);
+  const [corrientesNearby, setCorrientesNearby] = useState<TypedMapFeature[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!buffer10km) return;
+    let isCancelled = false;
+
+    const loadHidrologiaData = async () => {
+      setIsLoading(true);
+      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      const rect = { minX, minY, maxX, maxY };
+
+      try {
+        const [rawSubcuencas, rawCuerposAgua, rawCorrientes] = await Promise.all([
+          queryFgbLayer('subcuencas_50k.fgb', rect),
+          queryFgbLayer('cuerpos_agua_50k.fgb', rect),
+          queryFgbLayer('red_hidrografica_50k.fgb', rect),
+        ]);
+
+        const intersectsBuffer = (f: Feature): boolean => {
+          if (!f.geometry) return false;
+          try {
+            return turf.booleanIntersects(f, buffer10km);
+          } catch {
+            return false;
+          }
+        };
+
+        const filteredSubcuencas = rawSubcuencas.filter(intersectsBuffer).map((f): TypedMapFeature => {
+          const props = (f.properties ?? {}) as LayerFeatureProperties;
+          const nombreSubc = typeof props.SUBCUENCA === 'string' ? props.SUBCUENCA.trim() : 'Subcuenca';
+          return {
+            ...f,
+            properties: {
+              ...props,
+              _type: nombreSubc,
+              _color: '#78350f',
+            },
+          };
+        });
+
+        const filteredCuerposAgua = rawCuerposAgua.filter(intersectsBuffer).map((f): TypedMapFeature => {
+          const props = (f.properties ?? {}) as LayerFeatureProperties;
+          const cond = typeof props.CONDICION === 'string' ? props.CONDICION.trim() : 'Cuerpo de agua';
+          return {
+            ...f,
+            properties: {
+              ...props,
+              _type: cond,
+              _color: '#0284c7',
+            },
+          };
+        });
+
+        const filteredCorrientes = rawCorrientes.filter(intersectsBuffer).map((f): TypedMapFeature => {
+          const props = (f.properties ?? {}) as LayerFeatureProperties;
+          return {
+            ...f,
+            properties: {
+              ...props,
+              _type: `Orden ${String(props.ORDER_1 ?? 1)}`,
+            },
+          };
+        });
+
+        if (!isCancelled) {
+          setSubcuencasNearby(filteredSubcuencas);
+          setCuerposAguaNearby(filteredCuerposAgua);
+          setCorrientesNearby(filteredCorrientes);
+        }
+      } catch (err) {
+        console.error('Error R2 hidrología 1:50k:', err);
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
+    };
+
+    void loadHidrologiaData();
+    return () => {
+      isCancelled = true;
+    };
+  }, [buffer10km]);
+
+  return {
+    subcuencasNearby,
+    cuerposAguaNearby,
+    corrientesNearby,
+    isLoadingHidrologia: isLoading,
+  };
 };

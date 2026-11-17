@@ -1,8 +1,13 @@
 import { useMemo } from 'react';
 import * as turf from '@turf/turf';
-import { ECO_LAYERS_CONFIG, vegSeriesOptions, compactarNombreVeg } from '../../config/mapConfig';
 import type { Feature, Polygon } from 'geojson';
 import type { SentinelMetadata, TypedMapFeature } from '../../hooks/useMapLayers';
+import {
+  ECO_LAYERS_CONFIG,
+  vegSeriesOptions,
+  compactarNombreVeg,
+  STRAHLER_ORDER_CONFIG,
+} from '../../config/mapConfig';
 
 interface PreviewData {
   acta?: string;
@@ -556,6 +561,234 @@ export const LegendEdafologia = ({
                 <span style={{ fontSize: '0.60rem' }}>{item.label}</span>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="border border-dark mb-2 p-1 text-center bg-white"
+        style={{ fontSize: '0.65rem' }}
+      >
+        <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
+      </div>
+    </>
+  );
+};
+
+interface LegendHidrologiaProps {
+  subcuencasNearby: TypedMapFeature[];
+  corrientesNearby: TypedMapFeature[];
+  cuerposAguaNearby: TypedMapFeature[];
+  hasMicrocuenca: boolean;
+  isLoading: boolean;
+  targetDate?: string;
+  currentViewportBbox: [number, number, number, number] | null;
+}
+
+export const LegendHidrologia = ({
+  subcuencasNearby,
+  corrientesNearby,
+  cuerposAguaNearby,
+  hasMicrocuenca,
+  isLoading,
+  targetDate,
+  currentViewportBbox,
+}: LegendHidrologiaProps) => {
+  const activeHydroContext = useMemo(() => {
+    let viewportPolygon: Feature<Polygon> | null = null;
+    if (currentViewportBbox) {
+      try {
+        viewportPolygon = turf.bboxPolygon(currentViewportBbox);
+      } catch {
+        viewportPolygon = null;
+      }
+    }
+
+    const isInView = (f: TypedMapFeature): boolean => {
+      if (!f?.geometry) return false;
+      if (!viewportPolygon) return true;
+      try {
+        return turf.booleanIntersects(f, viewportPolygon);
+      } catch {
+        return false;
+      }
+    };
+
+    const visibleSubcuencas = subcuencasNearby.filter(isInView);
+    const subcuencaNames = Array.from(
+      new Set(
+        visibleSubcuencas
+          .map((f) => (typeof f.properties?.SUBCUENCA === 'string' ? f.properties.SUBCUENCA.trim() : ''))
+          .filter(Boolean)
+      )
+    );
+    const cuencaNames = Array.from(
+      new Set(
+        visibleSubcuencas
+          .map((f) => (typeof f.properties?.CUENCA === 'string' ? f.properties.CUENCA.trim() : ''))
+          .filter(Boolean)
+      )
+    );
+
+    const hasVisibleWaterBodies = cuerposAguaNearby.some(isInView);
+    const visibleOrders = new Set<number>();
+    corrientesNearby.forEach((f) => {
+      if (!isInView(f)) return;
+      const ord = Number(f.properties?.ORDER_1);
+      if (Number.isFinite(ord) && ord >= 1) {
+        visibleOrders.add(Math.min(Math.floor(ord), 6));
+      }
+    });
+
+    return {
+      subcuencaNames,
+      cuencaNames,
+      hasVisibleWaterBodies,
+      visibleOrders,
+    };
+  }, [subcuencasNearby, corrientesNearby, cuerposAguaNearby, currentViewportBbox]);
+
+  return (
+    <>
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#0369a1', fontSize: '0.75rem' }}
+        >
+          Simbología Hidrológica
+        </div>
+        <div className="p-2">
+          <p className="mb-1 text-muted" style={{ fontSize: '0.58rem' }}>
+            Fuente: INEGI - SIATL (Esc. 1:50,000)
+          </p>
+
+          {activeHydroContext.subcuencaNames.length > 0 && (
+            <div
+              className="mb-2 p-1 rounded"
+              style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '0.58rem' }}
+            >
+              <div>
+                <strong>Cuenca:</strong> {activeHydroContext.cuencaNames.join(', ') || 'N/D'}
+              </div>
+              <div>
+                <strong>Subcuenca:</strong> {activeHydroContext.subcuencaNames.join(', ')}
+              </div>
+            </div>
+          )}
+
+          {/* Polígonos */}
+          <div className="d-flex align-items-center mb-1">
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: 'transparent',
+                border: '2px solid #ff0000',
+                marginRight: '8px',
+                flexShrink: 0,
+              }}
+            ></div>
+            <span style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>Polígono(s) Inspeccionado(s)</span>
+          </div>
+
+          {hasMicrocuenca && (
+            <div className="d-flex align-items-center mb-1">
+              <div
+                style={{
+                  width: '12px',
+                  height: '12px',
+                  backgroundColor: '#c8b59899',
+                  border: '1.5px solid #5c4033',
+                  marginRight: '8px',
+                  flexShrink: 0,
+                }}
+              ></div>
+              <span style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>Microcuenca (SIATL)</span>
+            </div>
+          )}
+
+          <div className="d-flex align-items-center mb-1">
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: '#d6c7a955',
+                border: '1.5px dashed #78350f',
+                marginRight: '8px',
+                flexShrink: 0,
+              }}
+            ></div>
+            <span style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>Subcuenca 1:50,000</span>
+          </div>
+
+          {activeHydroContext.hasVisibleWaterBodies && (
+            <div className="d-flex align-items-center mb-1">
+              <div
+                style={{
+                  width: '12px',
+                  height: '12px',
+                  backgroundColor: '#38bdf88c',
+                  border: '1px solid #0284c7',
+                  marginRight: '8px',
+                  flexShrink: 0,
+                }}
+              ></div>
+              <span style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>Cuerpos de agua</span>
+            </div>
+          )}
+
+          {/* Red Hidrográfica 1:50,000 - Orden Strahler */}
+          <div className="border-top mt-2 pt-1">
+            <div className="fw-bold text-dark" style={{ fontSize: '0.62rem' }}>
+              Red Hidrográfica 1:50,000
+            </div>
+            <div className="text-muted mb-1" style={{ fontSize: '0.58rem' }}>
+              Orden de escorrentía (Strahler):
+            </div>
+
+            {isLoading ? (
+              <output className="text-muted d-block text-center" style={{ fontSize: '0.60rem' }}>
+                Cargando red hidrográfica...
+              </output>
+            ) : (
+              <div className="d-flex flex-column gap-1">
+                {STRAHLER_ORDER_CONFIG.map((item) => {
+                  const isPresent =
+                    activeHydroContext.visibleOrders.size === 0 ||
+                    activeHydroContext.visibleOrders.has(item.order);
+                  return (
+                    <div
+                      key={`strahler-${item.order}`}
+                      className="d-flex align-items-center"
+                      style={{ opacity: isPresent ? 1 : 0.4 }}
+                    >
+                      <div
+                        style={{
+                          width: '22px',
+                          height: '10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: '#334155',
+                          borderRadius: '2px',
+                          marginRight: '8px',
+                          padding: '0 3px',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '100%',
+                            borderTop: `${item.weight}px solid ${item.color}`,
+                            display: 'block',
+                          }}
+                        />
+                      </div>
+                      <span style={{ fontSize: '0.60rem' }}>Orden {item.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

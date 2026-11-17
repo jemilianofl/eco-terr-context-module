@@ -15,14 +15,23 @@ import {
   useVegetationLayers,
   useClimateLayers,
   useEdafologiaLayers,
+  useHidrologiaLayers,
 } from '../../hooks/useMapLayers';
-import { UserPolygonLayer, EcoLayer, VegLayer, ClimateLayer, EdafologiaLayer } from './MapLayers';
+import {
+  UserPolygonLayer,
+  EcoLayer,
+  VegLayer,
+  ClimateLayer,
+  EdafologiaLayer,
+  HidrologiaLayer,
+} from './MapLayers';
 import {
   LegendUbicacion,
   LegendEcologica,
   LegendVegetacion,
   LegendClima,
   LegendEdafologia,
+  LegendHidrologia,
 } from './MapLegends';
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
@@ -33,6 +42,7 @@ import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 interface FormData {
   targetDate: string;
   polygonFile: FileList;
+  microcuencaFile?: FileList;
   expediente: string;
   acta: string;
   estado: string;
@@ -45,6 +55,28 @@ interface FrameData {
   h: number;
   xTicks: { lon: number; x: number }[];
   yTicks: { lat: number; y: number }[];
+}
+
+async function parseSpatialFileList(files: FileList): Promise<FeatureCollection> {
+  let parsedData: unknown = null;
+  const fileArray = Array.from(files);
+  const zipFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.zip'));
+  const kmlFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.kml'));
+  const geoJsonFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.geojson'));
+
+  if (zipFile) {
+    parsedData = await shp(await zipFile.arrayBuffer());
+    if (Array.isArray(parsedData)) parsedData = parsedData[0];
+  } else if (kmlFile) {
+    parsedData = kml(new DOMParser().parseFromString(await kmlFile.text(), 'text/xml'));
+  } else if (geoJsonFile) {
+    parsedData = JSON.parse(await geoJsonFile.text());
+  }
+
+  if ((parsedData as GeoJsonObject)?.type !== 'FeatureCollection') {
+    return { type: 'FeatureCollection', features: [parsedData as Feature] };
+  }
+  return parsedData as FeatureCollection;
 }
 
 const ViewportWatcher: React.FC<{ onBoundsChange: (bbox: [number, number, number, number]) => void }> = ({ onBoundsChange }) => {
@@ -202,9 +234,11 @@ export const GeoViewer: React.FC = () => {
   const { register, handleSubmit } = useForm<FormData>();
   const [mapCenter] = useState<[number, number]>([19.4326, -99.1332]);
   const [geoJsonData, setGeoJsonData] = useState<FeatureCollection | null>(null);
+  const [microcuencaData, setMicrocuencaData] = useState<FeatureCollection | null>(null);
   const [previewData, setPreviewData] = useState<FormData | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentPlano, setCurrentPlano] = useState<number>(1);
+  const [activatedPlanos, setActivatedPlanos] = useState<Record<number, boolean>>({ 1: true });
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const [mapRef, setMapRef] = useState<L.Map | null>(null);
@@ -213,6 +247,11 @@ export const GeoViewer: React.FC = () => {
   const [recenterTrigger, setRecenterTrigger] = useState<number>(0);
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
+
+  const handleSelectPlano = useCallback((plano: number) => {
+    setCurrentPlano(plano);
+    setActivatedPlanos((prev) => (prev[plano] ? prev : { ...prev, [plano]: true }));
+  }, []);
 
   useEffect(() => {
     const handler = (e: Event) => setFrameData((e as CustomEvent<FrameData>).detail);
@@ -248,10 +287,16 @@ export const GeoViewer: React.FC = () => {
   }, [geoJsonData]);
 
   const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
-  const { ecoNearby, isLoadingEco } = useEcoLayers(buffer10km);
-  const { vegNearby, isLoadingVeg } = useVegetationLayers(buffer10km, selectedVegSerie);
-  const { climateNearby, isLoadingClimate } = useClimateLayers(buffer10km);
-  const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(buffer10km);
+  const { ecoNearby, isLoadingEco } = useEcoLayers(activatedPlanos[2] ? buffer10km : null);
+  const { vegNearby, isLoadingVeg } = useVegetationLayers(activatedPlanos[3] ? buffer10km : null, selectedVegSerie);
+  const { climateNearby, isLoadingClimate } = useClimateLayers(activatedPlanos[4] ? buffer10km : null);
+  const { edafologiaNearby, isLoadingEdafologia } = useEdafologiaLayers(activatedPlanos[5] ? buffer10km : null);
+  const {
+    subcuencasNearby,
+    cuerposAguaNearby,
+    corrientesNearby,
+    isLoadingHidrologia,
+  } = useHidrologiaLayers(activatedPlanos[6] ? buffer10km : null);
 
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
@@ -259,26 +304,10 @@ export const GeoViewer: React.FC = () => {
     setPreviewData(data);
 
     try {
-      let parsedData: unknown = null;
-      const zipFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.zip'));
-      const kmlFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.kml'));
-      const geoJsonFile = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.geojson'));
-
-      if (zipFile) {
-        parsedData = await shp(await zipFile.arrayBuffer());
-        if (Array.isArray(parsedData)) parsedData = parsedData[0];
-      } else if (kmlFile) {
-        parsedData = kml(new DOMParser().parseFromString(await kmlFile.text(), 'text/xml'));
-      } else if (geoJsonFile) {
-        parsedData = JSON.parse(await geoJsonFile.text());
-      }
-
-      if ((parsedData as GeoJsonObject)?.type !== 'FeatureCollection') {
-        parsedData = { type: 'FeatureCollection', features: [parsedData as Feature] };
-      }
+      const parsedCollection = await parseSpatialFileList(files);
 
       let polyIndex = 0;
-      const cleanFeatures = (parsedData as FeatureCollection).features.map((f) => {
+      const cleanFeatures = parsedCollection.features.map((f) => {
         const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
         if (finalF.geometry.type !== 'Point') {
           finalF.properties = finalF.properties || {};
@@ -288,7 +317,16 @@ export const GeoViewer: React.FC = () => {
         return finalF;
       });
 
+      const microFiles = data.microcuencaFile;
+      if (microFiles && microFiles.length > 0) {
+        const parsedMicro = await parseSpatialFileList(microFiles);
+        setMicrocuencaData(parsedMicro);
+      } else {
+        setMicrocuencaData(null);
+      }
+
       setGeoJsonData({ type: 'FeatureCollection', features: cleanFeatures });
+      setActivatedPlanos({ [currentPlano]: true });
       setIsSidebarOpen(false);
     } catch (err) {
       console.warn('Error procesando el archivo espacial:', err);
@@ -329,6 +367,7 @@ export const GeoViewer: React.FC = () => {
           3: 'Tipo_Vegetacion',
           4: 'Unidades_Climaticas',
           5: 'Edafologia',
+          6: 'Hidrologia_Cuencas_Corrientes',
         };
         const planoName = planoNames[currentPlano] ?? 'Ubicacion_Geografica';
         link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.jpg`;
@@ -415,9 +454,10 @@ export const GeoViewer: React.FC = () => {
     return elements;
   };
 
-  const nombresPlanos = ['Plano 1', 'Plano 2', 'Plano 3', 'Plano 4', 'Plano 5'];
+  const nombresPlanos = ['Plano 1', 'Plano 2', 'Plano 3', 'Plano 4', 'Plano 5', 'Plano 6'];
   const nombreActual = nombresPlanos[currentPlano - 1];
-  const isAnyLayerLoading = isLoadingEco || isLoadingVeg || isLoadingClimate || isLoadingEdafologia;
+  const isAnyLayerLoading =
+    isLoadingEco || isLoadingVeg || isLoadingClimate || isLoadingEdafologia || isLoadingHidrologia;
 
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
@@ -465,6 +505,12 @@ export const GeoViewer: React.FC = () => {
               <div>
                 <label htmlFor="fileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Cargar Archivos Espaciales</label>
                 <input id="fileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('polygonFile', { required: true })} />
+              </div>
+              <div>
+                <label htmlFor="microFileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>
+                  Microcuenca SIATL <span className="text-muted fw-normal">(Opcional)</span>
+                </label>
+                <input id="microFileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('microcuencaFile')} />
               </div>
               <button type="submit" className="btn text-white fw-bold mt-2" style={{ backgroundColor: '#163f37' }}>
                 Generar Previsualización
@@ -544,6 +590,15 @@ export const GeoViewer: React.FC = () => {
                     {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}`} vegNearby={vegNearby} />}
                     {currentPlano === 4 && <ClimateLayer key={`climate-${currentPlano}`} climateNearby={climateNearby} />}
                     {currentPlano === 5 && <EdafologiaLayer key={`edafologia-${currentPlano}`} edafologiaNearby={edafologiaNearby} />}
+                    {currentPlano === 6 && (
+                      <HidrologiaLayer
+                        key={`hidrologia-${currentPlano}`}
+                        subcuencasNearby={subcuencasNearby}
+                        cuerposAguaNearby={cuerposAguaNearby}
+                        corrientesNearby={corrientesNearby}
+                        microcuencaData={microcuencaData}
+                      />
+                    )}
 
                     {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
                     {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
@@ -575,6 +630,17 @@ export const GeoViewer: React.FC = () => {
                       )}
                       {currentPlano === 4 && <LegendClima climateNearby={climateNearby} isLoading={isLoadingClimate} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
                       {currentPlano === 5 && <LegendEdafologia edafologiaNearby={edafologiaNearby} isLoading={isLoadingEdafologia} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                      {currentPlano === 6 && (
+                        <LegendHidrologia
+                          subcuencasNearby={subcuencasNearby}
+                          corrientesNearby={corrientesNearby}
+                          cuerposAguaNearby={cuerposAguaNearby}
+                          hasMicrocuenca={Boolean(microcuencaData?.features?.length)}
+                          isLoading={isLoadingHidrologia}
+                          targetDate={previewData.targetDate}
+                          currentViewportBbox={currentViewportBbox}
+                        />
+                      )}
 
                       <div className="bg-white mb-2 border border-dark mt-2">
                         <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
@@ -590,20 +656,23 @@ export const GeoViewer: React.FC = () => {
           {geoJsonData && (
             <div className="bg-dark text-white p-3 d-flex flex-wrap justify-content-center align-items-center gap-2 ignore-print mb-4 shadow rounded w-100" style={{ maxWidth: '1050px', borderTop: '4px solid #d6b56a' }}>
               <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
-              <button type="button" onClick={() => setCurrentPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+              <button type="button" onClick={() => handleSelectPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
               </button>
-              <button type="button" onClick={() => setCurrentPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+              <button type="button" onClick={() => handleSelectPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-tree me-1"></i> Relevancia Ecológica
               </button>
-              <button type="button" onClick={() => setCurrentPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+              <button type="button" onClick={() => handleSelectPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
               </button>
-              <button type="button" onClick={() => setCurrentPlano(4)} className={`btn btn-sm ${currentPlano === 4 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+              <button type="button" onClick={() => handleSelectPlano(4)} className={`btn btn-sm ${currentPlano === 4 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-cloud-sun me-1"></i> Unidades Climáticas
               </button>
-              <button type="button" onClick={() => setCurrentPlano(5)} className={`btn btn-sm ${currentPlano === 5 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+              <button type="button" onClick={() => handleSelectPlano(5)} className={`btn btn-sm ${currentPlano === 5 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
                 <i className="bi bi-layers me-1"></i> Edafología
+              </button>
+              <button type="button" onClick={() => handleSelectPlano(6)} className={`btn btn-sm ${currentPlano === 6 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
+                <i className="bi bi-water me-1"></i> Hidrología
               </button>
 
               <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>

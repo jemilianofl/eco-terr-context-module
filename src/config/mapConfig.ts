@@ -124,3 +124,31 @@ export const compactarNombreVeg = (nombre: string) => {
     .replace(/BAJA CADUCIFOLIA/gi, 'B. CADUCIFOLIA')
     .replace(/AGRICULTURA DE TEMPORAL/gi, 'AGR. TEMPORAL');
 };
+
+export interface StrahlerOrderStyle {
+  order: number;
+  label: string;
+  color: string;
+  weight: number;
+  opacity: number;
+}
+
+export const STRAHLER_ORDER_CONFIG: StrahlerOrderStyle[] = [
+  { order: 1, label: '1', color: '#e0f2fe', weight: 1.0, opacity: 0.85 },
+  { order: 2, label: '2', color: '#bae6fd', weight: 1.4, opacity: 0.9 },
+  { order: 3, label: '3', color: '#7dd3fc', weight: 1.9, opacity: 0.95 },
+  { order: 4, label: '4', color: '#38bdf8', weight: 2.5, opacity: 1.0 },
+  { order: 5, label: '5', color: '#0284c7', weight: 3.2, opacity: 1.0 },
+  { order: 6, label: '6+', color: '#1e3a8a', weight: 4.0, opacity: 1.0 },
+];
+
+export const getStrahlerOrderNumber = (rawOrder: unknown): number => {
+  const parsed = Number(rawOrder);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.min(Math.floor(parsed), 6);
+};
+
+export const getStrahlerStyle = (rawOrder: unknown): StrahlerOrderStyle => {
+  const orderNum = getStrahlerOrderNumber(rawOrder);
+  return STRAHLER_ORDER_CONFIG[orderNum - 1] ?? STRAHLER_ORDER_CONFIG[0];
+};

@@ -7,6 +7,7 @@ import type {
   TypedMapFeature,
   LayerFeatureProperties as LayerFeatureProps,
 } from '../../hooks/useMapLayers';
+import { getStrahlerStyle } from '../../config/mapConfig';
 
 interface UserPolygonLayerProps {
   geoJsonData: FeatureCollection;
@@ -298,5 +299,176 @@ export const EdafologiaLayer = ({ edafologiaNearby }: EdafologiaLayerProps) => {
         };
       }}
     />
+  );
+};
+
+interface HidrologiaLayerProps {
+  subcuencasNearby: TypedMapFeature[];
+  cuerposAguaNearby: TypedMapFeature[];
+  corrientesNearby: TypedMapFeature[];
+  microcuencaData?: FeatureCollection | null;
+}
+
+export const HidrologiaLayer = ({
+  subcuencasNearby,
+  cuerposAguaNearby,
+  corrientesNearby,
+  microcuencaData,
+}: HidrologiaLayerProps) => {
+  const subcuencasFc = useMemo<FeatureCollection<Geometry, LayerFeatureProps>>(() => {
+    const valid = (subcuencasNearby ?? []).filter((f) => Boolean(f?.geometry));
+    return valid.length ? turf.featureCollection(valid) : { type: 'FeatureCollection', features: [] };
+  }, [subcuencasNearby]);
+
+  const cuerposAguaFc = useMemo<FeatureCollection<Geometry, LayerFeatureProps>>(() => {
+    const valid = (cuerposAguaNearby ?? []).filter((f) => Boolean(f?.geometry));
+    return valid.length ? turf.featureCollection(valid) : { type: 'FeatureCollection', features: [] };
+  }, [cuerposAguaNearby]);
+
+  const corrientesFc = useMemo<FeatureCollection<Geometry, LayerFeatureProps>>(() => {
+    const valid = (corrientesNearby ?? []).filter((f) => Boolean(f?.geometry));
+    return valid.length ? turf.featureCollection(valid) : { type: 'FeatureCollection', features: [] };
+  }, [corrientesNearby]);
+
+  const onEachSubcuenca = (feature: Feature<Geometry, LayerFeatureProps>, layer: L.Layer) => {
+    const p = feature.properties ?? {};
+    const subcuenca = typeof p.SUBCUENCA === 'string' ? p.SUBCUENCA : 'N/D';
+    const cveSubc = typeof p.CVE_SUBCUE === 'string' ? ` (${p.CVE_SUBCUE})` : '';
+    const cuenca = typeof p.CUENCA === 'string' ? p.CUENCA : 'N/D';
+    const rh = typeof p.RH === 'string' ? p.RH : 'N/D';
+    const areaKm2 = p.AREA_KM2 !== undefined ? `${Number(p.AREA_KM2).toFixed(2)} km²` : 'N/D';
+    const tipo = typeof p.TIPO === 'string' ? p.TIPO : 'N/D';
+    const drenaje = typeof p.DRENAJE1 === 'string' ? p.DRENAJE1 : 'N/D';
+
+    layer.bindPopup(
+      `<div style="font-size:0.82rem; min-width:210px;">
+        <strong style="color:#0369a1;">Subcuenca 1:50,000 (SIATL)</strong>
+        <div style="border-top:1px solid #ccc; margin:4px 0;"></div>
+        <strong>Subcuenca:</strong> ${subcuenca}${cveSubc}<br/>
+        <strong>Cuenca:</strong> ${cuenca}<br/>
+        <strong>Región Hidrológica:</strong> ${rh}<br/>
+        <strong>Superficie:</strong> ${areaKm2}<br/>
+        <strong>Tipo / Descarga:</strong> ${tipo} — ${drenaje}
+      </div>`
+    );
+  };
+
+  const onEachMicrocuenca = (_feature: Feature, layer: L.Layer) => {
+    layer.bindPopup(
+      `<div style="font-size:0.82rem;">
+        <strong style="color:#78350f;">Microcuenca del Sitio (SIATL)</strong><br/>
+        Polígono delimitado aguas arriba del punto de drenaje.
+      </div>`
+    );
+  };
+
+  const onEachCuerpoAgua = (feature: Feature<Geometry, LayerFeatureProps>, layer: L.Layer) => {
+    const p = feature.properties ?? {};
+    const condicion = typeof p.CONDICION === 'string' ? p.CONDICION : 'Cuerpo de agua';
+    layer.bindPopup(
+      `<div style="font-size:0.82rem;">
+        <strong style="color:#0284c7;">Cuerpo de Agua 1:50,000</strong><br/>
+        <strong>Condición:</strong> ${condicion}
+      </div>`
+    );
+  };
+
+  const onEachCorriente = (feature: Feature<Geometry, LayerFeatureProps>, layer: L.Layer) => {
+    const p = feature.properties ?? {};
+    const orden = p.ORDER_1 !== undefined ? String(p.ORDER_1) : 'N/D';
+    const condicion = typeof p.CONDICION === 'string' ? p.CONDICION : 'N/D';
+    const entidad = typeof p.ENTIDAD === 'string' ? p.ENTIDAD : 'Corriente de agua';
+    const cveSubc = typeof p.CVE_SUBC === 'string' ? p.CVE_SUBC : 'N/D';
+    const lengthMeters = Number(p.LENGTHM);
+    let longitudStr = 'N/D';
+    if (Number.isFinite(lengthMeters)) {
+      longitudStr =
+        lengthMeters >= 1000
+          ? `${(lengthMeters / 1000).toFixed(2)} km`
+          : `${lengthMeters.toFixed(0)} m`;
+    }
+
+    layer.bindPopup(
+      `<div style="font-size:0.82rem; min-width:200px;">
+        <strong style="color:#1e3a8a;">Red Hidrográfica 1:50,000 (SIATL)</strong>
+        <div style="border-top:1px solid #ccc; margin:4px 0;"></div>
+        <strong>Tipo:</strong> ${entidad}<br/>
+        <strong>Orden de escorrentía (Strahler):</strong> ${orden}<br/>
+        <strong>Condición:</strong> ${condicion}<br/>
+        <strong>Longitud del tramo:</strong> ${longitudStr}<br/>
+        <strong>Clave Subcuenca:</strong> ${cveSubc}
+      </div>`
+    );
+  };
+
+  return (
+    <>
+      {subcuencasFc.features.length > 0 && (
+        <GeoJSON
+          key={`subcuencas-50k-${subcuencasFc.features.length}`}
+          data={subcuencasFc}
+          style={() => ({
+            color: '#78350f',
+            weight: 2,
+            dashArray: '6, 4',
+            fillColor: '#d6c7a9',
+            fillOpacity: microcuencaData?.features?.length ? 0.08 : 0.24,
+          })}
+          onEachFeature={onEachSubcuenca}
+        />
+      )}
+
+      {microcuencaData && microcuencaData.features.length > 0 && (
+        <GeoJSON
+          key={`microcuenca-siatl-${microcuencaData.features.length}`}
+          data={microcuencaData}
+          filter={(feature) =>
+            Boolean(feature.geometry) &&
+            feature.geometry.type !== 'Point' &&
+            feature.geometry.type !== 'MultiPoint'
+          }
+          style={() => ({
+            color: '#5c4033',
+            weight: 2,
+            fillColor: '#c8b598',
+            fillOpacity: 0.42,
+          })}
+          onEachFeature={onEachMicrocuenca}
+        />
+      )}
+
+      {cuerposAguaFc.features.length > 0 && (
+        <GeoJSON
+          key={`cuerpos-agua-50k-${cuerposAguaFc.features.length}`}
+          data={cuerposAguaFc}
+          style={() => ({
+            color: '#0284c7',
+            weight: 1,
+            fillColor: '#38bdf8',
+            fillOpacity: 0.55,
+          })}
+          onEachFeature={onEachCuerpoAgua}
+        />
+      )}
+
+      {corrientesFc.features.length > 0 && (
+        <GeoJSON
+          key={`corrientes-50k-${corrientesFc.features.length}`}
+          data={corrientesFc}
+          style={(f) => {
+            const props = f?.properties as LayerFeatureProps | undefined;
+            const style = getStrahlerStyle(props?.ORDER_1);
+            return {
+              color: style.color,
+              weight: style.weight,
+              opacity: style.opacity,
+              lineCap: 'round',
+              lineJoin: 'round',
+            };
+          }}
+          onEachFeature={onEachCorriente}
+        />
+      )}
+    </>
   );
 };
