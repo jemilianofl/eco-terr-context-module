@@ -127,9 +127,10 @@ export const LegendUbicacion = ({
               backgroundColor: 'transparent',
               border: '2px solid #ff0000',
               marginRight: '8px',
+              flexShrink: 0,
             }}
           ></div>
-          <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>
+          <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
             Polígono(s) Inspeccionado(s)
           </span>
         </div>
@@ -238,7 +239,9 @@ export const LegendEcologica = ({
                 flexShrink: 0,
               }}
             ></div>
-            <span style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>Polígono Inspeccionado</span>
+            <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+              Polígono(s) Inspeccionado(s)
+            </span>
           </div>
 
           {activeEcoLegend.length > 0 ? (
