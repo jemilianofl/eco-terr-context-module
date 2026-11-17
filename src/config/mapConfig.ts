@@ -219,3 +219,60 @@ export const getStrahlerStyle = (rawOrder: unknown): StrahlerOrderStyle => {
   const orderNum = getStrahlerOrderNumber(rawOrder);
   return STRAHLER_ORDER_CONFIG[orderNum - 1] ?? STRAHLER_ORDER_CONFIG[0];
 };
+
+const EXCLUDED_ECO_KEYS = new Set([
+  'ESTADO',
+  'ESTADOS',
+  'MUNICIPIO',
+  'MUNICIPIOS',
+  'REGION',
+  'CATEGORIA',
+  'CAT_MANEJO',
+  'TIPO',
+  'CLAVE',
+  'FECHA',
+  'FECHA_INGR',
+  'NUM_RAMSAR',
+  'NUMERO',
+]);
+
+export const getEcoSiteName = (props?: Record<string, unknown> | null): string | null => {
+  if (!props) return null;
+
+  const priorityKeys = [
+    'NOMBRE',
+    'RAMSAR',
+    'NOM_AICA',
+    'NOM_RTP',
+    'NOM_RHP',
+    'NOM_ANP',
+    'NOM_PREDIO',
+    'SITIO',
+    'NOM',
+    'nombre',
+    'Name',
+    'NAME',
+  ];
+
+  for (const key of priorityKeys) {
+    const val = props[key];
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return val.replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  for (const [key, val] of Object.entries(props)) {
+    if (key.startsWith('_')) continue;
+    const upperKey = key.toUpperCase();
+    if (EXCLUDED_ECO_KEYS.has(upperKey)) continue;
+    if (
+      /^(NOM|RAMSAR|AICA|RTP|RHP|ADVC|ANP|SITIO)/.test(upperKey) &&
+      typeof val === 'string' &&
+      val.trim().length > 0
+    ) {
+      return val.replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  return null;
+};

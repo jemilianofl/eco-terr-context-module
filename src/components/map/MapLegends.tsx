@@ -7,6 +7,7 @@ import {
   vegSeriesOptions,
   compactarNombreVeg,
   STRAHLER_ORDER_CONFIG,
+  getEcoSiteName,
 } from '../../config/mapConfig';
 
 interface PreviewData {
@@ -182,10 +183,10 @@ export const LegendEcologica = ({
       }
     }
 
-    const foundIds = new Set<string>();
+    const namesByLayerId = new Map<string, Set<string>>();
 
     ecoNearby.forEach((f) => {
-      if (!f?.geometry) return;
+      if (!f?.geometry || !f.properties?._layerId) return;
       let isVisible = true;
       if (viewportPolygon) {
         try {
@@ -195,12 +196,22 @@ export const LegendEcologica = ({
         }
       }
 
-      if (isVisible && f.properties?._layerId) {
-        foundIds.add(f.properties._layerId);
+      if (isVisible) {
+        const layerId = f.properties._layerId;
+        if (!namesByLayerId.has(layerId)) {
+          namesByLayerId.set(layerId, new Set<string>());
+        }
+        const siteName = getEcoSiteName(f.properties);
+        if (siteName) {
+          namesByLayerId.get(layerId)!.add(siteName);
+        }
       }
     });
 
-    return ECO_LAYERS_CONFIG.filter((layer) => foundIds.has(layer.id));
+    return ECO_LAYERS_CONFIG.filter((layer) => namesByLayerId.has(layer.id)).map((layer) => ({
+      ...layer,
+      siteNames: Array.from(namesByLayerId.get(layer.id) ?? []),
+    }));
   }, [ecoNearby, currentViewportBbox]);
 
   return (
@@ -231,21 +242,43 @@ export const LegendEcologica = ({
           </div>
 
           {activeEcoLegend.length > 0 ? (
-            activeEcoLegend.map((layer) => (
-              <div key={layer.id} className="d-flex align-items-center mb-1">
-                <div
-                  style={{
-                    width: '12px',
-                    height: '12px',
-                    border: `2px ${layer.dashArray ? 'dashed' : 'solid'} ${layer.color}`,
-                    backgroundColor: `${layer.color}70`,
-                    marginRight: '8px',
-                    flexShrink: 0,
-                  }}
-                ></div>
-                <span style={{ fontSize: '0.60rem' }}>{layer.title}</span>
-              </div>
-            ))
+            <div style={{ maxHeight: '175px', overflowY: 'auto' }}>
+              {activeEcoLegend.map((layer) => (
+                <div key={layer.id} className="mb-2">
+                  <div className="d-flex align-items-center">
+                    <div
+                      style={{
+                        width: '12px',
+                        height: '12px',
+                        border: `2px ${layer.dashArray ? 'dashed' : 'solid'} ${layer.color}`,
+                        backgroundColor: `${layer.color}70`,
+                        marginRight: '8px',
+                        flexShrink: 0,
+                      }}
+                    ></div>
+                    <span
+                      className="fw-semibold"
+                      style={{ fontSize: '0.60rem', lineHeight: '1.2' }}
+                    >
+                      {layer.title}
+                    </span>
+                  </div>
+                  {layer.siteNames.length > 0 && (
+                    <div style={{ paddingLeft: '20px', marginTop: '2px' }}>
+                      {layer.siteNames.map((siteName) => (
+                        <div
+                          key={`${layer.id}-${siteName}`}
+                          className="text-muted"
+                          style={{ fontSize: '0.56rem', lineHeight: '1.2' }}
+                        >
+                          - {siteName}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           ) : (
             <output
               className="text-center text-muted mt-2 d-block"

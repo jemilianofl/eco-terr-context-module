@@ -7,7 +7,11 @@ import type {
   TypedMapFeature,
   LayerFeatureProperties as LayerFeatureProps,
 } from '../../hooks/useMapLayers';
-import { ECO_LAYERS_CONFIG, getStrahlerStyle } from '../../config/mapConfig';
+import {
+  ECO_LAYERS_CONFIG,
+  getStrahlerStyle,
+  getEcoSiteName,
+} from '../../config/mapConfig';
 
 interface UserPolygonLayerProps {
   geoJsonData: FeatureCollection;
@@ -92,22 +96,6 @@ interface EcoLayerProps {
   interactive?: boolean;
 }
 
-const getEcoAreaName = (props?: LayerFeatureProps | null): string => {
-  const candidates = [
-    props?.NOMBRE,
-    props?.NOM_AICA,
-    props?.nombre,
-    props?.Name,
-    props?.NAME,
-    props?.NOM,
-    props?.SITIO,
-  ];
-  const found = candidates.find(
-    (v): v is string => typeof v === 'string' && v.trim().length > 0
-  );
-  return found ?? 'Área Protegida';
-};
-
 export const EcoLayer = ({ ecoNearby, interactive = true }: EcoLayerProps) => {
   const map = useMapEvents({
     click(e) {
@@ -119,7 +107,7 @@ export const EcoLayer = ({ ecoNearby, interactive = true }: EcoLayerProps) => {
           turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)
         ) {
           const title = f.properties?._title ?? 'Área Protegida';
-          const name = getEcoAreaName(f.properties);
+          const name = getEcoSiteName(f.properties) ?? 'Área Protegida';
           const color = f.properties?._color ?? '#000';
           L.popup()
             .setLatLng(e.latlng)
