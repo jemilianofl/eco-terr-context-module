@@ -49,3 +49,7 @@ public/layers/geojson/usv_serie_*.geojson
 public/layers/geojson/climas.geojson
 
 public/layers/fgb
+# Capas geoespaciales locales pesadas (alojadas en R2)
+public/layers/MED_15/
+public/layers/siatl_50k/
+
