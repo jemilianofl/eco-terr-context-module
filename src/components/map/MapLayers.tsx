@@ -11,11 +11,16 @@ import { getStrahlerStyle } from '../../config/mapConfig';
 
 interface UserPolygonLayerProps {
   geoJsonData: FeatureCollection;
+  interactive?: boolean;
 }
 
-export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
+export const UserPolygonLayer = ({
+  geoJsonData,
+  interactive = true,
+}: UserPolygonLayerProps) => {
   const map = useMapEvents({
     click(e) {
+      if (!interactive) return;
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
       for (const f of geoJsonData.features) {
         if (
@@ -57,12 +62,13 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
     typeof geoJsonData.features[0]?.properties?.polyId === 'string'
       ? geoJsonData.features[0].properties.polyId
       : '0';
-  const layerKey = `user-layer-${geoJsonData.features.length}-${firstPolyId}`;
+  const layerKey = `user-layer-${interactive ? 'main' : 'mini'}-${geoJsonData.features.length}-${firstPolyId}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={geoJsonData}
+      interactive={interactive}
       filter={(feature) =>
         Boolean(feature.geometry) &&
         feature.geometry.type !== 'Point' &&
@@ -70,8 +76,10 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
       }
       style={() => ({
         color: '#ff0000',
-        weight: 3,
-        fill: false,
+        weight: interactive ? 3 : 2,
+        fill: !interactive,
+        fillColor: '#ff0000',
+        fillOpacity: interactive ? 0 : 0.35,
         lineJoin: 'round',
         lineCap: 'round',
       })}
@@ -81,6 +89,7 @@ export const UserPolygonLayer = ({ geoJsonData }: UserPolygonLayerProps) => {
 
 interface EcoLayerProps {
   ecoNearby: TypedMapFeature[];
+  interactive?: boolean;
 }
 
 const getEcoAreaName = (props?: LayerFeatureProps | null): string => {
@@ -99,9 +108,10 @@ const getEcoAreaName = (props?: LayerFeatureProps | null): string => {
   return found ?? 'Área Protegida';
 };
 
-export const EcoLayer = ({ ecoNearby }: EcoLayerProps) => {
+export const EcoLayer = ({ ecoNearby, interactive = true }: EcoLayerProps) => {
   const map = useMapEvents({
     click(e) {
+      if (!interactive) return;
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
       for (const f of ecoNearby) {
         if (
@@ -129,19 +139,20 @@ export const EcoLayer = ({ ecoNearby }: EcoLayerProps) => {
 
   if (!data.features.length) return null;
 
-  const layerKey = `eco-layer-${data.features.length}-${data.features[0]?.properties?._layerId ?? '0'}`;
+  const layerKey = `eco-layer-${interactive ? 'main' : 'mini'}-${data.features.length}-${data.features[0]?.properties?._layerId ?? '0'}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={data}
+      interactive={interactive}
       style={(f) => {
         const props = f?.properties as LayerFeatureProps | undefined;
         return {
           color: props?._color,
-          weight: 1.5,
+          weight: interactive ? 1.5 : 1,
           fillColor: props?._color,
-          fillOpacity: 0.15,
+          fillOpacity: interactive ? 0.15 : 0.25,
         };
       }}
     />
@@ -150,11 +161,13 @@ export const EcoLayer = ({ ecoNearby }: EcoLayerProps) => {
 
 interface VegLayerProps {
   vegNearby: TypedMapFeature[];
+  interactive?: boolean;
 }
 
-export const VegLayer = ({ vegNearby }: VegLayerProps) => {
+export const VegLayer = ({ vegNearby, interactive = true }: VegLayerProps) => {
   const map = useMapEvents({
     click(e) {
+      if (!interactive) return;
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
       for (const f of vegNearby) {
         if (
@@ -180,19 +193,20 @@ export const VegLayer = ({ vegNearby }: VegLayerProps) => {
 
   if (!data.features.length) return null;
 
-  const layerKey = `veg-layer-${data.features.length}-${data.features[0]?.properties?._type ?? '0'}`;
+  const layerKey = `veg-layer-${interactive ? 'main' : 'mini'}-${data.features.length}-${data.features[0]?.properties?._type ?? '0'}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={data}
+      interactive={interactive}
       style={(f) => {
         const props = f?.properties as LayerFeatureProps | undefined;
         return {
           color: props?._color,
-          weight: 1.5,
+          weight: interactive ? 1.5 : 0.8,
           fillColor: props?._color,
-          fillOpacity: 0.35,
+          fillOpacity: interactive ? 0.35 : 0.45,
         };
       }}
     />
@@ -201,11 +215,13 @@ export const VegLayer = ({ vegNearby }: VegLayerProps) => {
 
 interface ClimateLayerProps {
   climateNearby: TypedMapFeature[];
+  interactive?: boolean;
 }
 
-export const ClimateLayer = ({ climateNearby }: ClimateLayerProps) => {
+export const ClimateLayer = ({ climateNearby, interactive = true }: ClimateLayerProps) => {
   const map = useMapEvents({
     click(e) {
+      if (!interactive) return;
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
       for (const f of climateNearby) {
         if (
@@ -231,19 +247,20 @@ export const ClimateLayer = ({ climateNearby }: ClimateLayerProps) => {
 
   if (!data.features.length) return null;
 
-  const layerKey = `climate-layer-${data.features.length}-${data.features[0]?.properties?._type ?? '0'}`;
+  const layerKey = `climate-layer-${interactive ? 'main' : 'mini'}-${data.features.length}-${data.features[0]?.properties?._type ?? '0'}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={data}
+      interactive={interactive}
       style={(f) => {
         const props = f?.properties as LayerFeatureProps | undefined;
         return {
           color: props?._color,
-          weight: 1.5,
+          weight: interactive ? 1.5 : 0.8,
           fillColor: props?._color,
-          fillOpacity: 0.35,
+          fillOpacity: interactive ? 0.35 : 0.45,
         };
       }}
     />
@@ -252,11 +269,16 @@ export const ClimateLayer = ({ climateNearby }: ClimateLayerProps) => {
 
 interface EdafologiaLayerProps {
   edafologiaNearby: TypedMapFeature[];
+  interactive?: boolean;
 }
 
-export const EdafologiaLayer = ({ edafologiaNearby }: EdafologiaLayerProps) => {
+export const EdafologiaLayer = ({
+  edafologiaNearby,
+  interactive = true,
+}: EdafologiaLayerProps) => {
   const map = useMapEvents({
     click(e) {
+      if (!interactive) return;
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
       for (const f of edafologiaNearby) {
         if (
@@ -283,19 +305,20 @@ export const EdafologiaLayer = ({ edafologiaNearby }: EdafologiaLayerProps) => {
 
   if (!data.features.length) return null;
 
-  const layerKey = `edafologia-layer-${data.features.length}-${data.features[0]?.properties?._type ?? '0'}`;
+  const layerKey = `edafologia-layer-${interactive ? 'main' : 'mini'}-${data.features.length}-${data.features[0]?.properties?._type ?? '0'}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={data}
+      interactive={interactive}
       style={(f) => {
         const props = f?.properties as LayerFeatureProps | undefined;
         return {
           color: props?._color,
-          weight: 1.5,
+          weight: interactive ? 1.5 : 0.8,
           fillColor: props?._color,
-          fillOpacity: 0.35,
+          fillOpacity: interactive ? 0.35 : 0.45,
         };
       }}
     />
@@ -308,6 +331,7 @@ interface HidrologiaLayerProps {
   cuerposAguaNearby: TypedMapFeature[];
   corrientesNearby: TypedMapFeature[];
   microcuencaData?: FeatureCollection | null;
+  interactive?: boolean;
 }
 
 export const HidrologiaLayer = ({
@@ -316,6 +340,7 @@ export const HidrologiaLayer = ({
   cuerposAguaNearby,
   corrientesNearby,
   microcuencaData,
+  interactive = true,
 }: HidrologiaLayerProps) => {
   const cuencasFc = useMemo<FeatureCollection<Geometry, LayerFeatureProps>>(() => {
     const valid = (cuencasNearby ?? []).filter((f) => Boolean(f?.geometry));
@@ -420,42 +445,47 @@ export const HidrologiaLayer = ({
     );
   };
 
+  const modeKey = interactive ? 'main' : 'mini';
+
   return (
     <>
       {cuencasFc.features.length > 0 && (
         <GeoJSON
-          key={`cuencas-cna-${cuencasFc.features.length}`}
+          key={`cuencas-cna-${modeKey}-${cuencasFc.features.length}`}
           data={cuencasFc}
+          interactive={interactive}
           style={() => ({
             color: '#6d28d9',
-            weight: 3,
+            weight: interactive ? 3 : 2,
             dashArray: '10, 5, 2, 5',
             fillColor: '#ede9fe',
-            fillOpacity: 0.08,
+            fillOpacity: 0.1,
           })}
-          onEachFeature={onEachCuenca}
+          onEachFeature={interactive ? onEachCuenca : undefined}
         />
       )}
 
       {subcuencasFc.features.length > 0 && (
         <GeoJSON
-          key={`subcuencas-50k-${subcuencasFc.features.length}`}
+          key={`subcuencas-50k-${modeKey}-${subcuencasFc.features.length}`}
           data={subcuencasFc}
+          interactive={interactive}
           style={() => ({
             color: '#78350f',
-            weight: 2,
+            weight: interactive ? 2 : 1.5,
             dashArray: '6, 4',
             fillColor: '#d6c7a9',
-            fillOpacity: microcuencaData?.features?.length ? 0.08 : 0.18,
+            fillOpacity: microcuencaData?.features?.length ? 0.08 : 0.2,
           })}
-          onEachFeature={onEachSubcuenca}
+          onEachFeature={interactive ? onEachSubcuenca : undefined}
         />
       )}
 
       {microcuencaData && microcuencaData.features.length > 0 && (
         <GeoJSON
-          key={`microcuenca-siatl-${microcuencaData.features.length}`}
+          key={`microcuenca-siatl-${modeKey}-${microcuencaData.features.length}`}
           data={microcuencaData}
+          interactive={interactive}
           filter={(feature) =>
             Boolean(feature.geometry) &&
             feature.geometry.type !== 'Point' &&
@@ -463,33 +493,33 @@ export const HidrologiaLayer = ({
           }
           style={() => ({
             color: '#5c4033',
-            weight: 2,
+            weight: interactive ? 2 : 1.5,
             fillColor: '#c8b598',
             fillOpacity: 0.42,
           })}
-          onEachFeature={onEachMicrocuenca}
+          onEachFeature={interactive ? onEachMicrocuenca : undefined}
         />
       )}
 
       {cuerposAguaFc.features.length > 0 && (
         <GeoJSON
-          key={`cuerpos-agua-50k-${cuerposAguaFc.features.length}`}
+          key={`cuerpos-agua-50k-${modeKey}-${cuerposAguaFc.features.length}`}
           data={cuerposAguaFc}
+          interactive={interactive}
           style={() => ({
             color: '#0284c7',
-            weight: 1.2,
+            weight: interactive ? 1.2 : 0.8,
             fillColor: '#38bdf8',
             fillOpacity: 0.55,
           })}
-          onEachFeature={onEachCuerpoAgua}
+          onEachFeature={interactive ? onEachCuerpoAgua : undefined}
         />
       )}
 
       {corrientesFc.features.length > 0 && (
-        <Pane name="corrientes-pane" style={{ zIndex: 460 }}>
-          {/* Contorno blanco para separar el azul del follaje oscuro */}
+        <Pane name={`corrientes-pane-${modeKey}`} style={{ zIndex: 460 }}>
           <GeoJSON
-            key={`corrientes-halo-${corrientesFc.features.length}`}
+            key={`corrientes-halo-${modeKey}-${corrientesFc.features.length}`}
             data={corrientesFc}
             interactive={false}
             style={(f) => {
@@ -497,29 +527,29 @@ export const HidrologiaLayer = ({
               const style = getStrahlerStyle(props?.ORDER_1);
               return {
                 color: '#ffffff',
-                weight: style.weight + 2.2,
-                opacity: 0.9,
+                weight: interactive ? style.weight + 2.2 : 2.2,
+                opacity: 0.85,
                 lineCap: 'round',
                 lineJoin: 'round',
               };
             }}
           />
-          {/* Trazo principal en azul saturado por Orden Strahler */}
           <GeoJSON
-            key={`corrientes-50k-${corrientesFc.features.length}`}
+            key={`corrientes-50k-${modeKey}-${corrientesFc.features.length}`}
             data={corrientesFc}
+            interactive={interactive}
             style={(f) => {
               const props = f?.properties as LayerFeatureProps | undefined;
               const style = getStrahlerStyle(props?.ORDER_1);
               return {
                 color: style.color,
-                weight: style.weight,
+                weight: interactive ? style.weight : Math.max(1.2, style.weight * 0.45),
                 opacity: style.opacity,
                 lineCap: 'round',
                 lineJoin: 'round',
               };
             }}
-            onEachFeature={onEachCorriente}
+            onEachFeature={interactive ? onEachCorriente : undefined}
           />
         </Pane>
       )}

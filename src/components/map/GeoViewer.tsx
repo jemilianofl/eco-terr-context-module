@@ -16,6 +16,7 @@ import {
   useClimateLayers,
   useEdafologiaLayers,
   useHidrologiaLayers,
+  type TypedMapFeature,
 } from '../../hooks/useMapLayers';
 import {
   UserPolygonLayer,
@@ -178,17 +179,105 @@ const InvalidateMap: React.FC<{ dependencies: unknown[] }> = ({ dependencies }) 
   return null;
 };
 
-const MiniMapLocator: React.FC<{ data: FeatureCollection | null; estado: string; municipio: string }> = ({ data, estado, municipio }) => {
+const MiniMapViewSync: React.FC<{
+  center: L.LatLngExpression;
+  plano: number;
+  buffer10km: Feature<Polygon | MultiPolygon> | null;
+}> = ({ center, plano, buffer10km }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (plano >= 2 && buffer10km) {
+      const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
+      map.fitBounds(
+        [
+          [minY, minX],
+          [maxY, maxX],
+        ],
+        { padding: [6, 6], maxZoom: 10, animate: false }
+      );
+    } else {
+      map.setView(center, 6, { animate: false });
+    }
+  }, [map, center, plano, buffer10km]);
+  return null;
+};
+
+interface MiniMapLocatorProps {
+  data: FeatureCollection | null;
+  buffer10km: Feature<Polygon | MultiPolygon> | null;
+  currentPlano: number;
+  selectedVegSerie: string;
+  ecoNearby: TypedMapFeature[];
+  vegNearby: TypedMapFeature[];
+  climateNearby: TypedMapFeature[];
+  edafologiaNearby: TypedMapFeature[];
+  cuencasNearby: TypedMapFeature[];
+  subcuencasNearby: TypedMapFeature[];
+  cuerposAguaNearby: TypedMapFeature[];
+  corrientesNearby: TypedMapFeature[];
+  microcuencaData: FeatureCollection | null;
+  estado: string;
+  municipio: string;
+}
+
+const MiniMapLocator: React.FC<MiniMapLocatorProps> = ({
+  data,
+  buffer10km,
+  currentPlano,
+  selectedVegSerie,
+  ecoNearby,
+  vegNearby,
+  climateNearby,
+  edafologiaNearby,
+  cuencasNearby,
+  subcuencasNearby,
+  cuerposAguaNearby,
+  corrientesNearby,
+  microcuencaData,
+  estado,
+  municipio,
+}) => {
   if (!data || data.features.length === 0) return null;
   const center = L.geoJSON(data).getBounds().getCenter();
+
   return (
     <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
       <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
       <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
-        <MapContainer center={center} zoom={6} zoomControl={false} dragging={false} scrollWheelZoom={false} preferCanvas={true} style={{ height: '100%', width: '100%' }}>
-          <InvalidateMap dependencies={[]} />
+        <MapContainer
+          center={center}
+          zoom={6}
+          zoomControl={false}
+          dragging={false}
+          scrollWheelZoom={false}
+          doubleClickZoom={false}
+          boxZoom={false}
+          keyboard={false}
+          preferCanvas={false}
+          style={{ height: '100%', width: '100%' }}
+        >
+          <InvalidateMap dependencies={[data, currentPlano, selectedVegSerie]} />
+          <MiniMapViewSync center={center} plano={currentPlano} buffer10km={buffer10km} />
           <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
-          <CircleMarker center={center} radius={4} color="black" weight={1} fillColor="red" fillOpacity={1} />
+
+          {currentPlano === 2 && <EcoLayer key="mini-eco" ecoNearby={ecoNearby} interactive={false} />}
+          {currentPlano === 3 && <VegLayer key={`mini-veg-${selectedVegSerie}`} vegNearby={vegNearby} interactive={false} />}
+          {currentPlano === 4 && <ClimateLayer key="mini-climate" climateNearby={climateNearby} interactive={false} />}
+          {currentPlano === 5 && <EdafologiaLayer key="mini-edaf" edafologiaNearby={edafologiaNearby} interactive={false} />}
+          {currentPlano === 6 && (
+            <HidrologiaLayer
+              key="mini-hidro"
+              cuencasNearby={cuencasNearby}
+              subcuencasNearby={subcuencasNearby}
+              cuerposAguaNearby={cuerposAguaNearby}
+              corrientesNearby={corrientesNearby}
+              microcuencaData={microcuencaData}
+              interactive={false}
+            />
+          )}
+
+          <UserPolygonLayer geoJsonData={data} interactive={false} />
+          <CircleMarker center={center} radius={3.5} color="black" weight={1} fillColor="red" fillOpacity={1} interactive={false} />
         </MapContainer>
       </div>
       <div className="text-center mt-1" style={{ fontSize: '0.65rem', lineHeight: '1.1' }}>
@@ -615,7 +704,23 @@ export const GeoViewer: React.FC = () => {
                         <span className="text-muted" style={{ fontSize: '0.6rem' }}>Subprocuraduría de Recursos Naturales</span>
                       </div>
 
-                      <MiniMapLocator data={geoJsonData} estado={previewData.estado} municipio={previewData.municipio} />
+                      <MiniMapLocator
+                        data={geoJsonData}
+                        buffer10km={buffer10km}
+                        currentPlano={currentPlano}
+                        selectedVegSerie={selectedVegSerie}
+                        ecoNearby={ecoNearby}
+                        vegNearby={vegNearby}
+                        climateNearby={climateNearby}
+                        edafologiaNearby={edafologiaNearby}
+                        cuencasNearby={cuencasNearby}
+                        subcuencasNearby={subcuencasNearby}
+                        cuerposAguaNearby={cuerposAguaNearby}
+                        corrientesNearby={corrientesNearby}
+                        microcuencaData={microcuencaData}
+                        estado={previewData.estado}
+                        municipio={previewData.municipio}
+                      />
 
                       {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
                       {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
