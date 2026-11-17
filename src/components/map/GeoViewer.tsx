@@ -8,7 +8,7 @@ import L from 'leaflet';
 import domtoimage from 'dom-to-image';
 import * as turf from '@turf/turf';
 
-import { toDMS } from '../../config/mapConfig';
+import { toDMS, getStrahlerOrderNumber } from '../../config/mapConfig';
 import {
   useSentinelData,
   useEcoLayers,
@@ -142,37 +142,54 @@ const GraticuleEngine: React.FC = () => {
 const MapUpdater: React.FC<{
   data: FeatureCollection | null;
   plano: number;
-  buffer10km: Feature<Polygon | MultiPolygon> | null;
   filterMode: LayerFilterMode;
   trigger: number;
-}> = ({ data, plano, buffer10km, filterMode, trigger }) => {
+}> = ({ data, plano, filterMode, trigger }) => {
   const map = useMap();
   useEffect(() => {
     if (!data || data.features.length === 0) return;
-    const paddingOpts = { paddingBottomRight: [330, 30] as [number, number], paddingTopLeft: [40, 40] as [number, number] };
+    const paddingOpts = {
+      paddingBottomRight: [330, 30] as [number, number],
+      paddingTopLeft: [40, 40] as [number, number],
+    };
 
-    if (trigger > 0) {
-      const layer = L.geoJSON(data);
-      const bounds = layer.getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 16 });
-      return;
+    const layer = L.geoJSON(data);
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { ...paddingOpts, maxZoom: 16 });
     }
+  }, [data, plano, filterMode, map, trigger]);
+  return null;
+};
 
-    if (plano === 1) {
+const ZoomCenterOnPolygon: React.FC<{ data: FeatureCollection | null }> = ({ data }) => {
+  const map = useMap();
+  const isAdjustingRef = useRef(false);
+
+  useMapEvents({
+    zoomend() {
+      if (isAdjustingRef.current || !data || data.features.length === 0) return;
       const layer = L.geoJSON(data);
       const bounds = layer.getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 18 });
-    } else if (plano >= 2) {
-      if (filterMode === 'intersect') {
-        const layer = L.geoJSON(data);
-        const bounds = layer.getBounds();
-        if (bounds.isValid()) map.fitBounds(bounds, { ...paddingOpts, maxZoom: 15 });
-      } else if (buffer10km) {
-        const bbox = turf.bbox(buffer10km);
-        map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], paddingOpts);
+      if (!bounds.isValid()) return;
+
+      const polyCenter = bounds.getCenter();
+      const zoom = map.getZoom();
+      // Mantener el polígono en el centro del área despejada (compensando leyenda derecha de 330px)
+      const paddingOffset = L.point((330 - 40) / 2, (30 - 40) / 2);
+      const targetPoint = map.project(polyCenter, zoom).add(paddingOffset);
+      const adjustedCenter = map.unproject(targetPoint, zoom);
+
+      if (!map.getCenter().equals(adjustedCenter, 1e-6)) {
+        isAdjustingRef.current = true;
+        map.setView(adjustedCenter, zoom, { animate: false });
+        requestAnimationFrame(() => {
+          isAdjustingRef.current = false;
+        });
       }
-    }
-  }, [data, plano, buffer10km, filterMode, map, trigger]);
+    },
+  });
+
   return null;
 };
 
@@ -423,6 +440,91 @@ export const GeoViewer: React.FC = () => {
     corrientesNearby,
     isLoadingHidrologia,
   } = useHidrologiaLayers(activatedPlanos[6] ? activeFilterGeometry : null);
+
+  // Filtrar en el minimapa únicamente las capas visibles que aparecen en la leyenda
+  const miniVisibleLayers = useMemo(() => {
+    let viewportPoly: Feature<Polygon> | null = null;
+    let hydroViewportPoly: Feature<Polygon> | null = null;
+
+    if (currentViewportBbox) {
+      try {
+        viewportPoly = turf.bboxPolygon(currentViewportBbox);
+        const [minX, minY, maxX, maxY] = currentViewportBbox;
+        const visibleMaxX = minX + (maxX - minX) * 0.68;
+        hydroViewportPoly = turf.bboxPolygon([minX, minY, visibleMaxX, maxY]);
+      } catch {
+        viewportPoly = null;
+        hydroViewportPoly = null;
+      }
+    }
+
+    const inMainView = (f: TypedMapFeature): boolean => {
+      if (!f?.geometry) return false;
+      if (!viewportPoly) return true;
+      try {
+        return turf.booleanIntersects(f, viewportPoly);
+      } catch {
+        return false;
+      }
+    };
+
+    const inHydroView = (f: TypedMapFeature): boolean => {
+      if (!f?.geometry) return false;
+      if (!hydroViewportPoly) return true;
+      try {
+        return turf.booleanIntersects(f, hydroViewportPoly);
+      } catch {
+        return false;
+      }
+    };
+
+    const eco = ecoNearby.filter((f) => Boolean(f.properties?._layerId) && inMainView(f));
+    const veg = vegNearby.filter(
+      (f) => Boolean(f.properties?._type && f.properties?._color) && inMainView(f)
+    );
+    const climate = climateNearby.filter(
+      (f) => Boolean(f.properties?._type && f.properties?._color) && inMainView(f)
+    );
+    const edafologia = edafologiaNearby.filter(
+      (f) => Boolean(f.properties?._type && f.properties?._color) && inMainView(f)
+    );
+
+    const cuencas = cuencasNearby.filter(inHydroView);
+    const subcuencas = subcuencasNearby.filter(inHydroView);
+    const cuerposAgua = cuerposAguaNearby.filter(inHydroView);
+
+    const visibleCorrientes = corrientesNearby.filter(inHydroView);
+    const visibleOrders = new Set<number>(
+      visibleCorrientes.map((f) => getStrahlerOrderNumber(f.properties?.ORDER_1))
+    );
+    const corrientes =
+      visibleOrders.size > 0
+        ? visibleCorrientes.filter((f) =>
+            visibleOrders.has(getStrahlerOrderNumber(f.properties?.ORDER_1))
+          )
+        : visibleCorrientes;
+
+    return {
+      eco,
+      veg,
+      climate,
+      edafologia,
+      cuencas,
+      subcuencas,
+      cuerposAgua,
+      corrientes,
+    };
+  }, [
+    currentViewportBbox,
+    ecoNearby,
+    vegNearby,
+    climateNearby,
+    edafologiaNearby,
+    cuencasNearby,
+    subcuencasNearby,
+    cuerposAguaNearby,
+    corrientesNearby,
+  ]);
 
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
@@ -705,7 +807,17 @@ export const GeoViewer: React.FC = () => {
                     </output>
                   )}
 
-                  <MapContainer ref={setMapRef} center={mapCenter} zoom={6} maxZoom={18} zoomControl={false} preferCanvas={false} style={{ height: '100%', width: '100%' }}>
+                  <MapContainer
+                    ref={setMapRef}
+                    center={mapCenter}
+                    zoom={6}
+                    maxZoom={18}
+                    zoomControl={false}
+                    scrollWheelZoom="center"
+                    doubleClickZoom="center"
+                    preferCanvas={false}
+                    style={{ height: '100%', width: '100%' }}
+                  >
                     <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
 
                     {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
@@ -723,10 +835,10 @@ export const GeoViewer: React.FC = () => {
                     <MapUpdater
                       data={geoJsonData}
                       plano={currentPlano}
-                      buffer10km={buffer10km}
                       filterMode={layerFilterMode}
                       trigger={recenterTrigger}
                     />
+                    <ZoomCenterOnPolygon data={geoJsonData} />
 
                     <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
                       <ScaleControl position="bottomleft" imperial={false} />
@@ -765,14 +877,14 @@ export const GeoViewer: React.FC = () => {
                         buffer10km={buffer10km}
                         currentPlano={currentPlano}
                         selectedVegSerie={selectedVegSerie}
-                        ecoNearby={ecoNearby}
-                        vegNearby={vegNearby}
-                        climateNearby={climateNearby}
-                        edafologiaNearby={edafologiaNearby}
-                        cuencasNearby={cuencasNearby}
-                        subcuencasNearby={subcuencasNearby}
-                        cuerposAguaNearby={cuerposAguaNearby}
-                        corrientesNearby={corrientesNearby}
+                        ecoNearby={miniVisibleLayers.eco}
+                        vegNearby={miniVisibleLayers.veg}
+                        climateNearby={miniVisibleLayers.climate}
+                        edafologiaNearby={miniVisibleLayers.edafologia}
+                        cuencasNearby={miniVisibleLayers.cuencas}
+                        subcuencasNearby={miniVisibleLayers.subcuencas}
+                        cuerposAguaNearby={miniVisibleLayers.cuerposAgua}
+                        corrientesNearby={miniVisibleLayers.corrientes}
                         microcuencaData={microcuencaData}
                         estado={previewData.estado}
                         municipio={previewData.municipio}
