@@ -900,10 +900,27 @@ export const GeoViewer: React.FC = () => {
 
                   {previewData && (
                     <div className="position-absolute bg-white p-3 shadow-sm" style={{ top: '15px', right: '15px', width: '290px', zIndex: 1000, border: '1px solid #000' }}>
-                      <div className="text-center mb-3 d-flex flex-column align-items-center">
-                        <img src={profepaLogo} alt="PROFEPA" style={{ height: '35px', marginBottom: '8px' }} />
-                        <h6 className="fw-bold mb-0" style={{ fontSize: '0.75rem', color: '#000' }}>PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE</h6>
-                        <span className="text-muted" style={{ fontSize: '0.6rem' }}>Subprocuraduría de Recursos Naturales</span>
+                      <div className="d-flex align-items-center mb-3">
+                        <img
+                          src={profepaLogo}
+                          alt="PROFEPA"
+                          className="me-2"
+                          style={{ height: '40px', width: 'auto', flexShrink: 0 }}
+                        />
+                        <div className="d-flex flex-column text-center flex-grow-1">
+                          <h6
+                            className="fw-bold mb-1"
+                            style={{ fontSize: '0.68rem', lineHeight: '1.15', color: '#000' }}
+                          >
+                            PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE
+                          </h6>
+                          <span
+                            className="text-muted"
+                            style={{ fontSize: '0.58rem', lineHeight: '1.1' }}
+                          >
+                            Subprocuraduría de Recursos Naturales
+                          </span>
+                        </div>
                       </div>
 
                       <MiniMapLocator
