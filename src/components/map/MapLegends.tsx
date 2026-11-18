@@ -687,6 +687,7 @@ export const LegendHidrologia = ({
 
     const hasVisibleWaterBodies = cuerposAguaNearby.some(isInView);
     const visibleOrders = new Set<number>();
+    
     corrientesNearby.forEach((f) => {
       if (!isInView(f)) return;
       const ord = Number(f.properties?.ORDER_1);
@@ -695,10 +696,8 @@ export const LegendHidrologia = ({
       }
     });
 
-    const displayedStrahlerItems =
-      visibleOrders.size > 0
-        ? STRAHLER_ORDER_CONFIG.filter((item) => visibleOrders.has(item.order))
-        : STRAHLER_ORDER_CONFIG;
+    // CORRECCIÓN: Filtrar solo las corrientes visibles. Si no hay (0), devolver array vacío []
+    const displayedStrahlerItems = STRAHLER_ORDER_CONFIG.filter((item) => visibleOrders.has(item.order));
 
     return {
       hasCuenca: visibleCuencas.length > 0 || cuencaNames.length > 0,
@@ -847,6 +846,10 @@ export const LegendHidrologia = ({
             {isLoading ? (
               <output className="text-muted d-block text-center" style={{ fontSize: '0.60rem' }}>
                 Cargando red hidrográfica...
+              </output>
+            ) : activeHydroContext.displayedStrahlerItems.length === 0 ? (
+              <output className="text-muted d-block text-center mt-2" style={{ fontSize: '0.60rem' }}>
+                Sin corrientes visibles en encuadre
               </output>
             ) : (
               <div>
