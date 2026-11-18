@@ -629,7 +629,7 @@ const TemporalControlPanel: React.FC<{
   temporalError,
 }) => {
   const currentYear = new Date().getFullYear();
-  const startYear = temporalCollection === 'sentinel-2-l2a' ? 2017 : 1984;
+  const startYear = temporalCollection === 'sentinel-2-l2a' ? 2015 : 1984;
   const years: number[] = [];
   for (let y = currentYear; y >= startYear; y--) {
     years.push(y);
@@ -637,9 +637,9 @@ const TemporalControlPanel: React.FC<{
 
   const handleCollectionChange = (newCol: SatelliteCollectionOption) => {
     setTemporalCollection(newCol);
-    if (newCol === 'sentinel-2-l2a' && temporalYear < 2017) {
-      setTemporalYear(2017);
-    }
+    if (newCol === 'sentinel-2-l2a' && temporalYear < 2015) {
+    setTemporalYear(2015);
+  }
   };
 
   return (
@@ -654,7 +654,7 @@ const TemporalControlPanel: React.FC<{
           value={temporalCollection}
           onChange={(e) => handleCollectionChange(e.target.value as SatelliteCollectionOption)}
         >
-          <option value="sentinel-2-l2a">Copernicus Sentinel-2 (2017–hoy)</option>
+          <option value="sentinel-2-l2a">Copernicus Sentinel-2 (2015–hoy)</option>
           <option value="landsat-c2-l2">Landsat 4-9 Histórico (1984–hoy)</option>
         </select>
       </div>
