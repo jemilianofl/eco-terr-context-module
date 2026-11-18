@@ -932,6 +932,7 @@ export const LegendEspacioTemporal = ({
     rgb: 'Color Natural (RGB)',
     nir: 'Falso Color Infrarrojo (Vegetación)',
     swir: 'Infrarrojo de Onda Corta (SWIR)',
+    ndvi: 'Índice de Vegetación (NDVI)',
   };
 
   const sourceLabel = activeScene?.collection?.includes('landsat')
@@ -939,7 +940,7 @@ export const LegendEspacioTemporal = ({
     : 'Copernicus Sentinel-2 L2A';
 
   const formattedHistoricalDate = activeScene?.date
-    ? new Date(activeScene.date).toLocaleDateString('es-MX')
+    ? `${activeScene.year} (${new Date(activeScene.date).toLocaleDateString('es-MX')})`
     : 'Sin escena seleccionada';
 
   return (
@@ -953,7 +954,7 @@ export const LegendEspacioTemporal = ({
         </div>
         <div className="p-2 text-center" style={{ fontSize: '0.62rem', lineHeight: '1.25' }}>
           <p className="mb-1">
-            <strong>Fecha imagen histórica:</strong> {formattedHistoricalDate}
+            <strong>Escena anual:</strong> {formattedHistoricalDate}
           </p>
           <p className="mb-0">
             <strong>Fecha de inspección:</strong> {targetDate || 'N/A'}

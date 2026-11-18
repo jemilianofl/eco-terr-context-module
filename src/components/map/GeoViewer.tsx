@@ -203,8 +203,8 @@ const MapUpdater: React.FC<{
     const bounds = layer.getBounds();
     if (bounds.isValid()) {
       map.fitBounds(bounds, {
-        padding: [40, 40],
-        maxZoom: 16,
+        padding: plano === 7 ? [110, 110] : [40, 40],
+        maxZoom: plano === 7 ? 15 : 16,
       });
     }
   }, [data, plano, filterMode, map, trigger]);
@@ -464,14 +464,13 @@ const BaseSatelliteTileLayer: React.FC<{
   sentinelUrl: string | null;
 }> = ({ currentPlano, activeTemporalScene, useSentinel, sentinelUrl }) => {
   if (currentPlano === 7 && activeTemporalScene) {
-    const maxNative = activeTemporalScene.collection.includes('landsat') ? 13 : 15;
     return (
       <TileLayer
         key={activeTemporalScene.tileUrl}
         crossOrigin="anonymous"
         url={activeTemporalScene.tileUrl}
         opacity={1}
-        maxNativeZoom={maxNative}
+        maxNativeZoom={18}
         maxZoom={18}
       />
     );
@@ -483,7 +482,7 @@ const BaseSatelliteTileLayer: React.FC<{
         crossOrigin="anonymous"
         url={sentinelUrl}
         opacity={1}
-        maxNativeZoom={15}
+        maxNativeZoom={18}
         maxZoom={18}
       />
     );
@@ -609,151 +608,118 @@ const LayerFilterBar: React.FC<{
 );
 
 const TemporalControlPanel: React.FC<{
-  historicalDate: string;
-  setHistoricalDate: (val: string) => void;
+  temporalYear: number;
+  setTemporalYear: (val: number) => void;
   temporalCollection: SatelliteCollectionOption;
   setTemporalCollection: (val: SatelliteCollectionOption) => void;
-  temporalWindowDays: number;
-  setTemporalWindowDays: (val: number) => void;
-  temporalMaxCloud: number;
-  setTemporalMaxCloud: (val: number) => void;
   temporalPreset: SpectralPreset;
   setTemporalPreset: (val: SpectralPreset) => void;
-  temporalScenes: TemporalSceneItem[];
-  selectedTemporalSceneId: string;
-  setSelectedTemporalSceneId: (val: string) => void;
+  activeScene: TemporalSceneItem | null;
   isLoadingTemporal: boolean;
   temporalError: string | null;
 }> = ({
-  historicalDate,
-  setHistoricalDate,
+  temporalYear,
+  setTemporalYear,
   temporalCollection,
   setTemporalCollection,
-  temporalWindowDays,
-  setTemporalWindowDays,
-  temporalMaxCloud,
-  setTemporalMaxCloud,
   temporalPreset,
   setTemporalPreset,
-  temporalScenes,
-  selectedTemporalSceneId,
-  setSelectedTemporalSceneId,
+  activeScene,
   isLoadingTemporal,
   temporalError,
-}) => (
-  <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap align-items-end gap-2 w-100">
-    <div>
-      <label htmlFor="tempHistDate" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-        Fecha histórica:
-      </label>
-      <input
-        id="tempHistDate"
-        type="date"
-        className="form-control form-control-sm"
-        value={historicalDate}
-        max={new Date().toISOString().split('T')[0]}
-        onChange={(e) => setHistoricalDate(e.target.value)}
-      />
-    </div>
+}) => {
+  const currentYear = new Date().getFullYear();
+  const startYear = temporalCollection === 'sentinel-2-l2a' ? 2017 : 1984;
+  const years: number[] = [];
+  for (let y = currentYear; y >= startYear; y--) {
+    years.push(y);
+  }
 
-    <div>
-      <label htmlFor="tempCollection" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-        Catálogo satelital:
-      </label>
-      <select
-        id="tempCollection"
-        className="form-select form-select-sm"
-        value={temporalCollection}
-        onChange={(e) => setTemporalCollection(e.target.value as SatelliteCollectionOption)}
-      >
-        <option value="sentinel-2-l2a">Copernicus Sentinel-2 (2015–hoy)</option>
-        <option value="landsat-c2-l2">Landsat 4-9 Histórico (1982–hoy)</option>
-        <option value="all">Todos los sensores</option>
-      </select>
-    </div>
+  const handleCollectionChange = (newCol: SatelliteCollectionOption) => {
+    setTemporalCollection(newCol);
+    if (newCol === 'sentinel-2-l2a' && temporalYear < 2017) {
+      setTemporalYear(2017);
+    }
+  };
 
-    <div>
-      <label htmlFor="tempWindow" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-        Ventana búsqueda:
-      </label>
-      <select
-        id="tempWindow"
-        className="form-select form-select-sm"
-        value={temporalWindowDays}
-        onChange={(e) => setTemporalWindowDays(Number(e.target.value))}
-      >
-        <option value={15}>± 15 días</option>
-        <option value={30}>± 30 días</option>
-        <option value={60}>± 60 días</option>
-        <option value={120}>± 120 días</option>
-        <option value={180}>± 180 días</option>
-      </select>
-    </div>
-
-    <div>
-      <label htmlFor="tempCloud" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-        Nubes máx.:
-      </label>
-      <select
-        id="tempCloud"
-        className="form-select form-select-sm"
-        value={temporalMaxCloud}
-        onChange={(e) => setTemporalMaxCloud(Number(e.target.value))}
-      >
-        <option value={15}>&lt; 15%</option>
-        <option value={35}>&lt; 35%</option>
-        <option value={60}>&lt; 60%</option>
-        <option value={90}>&lt; 90%</option>
-      </select>
-    </div>
-
-    <div>
-      <label htmlFor="tempPreset" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-        Composición:
-      </label>
-      <select
-        id="tempPreset"
-        className="form-select form-select-sm"
-        value={temporalPreset}
-        onChange={(e) => setTemporalPreset(e.target.value as SpectralPreset)}
-      >
-        <option value="rgb">Color Natural (RGB)</option>
-        <option value="nir">Infrarrojo (Vegetación)</option>
-        <option value="swir">SWIR (Suelo / Incendios)</option>
-      </select>
-    </div>
-
-    <div className="flex-grow-1" style={{ minWidth: '230px' }}>
-      <label htmlFor="tempSceneSelect" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-        Escena disponible ({temporalScenes.length}):
-      </label>
-      <select
-        id="tempSceneSelect"
-        className="form-select form-select-sm"
-        value={selectedTemporalSceneId}
-        onChange={(e) => setSelectedTemporalSceneId(e.target.value)}
-        disabled={temporalScenes.length === 0}
-      >
-        {temporalScenes.length === 0 ? (
-          <option value="">{isLoadingTemporal ? 'Buscando escenas...' : 'Sin escenas en rango'}</option>
-        ) : (
-          temporalScenes.map((scene) => (
-            <option key={scene.id} value={scene.id}>
-              {new Date(scene.date).toLocaleDateString('es-MX')} — {scene.platform.toUpperCase()} ({scene.cloudCover}% nubes)
-            </option>
-          ))
-        )}
-      </select>
-    </div>
-
-    {temporalError && (
-      <div className="w-100 text-danger small fw-semibold mt-1">
-        <i className="bi bi-exclamation-triangle-fill me-1"></i>
-        {temporalError}
+  return (
+    <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap align-items-end gap-3 w-100">
+      <div>
+        <label htmlFor="tempCollection" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+          Catálogo satelital:
+        </label>
+        <select
+          id="tempCollection"
+          className="form-select form-select-sm"
+          value={temporalCollection}
+          onChange={(e) => handleCollectionChange(e.target.value as SatelliteCollectionOption)}
+        >
+          <option value="sentinel-2-l2a">Copernicus Sentinel-2 (2017–hoy)</option>
+          <option value="landsat-c2-l2">Landsat 4-9 Histórico (1984–hoy)</option>
+        </select>
       </div>
-    )}
-  </div>
-);
+
+      <div>
+        <label htmlFor="tempYearSelect" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+          Año de consulta:
+        </label>
+        <select
+          id="tempYearSelect"
+          className="form-select form-select-sm"
+          value={temporalYear}
+          onChange={(e) => setTemporalYear(Number(e.target.value))}
+        >
+          {years.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="tempPreset" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+          Composición espectral:
+        </label>
+        <select
+          id="tempPreset"
+          className="form-select form-select-sm"
+          value={temporalPreset}
+          onChange={(e) => setTemporalPreset(e.target.value as SpectralPreset)}
+        >
+          <option value="rgb">Color Natural (RGB)</option>
+          <option value="nir">Infrarrojo (Vegetación)</option>
+          <option value="swir">SWIR (Suelo / Incendios)</option>
+          <option value="ndvi">Índice NDVI (Vigor Vegetal)</option>
+        </select>
+      </div>
+
+      <div className="flex-grow-1" style={{ minWidth: '220px' }}>
+        <span className="form-label fw-bold mb-1 d-block" style={{ fontSize: '0.75rem' }}>
+          Mejor escena seleccionada del año:
+        </span>
+        <div className="form-control form-control-sm bg-light text-truncate">
+          {isLoadingTemporal && 'Consultando escena anual...'}
+          {!isLoadingTemporal && activeScene && (
+            <>
+              <strong>{new Date(activeScene.date).toLocaleDateString('es-MX')}</strong> —{' '}
+              {activeScene.platform.toUpperCase()} ({activeScene.cloudCover}% nubes)
+            </>
+          )}
+          {!isLoadingTemporal && !activeScene && 'Sin escena disponible'}
+        </div>
+      </div>
+
+      {temporalError && (
+        <div className="w-100 text-danger small fw-semibold mt-1">
+          <i className="bi bi-exclamation-triangle-fill me-1"></i>
+          {' '}
+          {temporalError}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const PLANO_BUTTONS = [
   { id: 1, icon: 'bi-geo-alt', label: 'Ubicación Geográfica' },
@@ -905,10 +871,8 @@ export const GeoViewer: React.FC = () => {
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
 
-  // Estados para Plano 7: Análisis Espacio-Temporal
-  const [historicalDate, setHistoricalDate] = useState<string>('2018-03-15');
-  const [temporalWindowDays, setTemporalWindowDays] = useState<number>(60);
-  const [temporalMaxCloud, setTemporalMaxCloud] = useState<number>(35);
+  // Estados para Plano 7: Análisis Espacio-Temporal Anual
+  const [temporalYear, setTemporalYear] = useState<number>(2018);
   const [temporalCollection, setTemporalCollection] = useState<SatelliteCollectionOption>('sentinel-2-l2a');
   const [temporalPreset, setTemporalPreset] = useState<SpectralPreset>('rgb');
 
@@ -986,16 +950,11 @@ export const GeoViewer: React.FC = () => {
   );
 
   const {
-    scenes: temporalScenes,
     activeScene: activeTemporalScene,
-    selectedSceneId: selectedTemporalSceneId,
-    setSelectedSceneId: setSelectedTemporalSceneId,
     isLoadingTemporal,
     temporalError,
   } = useTemporalImagery(predioCentroid, Boolean(activatedPlanos[7]), {
-    historicalDate,
-    windowDays: temporalWindowDays,
-    maxCloud: temporalMaxCloud,
+    year: temporalYear,
     collection: temporalCollection,
     preset: temporalPreset,
   });
@@ -1218,7 +1177,7 @@ export const GeoViewer: React.FC = () => {
                     <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
                       <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
                       <span className="small fw-semibold text-dark">
-                        {isLoadingTemporal ? 'Buscando escenas satelitales...' : 'Consultando coberturas SIG...'}
+                        {isLoadingTemporal ? 'Consultando Google Earth Engine...' : 'Consultando coberturas SIG...'}
                       </span>
                     </output>
                   )}
@@ -1415,19 +1374,13 @@ export const GeoViewer: React.FC = () => {
 
               {currentPlano === 7 && (
                 <TemporalControlPanel
-                  historicalDate={historicalDate}
-                  setHistoricalDate={setHistoricalDate}
+                  temporalYear={temporalYear}
+                  setTemporalYear={setTemporalYear}
                   temporalCollection={temporalCollection}
                   setTemporalCollection={setTemporalCollection}
-                  temporalWindowDays={temporalWindowDays}
-                  setTemporalWindowDays={setTemporalWindowDays}
-                  temporalMaxCloud={temporalMaxCloud}
-                  setTemporalMaxCloud={setTemporalMaxCloud}
                   temporalPreset={temporalPreset}
                   setTemporalPreset={setTemporalPreset}
-                  temporalScenes={temporalScenes}
-                  selectedTemporalSceneId={selectedTemporalSceneId}
-                  setSelectedTemporalSceneId={setSelectedTemporalSceneId}
+                  activeScene={activeTemporalScene}
                   isLoadingTemporal={isLoadingTemporal}
                   temporalError={temporalError}
                 />

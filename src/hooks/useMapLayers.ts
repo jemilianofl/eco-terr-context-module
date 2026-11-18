@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import * as turf from '@turf/turf';
 import type { Feature, Point, Polygon, MultiPolygon, Geometry } from 'geojson';
 import { queryFgbLayer } from '../utils/fgbReader';
@@ -137,23 +137,24 @@ export const useSentinelData = (
   return { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel };
 };
 
-export type SpectralPreset = 'rgb' | 'nir' | 'swir';
-export type SatelliteCollectionOption = 'sentinel-2-l2a' | 'landsat-c2-l2' | 'all';
+export type SpectralPreset = 'rgb' | 'nir' | 'swir' | 'ndvi';
+export type SatelliteCollectionOption = 'sentinel-2-l2a' | 'landsat-c2-l2';
 
 export interface TemporalSceneItem {
   id: string;
+  year: number;
   date: string;
   cloudCover: number;
   platform: string;
-  collection: string;
+  collection: SatelliteCollectionOption;
   tileUrl: string;
 }
 
-interface HistoricalApiResponse {
-  scenes?: TemporalSceneItem[];
+interface AnnualApiResponse {
+  scene?: TemporalSceneItem;
 }
 
-interface HistoricalApiError {
+interface AnnualApiError {
   message?: string;
 }
 
@@ -161,86 +162,61 @@ export function useTemporalImagery(
   centroid: Feature<Point> | null,
   enabled: boolean,
   params: {
-    historicalDate: string;
-    windowDays: number;
-    maxCloud: number;
+    year: number;
     collection: SatelliteCollectionOption;
     preset: SpectralPreset;
   },
 ) {
-  const [scenes, setScenes] = useState<TemporalSceneItem[]>([]);
-  const [selectedSceneId, setSelectedSceneId] = useState<string>('');
+  const [activeScene, setActiveScene] = useState<TemporalSceneItem | null>(null);
   const [isLoadingTemporal, setIsLoadingTemporal] = useState<boolean>(false);
   const [temporalError, setTemporalError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled || !centroid || !params.historicalDate) return;
+    if (!enabled || !centroid || !params.year) return;
 
     const controller = new AbortController();
     const [lng, lat] = centroid.geometry.coordinates;
 
-    const fetchHistorical = async () => {
+    const fetchAnnual = async () => {
       setIsLoadingTemporal(true);
       setTemporalError(null);
       try {
-        const apiBase = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
+        const apiBase =
+          (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
         const qs = new URLSearchParams({
           lat: String(lat),
           lng: String(lng),
-          date: params.historicalDate,
-          windowDays: String(params.windowDays),
-          maxCloud: String(params.maxCloud),
+          year: String(params.year),
           collection: params.collection,
           preset: params.preset,
         });
 
-        const res = await fetch(`${apiBase}/sentinel/historical?${qs.toString()}`, {
+        const res = await fetch(`${apiBase}/sentinel/annual?${qs.toString()}`, {
           signal: controller.signal,
         });
 
         if (!res.ok) {
-          const errBody = (await res.json().catch(() => ({}))) as HistoricalApiError;
-          throw new Error(errBody.message ?? 'No se encontraron imágenes para esa fecha.');
+          const errBody = (await res.json().catch(() => ({}))) as AnnualApiError;
+          throw new Error(errBody.message ?? `Sin imágenes disponibles para el año ${params.year}.`);
         }
 
-        const data = (await res.json()) as HistoricalApiResponse;
-        const fetchedScenes = data.scenes ?? [];
-        setScenes(fetchedScenes);
-        setSelectedSceneId((prev) =>
-          fetchedScenes.some((s) => s.id === prev) ? prev : (fetchedScenes[0]?.id ?? ''),
-        );
+        const data = (await res.json()) as AnnualApiResponse;
+        setActiveScene(data.scene ?? null);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        setScenes([]);
-        setSelectedSceneId('');
+        setActiveScene(null);
         setTemporalError(err instanceof Error ? err.message : 'Error consultando archivo satelital.');
       } finally {
         setIsLoadingTemporal(false);
       }
     };
 
-    void fetchHistorical();
+    void fetchAnnual();
     return () => controller.abort();
-  }, [
-    enabled,
-    centroid,
-    params.historicalDate,
-    params.windowDays,
-    params.maxCloud,
-    params.collection,
-    params.preset,
-  ]);
-
-  const activeScene = useMemo(
-    () => scenes.find((s) => s.id === selectedSceneId) ?? scenes[0] ?? null,
-    [scenes, selectedSceneId],
-  );
+  }, [enabled, centroid, params.year, params.collection, params.preset]);
 
   return {
-    scenes,
     activeScene,
-    selectedSceneId,
-    setSelectedSceneId,
     isLoadingTemporal,
     temporalError,
   };
@@ -790,3 +766,4 @@ export const useHidrologiaLayers = (
     isLoadingHidrologia: Boolean(predioGeometry) && isLoading,
   };
 };
+
