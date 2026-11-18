@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import * as turf from '@turf/turf';
 import type { Feature, Point, Polygon, MultiPolygon, Geometry } from 'geojson';
 import { queryFgbLayer } from '../utils/fgbReader';
@@ -95,6 +95,7 @@ function resolveFallbackFilterGeometry(
   return turf.buffer(predioGeometry, 10, { units: 'kilometers' }) ?? predioGeometry;
 }
 
+
 export const useSentinelData = (
   predioCentroid: Feature<Point> | null,
   targetDate: string | undefined,
@@ -135,6 +136,115 @@ export const useSentinelData = (
 
   return { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel };
 };
+
+export type SpectralPreset = 'rgb' | 'nir' | 'swir';
+export type SatelliteCollectionOption = 'sentinel-2-l2a' | 'landsat-c2-l2' | 'all';
+
+export interface TemporalSceneItem {
+  id: string;
+  date: string;
+  cloudCover: number;
+  platform: string;
+  collection: string;
+  tileUrl: string;
+}
+
+interface HistoricalApiResponse {
+  scenes?: TemporalSceneItem[];
+}
+
+interface HistoricalApiError {
+  message?: string;
+}
+
+export function useTemporalImagery(
+  centroid: Feature<Point> | null,
+  enabled: boolean,
+  params: {
+    historicalDate: string;
+    windowDays: number;
+    maxCloud: number;
+    collection: SatelliteCollectionOption;
+    preset: SpectralPreset;
+  },
+) {
+  const [scenes, setScenes] = useState<TemporalSceneItem[]>([]);
+  const [selectedSceneId, setSelectedSceneId] = useState<string>('');
+  const [isLoadingTemporal, setIsLoadingTemporal] = useState<boolean>(false);
+  const [temporalError, setTemporalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !centroid || !params.historicalDate) return;
+
+    const controller = new AbortController();
+    const [lng, lat] = centroid.geometry.coordinates;
+
+    const fetchHistorical = async () => {
+      setIsLoadingTemporal(true);
+      setTemporalError(null);
+      try {
+        const apiBase = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
+        const qs = new URLSearchParams({
+          lat: String(lat),
+          lng: String(lng),
+          date: params.historicalDate,
+          windowDays: String(params.windowDays),
+          maxCloud: String(params.maxCloud),
+          collection: params.collection,
+          preset: params.preset,
+        });
+
+        const res = await fetch(`${apiBase}/sentinel/historical?${qs.toString()}`, {
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          const errBody = (await res.json().catch(() => ({}))) as HistoricalApiError;
+          throw new Error(errBody.message ?? 'No se encontraron imágenes para esa fecha.');
+        }
+
+        const data = (await res.json()) as HistoricalApiResponse;
+        const fetchedScenes = data.scenes ?? [];
+        setScenes(fetchedScenes);
+        setSelectedSceneId((prev) =>
+          fetchedScenes.some((s) => s.id === prev) ? prev : (fetchedScenes[0]?.id ?? ''),
+        );
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        setScenes([]);
+        setSelectedSceneId('');
+        setTemporalError(err instanceof Error ? err.message : 'Error consultando archivo satelital.');
+      } finally {
+        setIsLoadingTemporal(false);
+      }
+    };
+
+    void fetchHistorical();
+    return () => controller.abort();
+  }, [
+    enabled,
+    centroid,
+    params.historicalDate,
+    params.windowDays,
+    params.maxCloud,
+    params.collection,
+    params.preset,
+  ]);
+
+  const activeScene = useMemo(
+    () => scenes.find((s) => s.id === selectedSceneId) ?? scenes[0] ?? null,
+    [scenes, selectedSceneId],
+  );
+
+  return {
+    scenes,
+    activeScene,
+    selectedSceneId,
+    setSelectedSceneId,
+    isLoadingTemporal,
+    temporalError,
+  };
+}
 
 export const useEcoLayers = (
   predioGeometry: Feature<Polygon | MultiPolygon> | null,
