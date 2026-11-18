@@ -77,14 +77,14 @@ export const LegendUbicacion = ({
         className="fw-bold text-white text-center mb-1"
         style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
       >
-        Datos de Inspección
+        Datos del expediente
       </div>
       <div className="p-2 text-center" style={{ fontSize: '0.65rem' }}>
         <p className="mb-1">
-          <strong>Acta:</strong> {previewData.acta || 'N/A'}
+          <strong>Acta de inspección:</strong> {previewData.acta || 'N/A'}
         </p>
         <p className="mb-0">
-          <strong>Fecha:</strong> {previewData.targetDate || 'N/A'}
+          <strong>Fecha de inspección:</strong> {previewData.targetDate || 'N/A'}
         </p>
       </div>
     </div>
