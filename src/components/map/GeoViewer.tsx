@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, useMap, ScaleControl, CircleMarker, useMapEvents, Polyline, Tooltip } from 'react-leaflet';
-import { useForm } from 'react-hook-form';
+import { useForm, type UseFormRegister, type UseFormHandleSubmit } from 'react-hook-form';
 import shp from 'shpjs';
 import { kml } from '@tmcw/togeojson';
 import type { FeatureCollection, Feature, GeoJsonObject, Polygon, MultiPolygon, Point } from 'geojson';
@@ -16,12 +16,16 @@ import {
 } from '../../utils/gisApiClient';
 import {
   useSentinelData,
+  useTemporalImagery,
   useEcoLayers,
   useVegetationLayers,
   useClimateLayers,
   useEdafologiaLayers,
   useHidrologiaLayers,
   type TypedMapFeature,
+  type TemporalSceneItem,
+  type SatelliteCollectionOption,
+  type SpectralPreset,
 } from '../../hooks/useMapLayers';
 import {
   UserPolygonLayer,
@@ -38,6 +42,7 @@ import {
   LegendClima,
   LegendEdafologia,
   LegendHidrologia,
+  LegendEspacioTemporal,
 } from './MapLegends';
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
@@ -62,6 +67,18 @@ interface FrameData {
   xTicks: { lon: number; x: number }[];
   yTicks: { lat: number; y: number }[];
 }
+
+const PLANO_FILE_NAMES: Record<number, string> = {
+  1: 'Ubicacion_Geografica',
+  2: 'Relevancia_Ecologica',
+  3: 'Tipo_Vegetacion',
+  4: 'Unidades_Climaticas',
+  5: 'Edafologia',
+  6: 'Hidrologia_Cuencas_Corrientes',
+  7: 'Analisis_Espacio_Temporal',
+};
+
+const NOMBRES_PLANOS = ['Plano 1', 'Plano 2', 'Plano 3', 'Plano 4', 'Plano 5', 'Plano 6', 'Plano 7'];
 
 async function parseSpatialFileListLocal(files: FileList): Promise<FeatureCollection> {
   let parsedData: unknown = null;
@@ -240,7 +257,7 @@ const MiniMapViewSync: React.FC<{
 }> = ({ center, plano, buffer10km }) => {
   const map = useMap();
   useEffect(() => {
-    if (plano >= 2 && buffer10km) {
+    if (plano >= 2 && plano <= 6 && buffer10km) {
       const [minX, minY, maxX, maxY] = turf.bbox(buffer10km);
       map.fitBounds(
         [
@@ -345,7 +362,7 @@ const MiniMapLocator: React.FC<MiniMapLocatorProps> = ({
 };
 
 const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> = ({ data, plano }) => {
-  if (plano !== 1 || !data) return null;
+  if ((plano !== 1 && plano !== 7) || !data) return null;
   return (
     <>
       {data.features.map((f, i) => {
@@ -376,6 +393,500 @@ const SmartLabels: React.FC<{ data: FeatureCollection | null; plano: number }> =
   );
 };
 
+const ZebraFrame: React.FC<{ frameData: FrameData | null }> = ({ frameData }) => {
+  if (!frameData) return null;
+  const { w, h, xTicks, yTicks } = frameData;
+  const borderWeight = 8;
+  const xEdges = [0, ...xTicks.map((t) => t.x).filter((x) => x > 0 && x < w).sort((a, b) => a - b), w];
+  const yEdges = [0, ...yTicks.map((t) => t.y).filter((y) => y > 0 && y < h).sort((a, b) => a - b), h];
+  const segments: React.ReactNode[] = [];
+
+  for (let i = 0; i < xEdges.length - 1; i++) {
+    const left = xEdges[i];
+    const width = xEdges[i + 1] - left;
+    const isBlack = i % 2 === 0;
+    segments.push(
+      <div key={`tx-${i}-${left}`} style={{ position: 'absolute', top: 0, left, width, height: borderWeight, backgroundColor: isBlack ? '#000' : '#fff', zIndex: 1000 }} />,
+      <div key={`bx-${i}-${left}`} style={{ position: 'absolute', bottom: 0, left, width, height: borderWeight, backgroundColor: isBlack ? '#fff' : '#000', zIndex: 1000 }} />
+    );
+  }
+  for (let i = 0; i < yEdges.length - 1; i++) {
+    const top = yEdges[i];
+    const height = yEdges[i + 1] - top;
+    const isBlack = i % 2 === 0;
+    segments.push(
+      <div key={`ly-${i}-${top}`} style={{ position: 'absolute', left: 0, top, width: borderWeight, height, backgroundColor: isBlack ? '#fff' : '#000', zIndex: 1000 }} />,
+      <div key={`ry-${i}-${top}`} style={{ position: 'absolute', right: 0, top, width: borderWeight, height, backgroundColor: isBlack ? '#000' : '#fff', zIndex: 1000 }} />
+    );
+  }
+  return <>{segments}</>;
+};
+
+const CoordinateLabels: React.FC<{ frameData: FrameData | null }> = ({ frameData }) => {
+  if (!frameData) return null;
+  const { w, h, xTicks, yTicks } = frameData;
+  const labelStyle: React.CSSProperties = {
+    position: 'absolute',
+    fontSize: '0.62rem',
+    fontWeight: 'bold',
+    lineHeight: 1,
+    color: 'black',
+    whiteSpace: 'nowrap',
+    zIndex: 10,
+    textAlign: 'center',
+    pointerEvents: 'none',
+  };
+  const elements: React.ReactNode[] = [];
+
+  xTicks.forEach((tick) => {
+    if (tick.x > 0 && tick.x < w) {
+      elements.push(
+        <div key={`b-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, bottom: '-14px', transform: 'translate(-50%, 50%)' }}>{toDMS(tick.lon, false)}</div>,
+        <div key={`t-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, top: '-14px', transform: 'translate(-50%, -50%)' }}>{toDMS(tick.lon, false)}</div>
+      );
+    }
+  });
+  yTicks.forEach((tick) => {
+    if (tick.y > 0 && tick.y < h) {
+      elements.push(
+        <div key={`l-${tick.lat}-${tick.y}`} style={{ ...labelStyle, left: '-14px', top: tick.y, transform: 'translate(-50%, -50%) rotate(-90deg)' }}>{toDMS(tick.lat, true)}</div>,
+        <div key={`r-${tick.lat}-${tick.y}`} style={{ ...labelStyle, right: '-14px', top: tick.y, transform: 'translate(50%, -50%) rotate(90deg)' }}>{toDMS(tick.lat, true)}</div>
+      );
+    }
+  });
+  return <>{elements}</>;
+};
+
+const BaseSatelliteTileLayer: React.FC<{
+  currentPlano: number;
+  activeTemporalScene: TemporalSceneItem | null;
+  useSentinel: boolean;
+  sentinelUrl: string | null;
+}> = ({ currentPlano, activeTemporalScene, useSentinel, sentinelUrl }) => {
+  if (currentPlano === 7 && activeTemporalScene) {
+    const maxNative = activeTemporalScene.collection.includes('landsat') ? 13 : 15;
+    return (
+      <TileLayer
+        key={activeTemporalScene.tileUrl}
+        crossOrigin="anonymous"
+        url={activeTemporalScene.tileUrl}
+        opacity={1}
+        maxNativeZoom={maxNative}
+        maxZoom={18}
+      />
+    );
+  }
+
+  if (useSentinel && sentinelUrl && currentPlano === 1) {
+    return (
+      <TileLayer
+        crossOrigin="anonymous"
+        url={sentinelUrl}
+        opacity={1}
+        maxNativeZoom={15}
+        maxZoom={18}
+      />
+    );
+  }
+
+  const imageryOpacity = currentPlano === 1 || currentPlano === 7 ? 0.85 : 0.55;
+  return (
+    <TileLayer
+      opacity={imageryOpacity}
+      crossOrigin="anonymous"
+      url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+      maxNativeZoom={18}
+      maxZoom={18}
+    />
+  );
+};
+
+const SidebarFormPanel: React.FC<{
+  isSidebarOpen: boolean;
+  onClose: () => void;
+  register: UseFormRegister<FormData>;
+  handleSubmit: UseFormHandleSubmit<FormData>;
+  onSubmit: (data: FormData) => Promise<void>;
+}> = ({ isSidebarOpen, onClose, register, handleSubmit, onSubmit }) => (
+  <div
+    className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`}
+    style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}
+  >
+    <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
+      <h5 className="fw-bold mb-0" style={{ color: '#163f37' }}>Datos del Dictamen</h5>
+      <button type="button" className="btn-close" onClick={onClose} aria-label="Close"></button>
+    </div>
+    <div className="p-3">
+      <form
+        onSubmit={(e) => {
+          void handleSubmit(onSubmit)(e);
+        }}
+        className="d-flex flex-column gap-3"
+      >
+        <div>
+          <label htmlFor="expId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Expediente</label>
+          <input id="expId" type="text" className="form-control form-control-sm" {...register('expediente', { required: true })} />
+        </div>
+        <div>
+          <label htmlFor="actId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Acta de Inspección</label>
+          <input id="actId" type="text" className="form-control form-control-sm" {...register('acta')} />
+        </div>
+        <div>
+          <label htmlFor="datId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Fecha de Inspección</label>
+          <input id="datId" type="date" className="form-control form-control-sm" {...register('targetDate', { required: true })} />
+        </div>
+        <div className="row">
+          <div className="col-6">
+            <label htmlFor="estId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Estado</label>
+            <input id="estId" type="text" className="form-control form-control-sm" {...register('estado')} />
+          </div>
+          <div className="col-6">
+            <label htmlFor="munId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Municipio</label>
+            <input id="munId" type="text" className="form-control form-control-sm" {...register('municipio')} />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="vegId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Tipo de Vegetación</label>
+          <input id="vegId" type="text" className="form-control form-control-sm" {...register('vegetacion')} />
+        </div>
+        <div>
+          <label htmlFor="fileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Cargar Archivos Espaciales</label>
+          <input id="fileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('polygonFile', { required: true })} />
+        </div>
+        <div>
+          <label htmlFor="microFileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>
+            Microcuenca SIATL <span className="text-muted fw-normal">(Opcional)</span>
+          </label>
+          <input id="microFileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('microcuencaFile')} />
+        </div>
+        <button type="submit" className="btn text-white fw-bold mt-2" style={{ backgroundColor: '#163f37' }}>
+          Generar Previsualización
+        </button>
+      </form>
+    </div>
+  </div>
+);
+
+const LayerFilterBar: React.FC<{
+  layerFilterMode: LayerFilterMode;
+  setLayerFilterMode: (mode: LayerFilterMode) => void;
+}> = ({ layerFilterMode, setLayerFilterMode }) => (
+  <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap justify-content-between align-items-center gap-3 w-100">
+    <div className="d-flex align-items-center gap-2">
+      <i className="bi bi-funnel-fill" style={{ color: '#163f37' }}></i>
+      <span className="fw-bold text-dark" style={{ fontSize: '0.85rem' }}>
+        Criterio de activación de capas:
+      </span>
+    </div>
+
+    <div className="btn-group btn-group-sm" aria-label="Criterio de activación de capas">
+      <button
+        type="button"
+        onClick={() => setLayerFilterMode('intersect')}
+        className={`btn ${layerFilterMode === 'intersect' ? 'text-white fw-bold' : 'btn-outline-secondary'}`}
+        style={layerFilterMode === 'intersect' ? { backgroundColor: '#163f37', borderColor: '#163f37' } : undefined}
+      >
+        <i className="bi bi-bullseye me-1"></i>
+        Capas intersectadas
+      </button>
+      <button
+        type="button"
+        onClick={() => setLayerFilterMode('buffer10km')}
+        className={`btn ${layerFilterMode === 'buffer10km' ? 'text-white fw-bold' : 'btn-outline-secondary'}`}
+        style={layerFilterMode === 'buffer10km' ? { backgroundColor: '#163f37', borderColor: '#163f37' } : undefined}
+      >
+        <i className="bi bi-record-circle me-1"></i>
+        Buffer 10 KM
+      </button>
+    </div>
+
+    <span className="text-muted" style={{ fontSize: '0.78rem' }}>
+      {layerFilterMode === 'intersect'
+        ? 'Activa solo las capas y coberturas que intersectan el polígono.'
+        : 'Activa todas las coberturas dentro del radio de 10 km.'}
+    </span>
+  </div>
+);
+
+const TemporalControlPanel: React.FC<{
+  historicalDate: string;
+  setHistoricalDate: (val: string) => void;
+  temporalCollection: SatelliteCollectionOption;
+  setTemporalCollection: (val: SatelliteCollectionOption) => void;
+  temporalWindowDays: number;
+  setTemporalWindowDays: (val: number) => void;
+  temporalMaxCloud: number;
+  setTemporalMaxCloud: (val: number) => void;
+  temporalPreset: SpectralPreset;
+  setTemporalPreset: (val: SpectralPreset) => void;
+  temporalScenes: TemporalSceneItem[];
+  selectedTemporalSceneId: string;
+  setSelectedTemporalSceneId: (val: string) => void;
+  isLoadingTemporal: boolean;
+  temporalError: string | null;
+}> = ({
+  historicalDate,
+  setHistoricalDate,
+  temporalCollection,
+  setTemporalCollection,
+  temporalWindowDays,
+  setTemporalWindowDays,
+  temporalMaxCloud,
+  setTemporalMaxCloud,
+  temporalPreset,
+  setTemporalPreset,
+  temporalScenes,
+  selectedTemporalSceneId,
+  setSelectedTemporalSceneId,
+  isLoadingTemporal,
+  temporalError,
+}) => (
+  <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap align-items-end gap-2 w-100">
+    <div>
+      <label htmlFor="tempHistDate" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+        Fecha histórica:
+      </label>
+      <input
+        id="tempHistDate"
+        type="date"
+        className="form-control form-control-sm"
+        value={historicalDate}
+        max={new Date().toISOString().split('T')[0]}
+        onChange={(e) => setHistoricalDate(e.target.value)}
+      />
+    </div>
+
+    <div>
+      <label htmlFor="tempCollection" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+        Catálogo satelital:
+      </label>
+      <select
+        id="tempCollection"
+        className="form-select form-select-sm"
+        value={temporalCollection}
+        onChange={(e) => setTemporalCollection(e.target.value as SatelliteCollectionOption)}
+      >
+        <option value="sentinel-2-l2a">Copernicus Sentinel-2 (2015–hoy)</option>
+        <option value="landsat-c2-l2">Landsat 4-9 Histórico (1982–hoy)</option>
+        <option value="all">Todos los sensores</option>
+      </select>
+    </div>
+
+    <div>
+      <label htmlFor="tempWindow" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+        Ventana búsqueda:
+      </label>
+      <select
+        id="tempWindow"
+        className="form-select form-select-sm"
+        value={temporalWindowDays}
+        onChange={(e) => setTemporalWindowDays(Number(e.target.value))}
+      >
+        <option value={15}>± 15 días</option>
+        <option value={30}>± 30 días</option>
+        <option value={60}>± 60 días</option>
+        <option value={120}>± 120 días</option>
+        <option value={180}>± 180 días</option>
+      </select>
+    </div>
+
+    <div>
+      <label htmlFor="tempCloud" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+        Nubes máx.:
+      </label>
+      <select
+        id="tempCloud"
+        className="form-select form-select-sm"
+        value={temporalMaxCloud}
+        onChange={(e) => setTemporalMaxCloud(Number(e.target.value))}
+      >
+        <option value={15}>&lt; 15%</option>
+        <option value={35}>&lt; 35%</option>
+        <option value={60}>&lt; 60%</option>
+        <option value={90}>&lt; 90%</option>
+      </select>
+    </div>
+
+    <div>
+      <label htmlFor="tempPreset" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+        Composición:
+      </label>
+      <select
+        id="tempPreset"
+        className="form-select form-select-sm"
+        value={temporalPreset}
+        onChange={(e) => setTemporalPreset(e.target.value as SpectralPreset)}
+      >
+        <option value="rgb">Color Natural (RGB)</option>
+        <option value="nir">Infrarrojo (Vegetación)</option>
+        <option value="swir">SWIR (Suelo / Incendios)</option>
+      </select>
+    </div>
+
+    <div className="flex-grow-1" style={{ minWidth: '230px' }}>
+      <label htmlFor="tempSceneSelect" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+        Escena disponible ({temporalScenes.length}):
+      </label>
+      <select
+        id="tempSceneSelect"
+        className="form-select form-select-sm"
+        value={selectedTemporalSceneId}
+        onChange={(e) => setSelectedTemporalSceneId(e.target.value)}
+        disabled={temporalScenes.length === 0}
+      >
+        {temporalScenes.length === 0 ? (
+          <option value="">{isLoadingTemporal ? 'Buscando escenas...' : 'Sin escenas en rango'}</option>
+        ) : (
+          temporalScenes.map((scene) => (
+            <option key={scene.id} value={scene.id}>
+              {new Date(scene.date).toLocaleDateString('es-MX')} — {scene.platform.toUpperCase()} ({scene.cloudCover}% nubes)
+            </option>
+          ))
+        )}
+      </select>
+    </div>
+
+    {temporalError && (
+      <div className="w-100 text-danger small fw-semibold mt-1">
+        <i className="bi bi-exclamation-triangle-fill me-1"></i>
+        {temporalError}
+      </div>
+    )}
+  </div>
+);
+
+const PLANO_BUTTONS = [
+  { id: 1, icon: 'bi-geo-alt', label: 'Ubicación Geográfica' },
+  { id: 2, icon: 'bi-tree', label: 'Relevancia Ecológica' },
+  { id: 3, icon: 'bi-flower1', label: 'Tipo de Vegetación' },
+  { id: 4, icon: 'bi-cloud-sun', label: 'Unidades Climáticas' },
+  { id: 5, icon: 'bi-layers', label: 'Edafología' },
+  { id: 6, icon: 'bi-water', label: 'Hidrología' },
+  { id: 7, icon: 'bi-clock-history', label: 'Espacio Temporal' },
+] as const;
+
+const PlanosNavBar: React.FC<{
+  currentPlano: number;
+  onSelectPlano: (plano: number) => void;
+  onRecenter: () => void;
+  sentinelUrl: string | null;
+  useSentinel: boolean;
+  setUseSentinel: (val: boolean) => void;
+}> = ({ currentPlano, onSelectPlano, onRecenter, sentinelUrl, useSentinel, setUseSentinel }) => (
+  <div
+    className="bg-dark text-white p-3 d-flex flex-wrap justify-content-center align-items-center gap-2 shadow rounded w-100"
+    style={{ borderTop: '4px solid #d6b56a' }}
+  >
+    <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
+    {PLANO_BUTTONS.map((btn) => (
+      <button
+        key={btn.id}
+        type="button"
+        onClick={() => onSelectPlano(btn.id)}
+        className={`btn btn-sm ${currentPlano === btn.id ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
+      >
+        <i className={`bi ${btn.icon} me-1`}></i>
+        {' '}
+        {btn.label}
+      </button>
+    ))}
+
+    <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
+
+    <button
+      type="button"
+      onClick={onRecenter}
+      className="btn btn-sm btn-outline-warning"
+      title="Encuadrar la vista sobre el polígono inspeccionado"
+    >
+      <i className="bi bi-arrows-collapse me-1"></i>
+      {' '}
+      Centrar Polígono
+    </button>
+
+    {sentinelUrl && currentPlano === 1 && (
+      <>
+        <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
+        <button
+          type="button"
+          onClick={() => setUseSentinel(!useSentinel)}
+          className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}
+        >
+          <i className="bi bi-satellite me-1"></i>
+          {' '}
+          {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
+        </button>
+      </>
+    )}
+  </div>
+);
+
+function useMapImageExport(
+  printRef: React.RefObject<HTMLDivElement | null>,
+  mapRef: L.Map | null,
+  currentPlano: number,
+  expediente?: string,
+) {
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+
+  const handleDownloadImage = useCallback(() => {
+    const node = printRef.current;
+    if (!node) return;
+
+    setIsExporting(true);
+    window.scrollTo(0, 0);
+
+    if (mapRef) {
+      mapRef.setView(mapRef.getCenter(), mapRef.getZoom(), { animate: false });
+    }
+
+    const EXPORT_SCALE = 3;
+    const baseWidth = node.offsetWidth || 1132;
+    const baseHeight = node.offsetHeight || 816;
+
+    setTimeout(() => {
+      domtoimage
+        .toPng(node, {
+          bgcolor: '#ffffff',
+          width: baseWidth * EXPORT_SCALE,
+          height: baseHeight * EXPORT_SCALE,
+          style: {
+            margin: '0',
+            width: `${baseWidth}px`,
+            height: `${baseHeight}px`,
+            transform: `scale(${EXPORT_SCALE})`,
+            transformOrigin: 'top left',
+          },
+          filter: (domNode: Node) => {
+            if (domNode instanceof HTMLElement) {
+              return (
+                !domNode.classList.contains('ignore-print') &&
+                !domNode.classList.contains('leaflet-control-container')
+              );
+            }
+            return true;
+          },
+        })
+        .then((dataUrl) => {
+          const link = document.createElement('a');
+          const planoName = PLANO_FILE_NAMES[currentPlano] ?? 'Ubicacion_Geografica';
+          link.download = `Mapa_Oficial_${expediente || 'Dictamen'}_${planoName}.png`;
+          link.href = dataUrl;
+          link.click();
+        })
+        .catch((error) => {
+          console.error('Error al exportar la imagen:', error);
+          alert('Error al generar la imagen.');
+        })
+        .finally(() => {
+          setIsExporting(false);
+        });
+    }, 800);
+  }, [printRef, mapRef, currentPlano, expediente]);
+
+  return { isExporting, handleDownloadImage };
+}
+
 export const GeoViewer: React.FC = () => {
   const { register, handleSubmit } = useForm<FormData>();
   const [mapCenter] = useState<[number, number]>([19.4326, -99.1332]);
@@ -386,7 +897,6 @@ export const GeoViewer: React.FC = () => {
   const [currentPlano, setCurrentPlano] = useState<number>(1);
   const [activatedPlanos, setActivatedPlanos] = useState<Record<number, boolean>>({ 1: true });
   const [layerFilterMode, setLayerFilterMode] = useState<LayerFilterMode>('buffer10km');
-  const [isExporting, setIsExporting] = useState<boolean>(false);
   const [frameData, setFrameData] = useState<FrameData | null>(null);
   const [mapRef, setMapRef] = useState<L.Map | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
@@ -394,6 +904,20 @@ export const GeoViewer: React.FC = () => {
   const [recenterTrigger, setRecenterTrigger] = useState<number>(0);
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
+
+  // Estados para Plano 7: Análisis Espacio-Temporal
+  const [historicalDate, setHistoricalDate] = useState<string>('2018-03-15');
+  const [temporalWindowDays, setTemporalWindowDays] = useState<number>(60);
+  const [temporalMaxCloud, setTemporalMaxCloud] = useState<number>(35);
+  const [temporalCollection, setTemporalCollection] = useState<SatelliteCollectionOption>('sentinel-2-l2a');
+  const [temporalPreset, setTemporalPreset] = useState<SpectralPreset>('rgb');
+
+  const { isExporting, handleDownloadImage } = useMapImageExport(
+    printRef,
+    mapRef,
+    currentPlano,
+    previewData?.expediente,
+  );
 
   const handleSelectPlano = useCallback((plano: number) => {
     setCurrentPlano(plano);
@@ -456,7 +980,26 @@ export const GeoViewer: React.FC = () => {
     } catch { return null; }
   }, [geoJsonData]);
 
-  const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(predioCentroid, previewData?.targetDate);
+  const { sentinelUrl, sentinelMetadata, useSentinel, setUseSentinel } = useSentinelData(
+    predioCentroid,
+    previewData?.targetDate
+  );
+
+  const {
+    scenes: temporalScenes,
+    activeScene: activeTemporalScene,
+    selectedSceneId: selectedTemporalSceneId,
+    setSelectedSceneId: setSelectedTemporalSceneId,
+    isLoadingTemporal,
+    temporalError,
+  } = useTemporalImagery(predioCentroid, Boolean(activatedPlanos[7]), {
+    historicalDate,
+    windowDays: temporalWindowDays,
+    maxCloud: temporalMaxCloud,
+    collection: temporalCollection,
+    preset: temporalPreset,
+  });
+
   const { ecoNearby, isLoadingEco } = useEcoLayers(
     activatedPlanos[2] ? userPolygonGeom : null,
     layerFilterMode,
@@ -581,70 +1124,6 @@ export const GeoViewer: React.FC = () => {
     }
   };
 
-  const handleDownloadImage = () => {
-    const node = printRef.current;
-    if (!node) return;
-
-    setIsExporting(true);
-    window.scrollTo(0, 0);
-
-    if (mapRef) {
-      mapRef.setView(mapRef.getCenter(), mapRef.getZoom(), { animate: false });
-    }
-
-    // Supermuestreo 3x sobre el lienzo extendido (1132x816 px) -> 3396x2448 px (~288 DPI)
-    const EXPORT_SCALE = 3;
-    const baseWidth = node.offsetWidth || 1132;
-    const baseHeight = node.offsetHeight || 816;
-
-    setTimeout(() => {
-      domtoimage
-        .toPng(node, {
-          bgcolor: '#ffffff',
-          width: baseWidth * EXPORT_SCALE,
-          height: baseHeight * EXPORT_SCALE,
-          style: {
-            margin: '0',
-            width: `${baseWidth}px`,
-            height: `${baseHeight}px`,
-            transform: `scale(${EXPORT_SCALE})`,
-            transformOrigin: 'top left',
-          },
-          filter: (domNode: Node) => {
-            if (domNode instanceof HTMLElement) {
-              return (
-                !domNode.classList.contains('ignore-print') &&
-                !domNode.classList.contains('leaflet-control-container')
-              );
-            }
-            return true;
-          },
-        })
-        .then((dataUrl) => {
-          const link = document.createElement('a');
-          const planoNames: Record<number, string> = {
-            1: 'Ubicacion_Geografica',
-            2: 'Relevancia_Ecologica',
-            3: 'Tipo_Vegetacion',
-            4: 'Unidades_Climaticas',
-            5: 'Edafologia',
-            6: 'Hidrologia_Cuencas_Corrientes',
-          };
-          const planoName = planoNames[currentPlano] ?? 'Ubicacion_Geografica';
-          link.download = `Mapa_Oficial_${previewData?.expediente || 'Dictamen'}_${planoName}.png`;
-          link.href = dataUrl;
-          link.click();
-        })
-        .catch((error) => {
-          console.error('Error al exportar la imagen:', error);
-          alert('Error al generar la imagen.');
-        })
-        .finally(() => {
-          setIsExporting(false);
-        });
-    }, 800);
-  };
-
   const { totalArea, areaDetails } = useMemo(() => {
     if (!geoJsonData) return { totalArea: '0.00', areaDetails: [] };
     let areaSum = 0;
@@ -661,134 +1140,26 @@ export const GeoViewer: React.FC = () => {
     return { totalArea: areaSum.toFixed(2), areaDetails: details };
   }, [geoJsonData]);
 
-  const renderZebraFrame = () => {
-    if (!frameData) return null;
-    const { w, h, xTicks, yTicks } = frameData;
-    const borderWeight = 8;
-    const xEdges = [0, ...xTicks.map((t) => t.x).filter((x) => x > 0 && x < w).sort((a, b) => a - b), w];
-    const yEdges = [0, ...yTicks.map((t) => t.y).filter((y) => y > 0 && y < h).sort((a, b) => a - b), h];
-    const segments: React.ReactNode[] = [];
-
-    for (let i = 0; i < xEdges.length - 1; i++) {
-      const left = xEdges[i];
-      const width = xEdges[i + 1] - left;
-      const isBlack = i % 2 === 0;
-      segments.push(
-        <div key={`tx-${i}-${left}`} style={{ position: 'absolute', top: 0, left, width, height: borderWeight, backgroundColor: isBlack ? '#000' : '#fff', zIndex: 1000 }} />,
-        <div key={`bx-${i}-${left}`} style={{ position: 'absolute', bottom: 0, left, width, height: borderWeight, backgroundColor: isBlack ? '#fff' : '#000', zIndex: 1000 }} />
-      );
-    }
-    for (let i = 0; i < yEdges.length - 1; i++) {
-      const top = yEdges[i];
-      const height = yEdges[i + 1] - top;
-      const isBlack = i % 2 === 0;
-      segments.push(
-        <div key={`ly-${i}-${top}`} style={{ position: 'absolute', left: 0, top, width: borderWeight, height, backgroundColor: isBlack ? '#fff' : '#000', zIndex: 1000 }} />,
-        <div key={`ry-${i}-${top}`} style={{ position: 'absolute', right: 0, top, width: borderWeight, height, backgroundColor: isBlack ? '#000' : '#fff', zIndex: 1000 }} />
-      );
-    }
-    return segments;
-  };
-
-  const renderLabels = () => {
-    if (!frameData) return null;
-    const { w, h, xTicks, yTicks } = frameData;
-    const labelStyle: React.CSSProperties = {
-      position: 'absolute',
-      fontSize: '0.62rem',
-      fontWeight: 'bold',
-      lineHeight: 1,
-      color: 'black',
-      whiteSpace: 'nowrap',
-      zIndex: 10,
-      textAlign: 'center',
-      pointerEvents: 'none',
-    };
-    const elements: React.ReactNode[] = [];
-
-    xTicks.forEach((tick) => {
-      if (tick.x > 0 && tick.x < w) {
-        elements.push(
-          <div key={`b-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, bottom: '-14px', transform: 'translate(-50%, 50%)' }}>{toDMS(tick.lon, false)}</div>,
-          <div key={`t-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, top: '-14px', transform: 'translate(-50%, -50%)' }}>{toDMS(tick.lon, false)}</div>
-        );
-      }
-    });
-    yTicks.forEach((tick) => {
-      if (tick.y > 0 && tick.y < h) {
-        elements.push(
-          <div key={`l-${tick.lat}-${tick.y}`} style={{ ...labelStyle, left: '-14px', top: tick.y, transform: 'translate(-50%, -50%) rotate(-90deg)' }}>{toDMS(tick.lat, true)}</div>,
-          <div key={`r-${tick.lat}-${tick.y}`} style={{ ...labelStyle, right: '-14px', top: tick.y, transform: 'translate(50%, -50%) rotate(90deg)' }}>{toDMS(tick.lat, true)}</div>
-        );
-      }
-    });
-    return elements;
-  };
-
-  const nombresPlanos = ['Plano 1', 'Plano 2', 'Plano 3', 'Plano 4', 'Plano 5', 'Plano 6'];
-  const nombreActual = nombresPlanos[currentPlano - 1];
+  const nombreActual = NOMBRES_PLANOS[currentPlano - 1];
   const isAnyLayerLoading =
-    isLoadingEco || isLoadingVeg || isLoadingClimate || isLoadingEdafologia || isLoadingHidrologia;
+    isLoadingEco ||
+    isLoadingVeg ||
+    isLoadingClimate ||
+    isLoadingEdafologia ||
+    isLoadingHidrologia ||
+    isLoadingTemporal;
 
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
       <div className="d-flex flex-grow-1 position-relative overflow-hidden w-100 rounded">
 
-        {/* PANEL LATERAL */}
-        <div className={`bg-white border-end shadow-sm overflow-auto transition-all ${isSidebarOpen ? 'd-block' : 'd-none'}`} style={{ zIndex: 1050, width: '320px', position: 'absolute', height: '100%', left: 0 }}>
-          <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
-            <h5 className="fw-bold mb-0" style={{ color: '#163f37' }}>Datos del Dictamen</h5>
-            <button type="button" className="btn-close" onClick={() => setIsSidebarOpen(false)} aria-label="Close"></button>
-          </div>
-          <div className="p-3">
-            <form
-              onSubmit={(e) => {
-                void handleSubmit(onSubmit)(e);
-              }}
-              className="d-flex flex-column gap-3"
-            >
-              <div>
-                <label htmlFor="expId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Expediente</label>
-                <input id="expId" type="text" className="form-control form-control-sm" {...register('expediente', { required: true })} />
-              </div>
-              <div>
-                <label htmlFor="actId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Acta de Inspección</label>
-                <input id="actId" type="text" className="form-control form-control-sm" {...register('acta')} />
-              </div>
-              <div>
-                <label htmlFor="datId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Fecha de Inspección</label>
-                <input id="datId" type="date" className="form-control form-control-sm" {...register('targetDate', { required: true })} />
-              </div>
-              <div className="row">
-                <div className="col-6">
-                  <label htmlFor="estId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Estado</label>
-                  <input id="estId" type="text" className="form-control form-control-sm" {...register('estado')} />
-                </div>
-                <div className="col-6">
-                  <label htmlFor="munId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Municipio</label>
-                  <input id="munId" type="text" className="form-control form-control-sm" {...register('municipio')} />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="vegId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Tipo de Vegetación</label>
-                <input id="vegId" type="text" className="form-control form-control-sm" {...register('vegetacion')} />
-              </div>
-              <div>
-                <label htmlFor="fileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Cargar Archivos Espaciales</label>
-                <input id="fileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('polygonFile', { required: true })} />
-              </div>
-              <div>
-                <label htmlFor="microFileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>
-                  Microcuenca SIATL <span className="text-muted fw-normal">(Opcional)</span>
-                </label>
-                <input id="microFileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('microcuencaFile')} />
-              </div>
-              <button type="submit" className="btn text-white fw-bold mt-2" style={{ backgroundColor: '#163f37' }}>
-                Generar Previsualización
-              </button>
-            </form>
-          </div>
-        </div>
+        <SidebarFormPanel
+          isSidebarOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          register={register}
+          handleSubmit={handleSubmit}
+          onSubmit={onSubmit}
+        />
 
         {/* ÁREA CENTRAL Y LIENZO CARTOGRÁFICO */}
         <div className="flex-grow-1 position-relative p-0 d-flex flex-column align-items-center" style={{ backgroundColor: '#e9ecef', overflowY: 'auto' }}>
@@ -828,8 +1199,8 @@ export const GeoViewer: React.FC = () => {
                   border: '2px solid black',
                 }}
               >
-                {renderLabels()}
-                {renderZebraFrame()}
+                <CoordinateLabels frameData={frameData} />
+                <ZebraFrame frameData={frameData} />
 
                 <div className="h-100 w-100 position-relative bg-white" style={{ outline: '1px solid black' }}>
                   <div aria-hidden="true" style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 1000, pointerEvents: 'none' }}>
@@ -846,7 +1217,9 @@ export const GeoViewer: React.FC = () => {
                   {isAnyLayerLoading && (
                     <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
                       <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
-                      <span className="small fw-semibold text-dark">Consultando coberturas SIG...</span>
+                      <span className="small fw-semibold text-dark">
+                        {isLoadingTemporal ? 'Buscando escenas satelitales...' : 'Consultando coberturas SIG...'}
+                      </span>
                     </output>
                   )}
 
@@ -864,13 +1237,24 @@ export const GeoViewer: React.FC = () => {
                     <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
 
                     {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
-                    <InvalidateMap dependencies={[geoJsonData, useSentinel, isSidebarOpen, selectedVegSerie, layerFilterMode]} />
+                    <InvalidateMap
+                      dependencies={[
+                        geoJsonData,
+                        useSentinel,
+                        isSidebarOpen,
+                        selectedVegSerie,
+                        layerFilterMode,
+                        currentPlano,
+                        activeTemporalScene?.tileUrl,
+                      ]}
+                    />
 
-                    {useSentinel && sentinelUrl && currentPlano === 1 ? (
-                      <TileLayer crossOrigin="anonymous" url={sentinelUrl} opacity={1} maxNativeZoom={15} maxZoom={18} />
-                    ) : (
-                      <TileLayer opacity={currentPlano === 1 ? 0.85 : 0.55} crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
-                    )}
+                    <BaseSatelliteTileLayer
+                      currentPlano={currentPlano}
+                      activeTemporalScene={activeTemporalScene}
+                      useSentinel={useSentinel}
+                      sentinelUrl={sentinelUrl}
+                    />
 
                     <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
 
@@ -903,7 +1287,7 @@ export const GeoViewer: React.FC = () => {
                     )}
 
                     {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
-                    {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
+                    {(currentPlano === 1 || currentPlano === 7) && <SmartLabels data={geoJsonData} plano={currentPlano} />}
 
                   </MapContainer>
                 </div>
@@ -993,6 +1377,15 @@ export const GeoViewer: React.FC = () => {
                       currentViewportBbox={currentViewportBbox}
                     />
                   )}
+                  {currentPlano === 7 && (
+                    <LegendEspacioTemporal
+                      targetDate={previewData.targetDate}
+                      activeScene={activeTemporalScene}
+                      preset={temporalPreset}
+                      areaDetails={areaDetails}
+                      totalArea={totalArea}
+                    />
+                  )}
 
                   {/* SISTEMA DE REFERENCIA */}
                   <div className="bg-white border border-dark">
@@ -1013,95 +1406,41 @@ export const GeoViewer: React.FC = () => {
               className="w-100 d-flex flex-column align-items-center gap-2 ignore-print mb-4"
               style={{ maxWidth: '1132px' }}
             >
-              {/* SUBMENÚ EXTERNO: CRITERIO DE ACTIVACIÓN DE CAPAS */}
-              <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap justify-content-between align-items-center gap-3 w-100">
-                <div className="d-flex align-items-center gap-2">
-                  <i className="bi bi-funnel-fill" style={{ color: '#163f37' }}></i>
-                  <span className="fw-bold text-dark" style={{ fontSize: '0.85rem' }}>
-                    Criterio de activación de capas:
-                  </span>
-                </div>
+              {currentPlano >= 2 && currentPlano <= 6 && (
+                <LayerFilterBar
+                  layerFilterMode={layerFilterMode}
+                  setLayerFilterMode={setLayerFilterMode}
+                />
+              )}
 
-                <div className="btn-group btn-group-sm" aria-label="Criterio de activación de capas">
-                  <button
-                    type="button"
-                    onClick={() => setLayerFilterMode('intersect')}
-                    className={`btn ${
-                      layerFilterMode === 'intersect' ? 'text-white fw-bold' : 'btn-outline-secondary'
-                    }`}
-                    style={
-                      layerFilterMode === 'intersect'
-                        ? { backgroundColor: '#163f37', borderColor: '#163f37' }
-                        : undefined
-                    }
-                  >
-                    <i className="bi bi-bullseye me-1"></i>
-                    Capas intersectadas
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLayerFilterMode('buffer10km')}
-                    className={`btn ${
-                      layerFilterMode === 'buffer10km' ? 'text-white fw-bold' : 'btn-outline-secondary'
-                    }`}
-                    style={
-                      layerFilterMode === 'buffer10km'
-                        ? { backgroundColor: '#163f37', borderColor: '#163f37' }
-                        : undefined
-                    }
-                  >
-                    <i className="bi bi-record-circle me-1"></i>
-                    Buffer 10 KM
-                  </button>
-                </div>
+              {currentPlano === 7 && (
+                <TemporalControlPanel
+                  historicalDate={historicalDate}
+                  setHistoricalDate={setHistoricalDate}
+                  temporalCollection={temporalCollection}
+                  setTemporalCollection={setTemporalCollection}
+                  temporalWindowDays={temporalWindowDays}
+                  setTemporalWindowDays={setTemporalWindowDays}
+                  temporalMaxCloud={temporalMaxCloud}
+                  setTemporalMaxCloud={setTemporalMaxCloud}
+                  temporalPreset={temporalPreset}
+                  setTemporalPreset={setTemporalPreset}
+                  temporalScenes={temporalScenes}
+                  selectedTemporalSceneId={selectedTemporalSceneId}
+                  setSelectedTemporalSceneId={setSelectedTemporalSceneId}
+                  isLoadingTemporal={isLoadingTemporal}
+                  temporalError={temporalError}
+                />
+              )}
 
-                <span className="text-muted" style={{ fontSize: '0.78rem' }}>
-                  {layerFilterMode === 'intersect'
-                    ? 'Activa solo las capas y coberturas que intersectan el polígono.'
-                    : 'Activa todas las coberturas dentro del radio de 10 km.'}
-                </span>
-              </div>
-
-              {/* BARRA DE VISTAS / PLANOS */}
-              <div
-                className="bg-dark text-white p-3 d-flex flex-wrap justify-content-center align-items-center gap-2 shadow rounded w-100"
-                style={{ borderTop: '4px solid #d6b56a' }}
-              >
-                <span className="fw-bold me-1" style={{ fontSize: '0.9rem' }}>Vistas:</span>
-                <button type="button" onClick={() => handleSelectPlano(1)} className={`btn btn-sm ${currentPlano === 1 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                  <i className="bi bi-geo-alt me-1"></i> Ubicación Geográfica
-                </button>
-                <button type="button" onClick={() => handleSelectPlano(2)} className={`btn btn-sm ${currentPlano === 2 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                  <i className="bi bi-tree me-1"></i> Relevancia Ecológica
-                </button>
-                <button type="button" onClick={() => handleSelectPlano(3)} className={`btn btn-sm ${currentPlano === 3 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                  <i className="bi bi-flower1 me-1"></i> Tipo de Vegetación
-                </button>
-                <button type="button" onClick={() => handleSelectPlano(4)} className={`btn btn-sm ${currentPlano === 4 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                  <i className="bi bi-cloud-sun me-1"></i> Unidades Climáticas
-                </button>
-                <button type="button" onClick={() => handleSelectPlano(5)} className={`btn btn-sm ${currentPlano === 5 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                  <i className="bi bi-layers me-1"></i> Edafología
-                </button>
-                <button type="button" onClick={() => handleSelectPlano(6)} className={`btn btn-sm ${currentPlano === 6 ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}>
-                  <i className="bi bi-water me-1"></i> Hidrología
-                </button>
-
-                <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
-
-                <button type="button" onClick={() => setRecenterTrigger(prev => prev + 1)} className="btn btn-sm btn-outline-warning" title="Encuadrar la vista sobre el polígono inspeccionado">
-                  <i className="bi bi-arrows-collapse me-1"></i> Centrar Polígono
-                </button>
-
-                {sentinelUrl && currentPlano === 1 && (
-                  <>
-                    <div className="vr bg-light mx-1" style={{ opacity: 0.5, height: '24px' }}></div>
-                    <button type="button" onClick={() => setUseSentinel(!useSentinel)} className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}>
-                      <i className="bi bi-satellite me-1"></i> {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
-                    </button>
-                  </>
-                )}
-              </div>
+              <PlanosNavBar
+                currentPlano={currentPlano}
+                onSelectPlano={handleSelectPlano}
+                onRecenter={() => setRecenterTrigger((prev) => prev + 1)}
+                sentinelUrl={sentinelUrl}
+                useSentinel={useSentinel}
+                setUseSentinel={setUseSentinel}
+              />
             </div>
           )}
         </div>

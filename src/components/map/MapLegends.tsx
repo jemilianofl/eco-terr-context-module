@@ -1,7 +1,12 @@
 import { useMemo } from 'react';
 import * as turf from '@turf/turf';
 import type { Feature, Polygon } from 'geojson';
-import type { SentinelMetadata, TypedMapFeature } from '../../hooks/useMapLayers';
+import type {
+  SentinelMetadata,
+  TypedMapFeature,
+  TemporalSceneItem,
+  SpectralPreset,
+} from '../../hooks/useMapLayers';
 import {
   ECO_LAYERS_CONFIG,
   vegSeriesOptions,
@@ -687,7 +692,7 @@ export const LegendHidrologia = ({
 
     const hasVisibleWaterBodies = cuerposAguaNearby.some(isInView);
     const visibleOrders = new Set<number>();
-    
+
     corrientesNearby.forEach((f) => {
       if (!isInView(f)) return;
       const ord = Number(f.properties?.ORDER_1);
@@ -696,7 +701,6 @@ export const LegendHidrologia = ({
       }
     });
 
-    // CORRECCIÓN: Filtrar solo las corrientes visibles. Si no hay (0), devolver array vacío []
     const displayedStrahlerItems = STRAHLER_ORDER_CONFIG.filter((item) => visibleOrders.has(item.order));
 
     return {
@@ -719,6 +723,57 @@ export const LegendHidrologia = ({
     fontSize: '0.60rem',
     lineHeight: '1.2',
     whiteSpace: 'nowrap',
+  };
+
+  const renderStrahlerList = () => {
+    if (isLoading) {
+      return (
+        <output className="text-muted d-block text-center" style={{ fontSize: '0.60rem' }}>
+          Cargando red hidrográfica...
+        </output>
+      );
+    }
+
+    if (activeHydroContext.displayedStrahlerItems.length === 0) {
+      return (
+        <output className="text-muted d-block text-center mt-2" style={{ fontSize: '0.60rem' }}>
+          Sin corrientes visibles en encuadre
+        </output>
+      );
+    }
+
+    return (
+      <div>
+        {activeHydroContext.displayedStrahlerItems.map((item) => (
+          <div key={`strahler-${item.order}`} style={rowStyle}>
+            <div
+              style={{
+                width: '24px',
+                height: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                borderRadius: '2px',
+                marginRight: '8px',
+                padding: '0 3px',
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  width: '100%',
+                  borderTop: `${item.weight}px solid ${item.color}`,
+                  display: 'block',
+                }}
+              />
+            </div>
+            <span style={labelStyle}>Orden {item.label}</span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -843,46 +898,7 @@ export const LegendHidrologia = ({
               Orden de escorrentía (Strahler):
             </div>
 
-            {isLoading ? (
-              <output className="text-muted d-block text-center" style={{ fontSize: '0.60rem' }}>
-                Cargando red hidrográfica...
-              </output>
-            ) : activeHydroContext.displayedStrahlerItems.length === 0 ? (
-              <output className="text-muted d-block text-center mt-2" style={{ fontSize: '0.60rem' }}>
-                Sin corrientes visibles en encuadre
-              </output>
-            ) : (
-              <div>
-                {activeHydroContext.displayedStrahlerItems.map((item) => (
-                  <div key={`strahler-${item.order}`} style={rowStyle}>
-                    <div
-                      style={{
-                        width: '24px',
-                        height: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: '#f1f5f9',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '2px',
-                        marginRight: '8px',
-                        padding: '0 3px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: '100%',
-                          borderTop: `${item.weight}px solid ${item.color}`,
-                          display: 'block',
-                        }}
-                      />
-                    </div>
-                    <span style={labelStyle}>Orden {item.label}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {renderStrahlerList()}
           </div>
         </div>
       </div>
@@ -892,6 +908,128 @@ export const LegendHidrologia = ({
         style={{ fontSize: '0.65rem' }}
       >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
+      </div>
+    </>
+  );
+};
+
+interface LegendEspacioTemporalProps {
+  targetDate?: string;
+  activeScene: TemporalSceneItem | null;
+  preset: SpectralPreset;
+  areaDetails: { name: string; area: string }[];
+  totalArea: string;
+}
+
+export const LegendEspacioTemporal = ({
+  targetDate,
+  activeScene,
+  preset,
+  areaDetails,
+  totalArea,
+}: LegendEspacioTemporalProps) => {
+  const presetLabels: Record<SpectralPreset, string> = {
+    rgb: 'Color Natural (RGB)',
+    nir: 'Falso Color Infrarrojo (Vegetación)',
+    swir: 'Infrarrojo de Onda Corta (SWIR)',
+  };
+
+  const sourceLabel = activeScene?.collection?.includes('landsat')
+    ? 'USGS / NASA Landsat C2 L2'
+    : 'Copernicus Sentinel-2 L2A';
+
+  const formattedHistoricalDate = activeScene?.date
+    ? new Date(activeScene.date).toLocaleDateString('es-MX')
+    : 'Sin escena seleccionada';
+
+  return (
+    <>
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+        >
+          Análisis Espacio-Temporal
+        </div>
+        <div className="p-2 text-center" style={{ fontSize: '0.62rem', lineHeight: '1.25' }}>
+          <p className="mb-1">
+            <strong>Fecha imagen histórica:</strong> {formattedHistoricalDate}
+          </p>
+          <p className="mb-0">
+            <strong>Fecha de inspección:</strong> {targetDate || 'N/A'}
+          </p>
+        </div>
+      </div>
+
+      {activeScene && (
+        <div className="bg-white mb-2 border border-dark">
+          <div
+            className="fw-bold text-white text-center mb-1"
+            style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}
+          >
+            Metadatos Satelitales
+          </div>
+          <div className="p-2 text-center" style={{ fontSize: '0.58rem', lineHeight: '1.25' }}>
+            <p className="mb-1">
+              <strong>Programa:</strong> {sourceLabel}
+            </p>
+            <p className="mb-1">
+              <strong>Sensor:</strong> {activeScene.platform.toUpperCase()}
+            </p>
+            <p className="mb-1">
+              <strong>Nubosidad:</strong> {activeScene.cloudCover}%
+            </p>
+            <p className="mb-0">
+              <strong>Bandas:</strong> {presetLabels[preset]}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+        >
+          Simbología
+        </div>
+        <div className="p-2">
+          <div className="d-flex align-items-center mb-1">
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: 'transparent',
+                border: '2px solid #ff0000',
+                marginRight: '8px',
+                flexShrink: 0,
+              }}
+            ></div>
+            <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+              Polígono(s) Inspeccionado(s)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#163f37', fontSize: '0.75rem' }}
+        >
+          Superficie:
+        </div>
+        <div className="p-2 text-center">
+          {areaDetails.map((item) => (
+            <p key={`temp-area-${item.name}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
+              <strong>{item.name}:</strong> {item.area} m²
+            </p>
+          ))}
+          <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
+          <p className="mb-0" style={{ fontSize: '0.7rem' }}>
+            <strong>Total:</strong> {totalArea} m²
+          </p>
+        </div>
       </div>
     </>
   );
