@@ -180,15 +180,15 @@ const MapUpdater: React.FC<{
   const map = useMap();
   useEffect(() => {
     if (!data || data.features.length === 0) return;
-    const paddingOpts = {
-      paddingBottomRight: [330, 30] as [number, number],
-      paddingTopLeft: [40, 40] as [number, number],
-    };
+    map.invalidateSize(false);
 
     const layer = L.geoJSON(data);
     const bounds = layer.getBounds();
     if (bounds.isValid()) {
-      map.fitBounds(bounds, { ...paddingOpts, maxZoom: 16 });
+      map.fitBounds(bounds, {
+        padding: [40, 40],
+        maxZoom: 16,
+      });
     }
   }, [data, plano, filterMode, map, trigger]);
   return null;
@@ -207,13 +207,10 @@ const ZoomCenterOnPolygon: React.FC<{ data: FeatureCollection | null }> = ({ dat
 
       const polyCenter = bounds.getCenter();
       const zoom = map.getZoom();
-      const paddingOffset = L.point((330 - 40) / 2, (30 - 40) / 2);
-      const targetPoint = map.project(polyCenter, zoom).add(paddingOffset);
-      const adjustedCenter = map.unproject(targetPoint, zoom);
 
-      if (!map.getCenter().equals(adjustedCenter, 1e-6)) {
+      if (!map.getCenter().equals(polyCenter, 1e-6)) {
         isAdjustingRef.current = true;
-        map.setView(adjustedCenter, zoom, { animate: false });
+        map.setView(polyCenter, zoom, { animate: false });
         requestAnimationFrame(() => {
           isAdjustingRef.current = false;
         });
@@ -229,7 +226,7 @@ const InvalidateMap: React.FC<{ dependencies: unknown[] }> = ({ dependencies }) 
   useEffect(() => {
     const timer = setTimeout(() => {
       map.invalidateSize(true);
-    }, 400);
+    }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, ...dependencies]);
@@ -298,13 +295,16 @@ const MiniMapLocator: React.FC<MiniMapLocatorProps> = ({
   const center = L.geoJSON(data).getBounds().getCenter();
 
   return (
-    <div className="bg-white p-1 mb-2 border border-dark" style={{ overflow: 'hidden' }}>
-      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem', padding: '2px' }}>Localización geográfica</div>
-      <div style={{ height: '110px', width: '100%', position: 'relative', border: '1px solid #444' }}>
+    <div className="bg-white p-1 mb-2 border border-dark">
+      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.72rem', padding: '2px' }}>
+        Localización geográfica
+      </div>
+      <div style={{ height: '105px', width: '100%', position: 'relative', border: '1px solid #444' }}>
         <MapContainer
           center={center}
           zoom={6}
           zoomControl={false}
+          attributionControl={false}
           dragging={false}
           scrollWheelZoom={false}
           doubleClickZoom={false}
@@ -337,7 +337,7 @@ const MiniMapLocator: React.FC<MiniMapLocatorProps> = ({
           <CircleMarker center={center} radius={3.5} color="black" weight={1} fillColor="red" fillOpacity={1} interactive={false} />
         </MapContainer>
       </div>
-      <div className="text-center mt-1" style={{ fontSize: '0.65rem', lineHeight: '1.1' }}>
+      <div className="text-center mt-1" style={{ fontSize: '0.62rem', lineHeight: '1.15' }}>
         Estado: {estado || 'N/A'}<br />Municipio: {municipio || 'N/A'}
       </div>
     </div>
@@ -485,24 +485,19 @@ export const GeoViewer: React.FC = () => {
     layerFilterMode,
   );
 
-  // Filtrar en el minimapa únicamente las capas visibles que aparecen en la leyenda
+  // Filtrar en el minimapa únicamente las capas visibles dentro del encuadre completo del mapa
   const miniVisibleLayers = useMemo(() => {
     let viewportPoly: Feature<Polygon> | null = null;
-    let hydroViewportPoly: Feature<Polygon> | null = null;
 
     if (currentViewportBbox) {
       try {
         viewportPoly = turf.bboxPolygon(currentViewportBbox);
-        const [minX, minY, maxX, maxY] = currentViewportBbox;
-        const visibleMaxX = minX + (maxX - minX) * 0.68;
-        hydroViewportPoly = turf.bboxPolygon([minX, minY, visibleMaxX, maxY]);
       } catch {
         viewportPoly = null;
-        hydroViewportPoly = null;
       }
     }
 
-    const inMainView = (f: TypedMapFeature): boolean => {
+    const inView = (f: TypedMapFeature): boolean => {
       if (!f?.geometry) return false;
       if (!viewportPoly) return true;
       try {
@@ -512,32 +507,22 @@ export const GeoViewer: React.FC = () => {
       }
     };
 
-    const inHydroView = (f: TypedMapFeature): boolean => {
-      if (!f?.geometry) return false;
-      if (!hydroViewportPoly) return true;
-      try {
-        return turf.booleanIntersects(f, hydroViewportPoly);
-      } catch {
-        return false;
-      }
-    };
-
-    const eco = ecoNearby.filter((f) => Boolean(f.properties?._layerId) && inMainView(f));
+    const eco = ecoNearby.filter((f) => Boolean(f.properties?._layerId) && inView(f));
     const veg = vegNearby.filter(
-      (f) => Boolean(f.properties?._type && f.properties?._color) && inMainView(f)
+      (f) => Boolean(f.properties?._type && f.properties?._color) && inView(f)
     );
     const climate = climateNearby.filter(
-      (f) => Boolean(f.properties?._type && f.properties?._color) && inMainView(f)
+      (f) => Boolean(f.properties?._type && f.properties?._color) && inView(f)
     );
     const edafologia = edafologiaNearby.filter(
-      (f) => Boolean(f.properties?._type && f.properties?._color) && inMainView(f)
+      (f) => Boolean(f.properties?._type && f.properties?._color) && inView(f)
     );
 
-    const cuencas = cuencasNearby.filter(inHydroView);
-    const subcuencas = subcuencasNearby.filter(inHydroView);
-    const cuerposAgua = cuerposAguaNearby.filter(inHydroView);
+    const cuencas = cuencasNearby.filter(inView);
+    const subcuencas = subcuencasNearby.filter(inView);
+    const cuerposAgua = cuerposAguaNearby.filter(inView);
 
-    const visibleCorrientes = corrientesNearby.filter(inHydroView);
+    const visibleCorrientes = corrientesNearby.filter(inView);
     const visibleOrders = new Set<number>(
       visibleCorrientes.map((f) => getStrahlerOrderNumber(f.properties?.ORDER_1))
     );
@@ -546,7 +531,7 @@ export const GeoViewer: React.FC = () => {
         ? visibleCorrientes.filter((f) =>
             visibleOrders.has(getStrahlerOrderNumber(f.properties?.ORDER_1))
           )
-        : visibleCorrientes;
+        : [];
 
     return {
       eco,
@@ -607,9 +592,9 @@ export const GeoViewer: React.FC = () => {
       mapRef.setView(mapRef.getCenter(), mapRef.getZoom(), { animate: false });
     }
 
-    // Supermuestreo 3x sobre lienzo Carta (1056x816 px) -> 3168x2448 px (~288 DPI)
+    // Supermuestreo 3x sobre el lienzo extendido (1132x816 px) -> 3396x2448 px (~288 DPI)
     const EXPORT_SCALE = 3;
-    const baseWidth = node.offsetWidth || 1056;
+    const baseWidth = node.offsetWidth || 1132;
     const baseHeight = node.offsetHeight || 816;
 
     setTimeout(() => {
@@ -708,22 +693,32 @@ export const GeoViewer: React.FC = () => {
   const renderLabels = () => {
     if (!frameData) return null;
     const { w, h, xTicks, yTicks } = frameData;
-    const labelStyle: React.CSSProperties = { position: 'absolute', fontSize: '0.65rem', fontWeight: 'bold', color: 'black', whiteSpace: 'nowrap', zIndex: 10, textAlign: 'center' };
+    const labelStyle: React.CSSProperties = {
+      position: 'absolute',
+      fontSize: '0.62rem',
+      fontWeight: 'bold',
+      lineHeight: 1,
+      color: 'black',
+      whiteSpace: 'nowrap',
+      zIndex: 10,
+      textAlign: 'center',
+      pointerEvents: 'none',
+    };
     const elements: React.ReactNode[] = [];
 
     xTicks.forEach((tick) => {
       if (tick.x > 0 && tick.x < w) {
         elements.push(
-          <div key={`b-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, bottom: '-20px', transform: 'translateX(-50%)' }}>{toDMS(tick.lon, false)}</div>,
-          <div key={`t-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, top: '-20px', transform: 'translateX(-50%)' }}>{toDMS(tick.lon, false)}</div>
+          <div key={`b-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, bottom: '-14px', transform: 'translate(-50%, 50%)' }}>{toDMS(tick.lon, false)}</div>,
+          <div key={`t-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, top: '-14px', transform: 'translate(-50%, -50%)' }}>{toDMS(tick.lon, false)}</div>
         );
       }
     });
     yTicks.forEach((tick) => {
       if (tick.y > 0 && tick.y < h) {
         elements.push(
-          <div key={`l-${tick.lat}-${tick.y}`} style={{ ...labelStyle, left: '-4px', top: tick.y, transform: 'translate(-100%, -50%) rotate(-90deg)' }}>{toDMS(tick.lat, true)}</div>,
-          <div key={`r-${tick.lat}-${tick.y}`} style={{ ...labelStyle, right: '-4px', top: tick.y, transform: 'translate(100%, -50%) rotate(90deg)' }}>{toDMS(tick.lat, true)}</div>
+          <div key={`l-${tick.lat}-${tick.y}`} style={{ ...labelStyle, left: '-14px', top: tick.y, transform: 'translate(-50%, -50%) rotate(-90deg)' }}>{toDMS(tick.lat, true)}</div>,
+          <div key={`r-${tick.lat}-${tick.y}`} style={{ ...labelStyle, right: '-14px', top: tick.y, transform: 'translate(50%, -50%) rotate(90deg)' }}>{toDMS(tick.lat, true)}</div>
         );
       }
     });
@@ -812,13 +807,27 @@ export const GeoViewer: React.FC = () => {
             </button>
           )}
 
-          <div style={{ marginTop: '40px', marginBottom: '20px' }}>
+          <div style={{ marginTop: '40px', marginBottom: '20px', maxWidth: '100%', overflowX: 'auto' }}>
             <div
               ref={printRef}
-              className="bg-white position-relative d-flex align-items-center justify-content-center"
-              style={{ padding: '40px', boxSizing: 'border-box', width: '11in', height: '8.5in' }}
+              className="bg-white position-relative d-flex align-items-start"
+              style={{
+                padding: previewData ? '40px 30px 40px 40px' : '40px',
+                boxSizing: 'border-box',
+                width: previewData ? '1132px' : '816px',
+                height: '816px',
+              }}
             >
-              <div className="w-100 h-100 position-relative" style={{ border: '2px solid black' }}>
+              {/* COLUMNA IZQUIERDA: MAPA CUADRADO ORIGINAL (736px x 736px) */}
+              <div
+                className="position-relative"
+                style={{
+                  width: '736px',
+                  height: '736px',
+                  flexShrink: 0,
+                  border: '2px solid black',
+                }}
+              >
                 {renderLabels()}
                 {renderZebraFrame()}
 
@@ -897,93 +906,112 @@ export const GeoViewer: React.FC = () => {
                     {currentPlano === 1 && <SmartLabels data={geoJsonData} plano={currentPlano} />}
 
                   </MapContainer>
-
-                  {previewData && (
-                    <div className="position-absolute bg-white p-3 shadow-sm" style={{ top: '15px', right: '15px', width: '290px', zIndex: 1000, border: '1px solid #000' }}>
-                      <div className="d-flex align-items-center mb-3">
-                        <img
-                          src={profepaLogo}
-                          alt="PROFEPA"
-                          className="me-2"
-                          style={{ height: '40px', width: 'auto', flexShrink: 0 }}
-                        />
-                        <div className="d-flex flex-column text-center flex-grow-1">
-                          <h6
-                            className="fw-bold mb-1"
-                            style={{ fontSize: '0.68rem', lineHeight: '1.15', color: '#000' }}
-                          >
-                            PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE
-                          </h6>
-                          <span
-                            className="text-muted"
-                            style={{ fontSize: '0.58rem', lineHeight: '1.1' }}
-                          >
-                            Subprocuraduría de Recursos Naturales
-                          </span>
-                        </div>
-                      </div>
-
-                      <MiniMapLocator
-                        data={geoJsonData}
-                        buffer10km={buffer10km}
-                        currentPlano={currentPlano}
-                        selectedVegSerie={selectedVegSerie}
-                        ecoNearby={miniVisibleLayers.eco}
-                        vegNearby={miniVisibleLayers.veg}
-                        climateNearby={miniVisibleLayers.climate}
-                        edafologiaNearby={miniVisibleLayers.edafologia}
-                        cuencasNearby={miniVisibleLayers.cuencas}
-                        subcuencasNearby={miniVisibleLayers.subcuencas}
-                        cuerposAguaNearby={miniVisibleLayers.cuerposAgua}
-                        corrientesNearby={miniVisibleLayers.corrientes}
-                        microcuencaData={microcuencaData}
-                        estado={previewData.estado}
-                        municipio={previewData.municipio}
-                      />
-
-                      {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
-                      {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
-                      {currentPlano === 3 && (
-                        <LegendVegetacion
-                          vegNearby={vegNearby}
-                          selectedVegSerie={selectedVegSerie}
-                          setSelectedVegSerie={setSelectedVegSerie}
-                          currentViewportBbox={currentViewportBbox}
-                          targetDate={previewData.targetDate}
-                          isLoading={isLoadingVeg}
-                          isExporting={isExporting}
-                        />
-                      )}
-                      {currentPlano === 4 && <LegendClima climateNearby={climateNearby} isLoading={isLoadingClimate} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
-                      {currentPlano === 5 && <LegendEdafologia edafologiaNearby={edafologiaNearby} isLoading={isLoadingEdafologia} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
-                      {currentPlano === 6 && (
-                        <LegendHidrologia
-                          cuencasNearby={cuencasNearby}
-                          subcuencasNearby={subcuencasNearby}
-                          corrientesNearby={corrientesNearby}
-                          cuerposAguaNearby={cuerposAguaNearby}
-                          hasMicrocuenca={Boolean(microcuencaData?.features?.length)}
-                          isLoading={isLoadingHidrologia}
-                          targetDate={previewData.targetDate}
-                          currentViewportBbox={currentViewportBbox}
-                        />
-                      )}
-
-                      <div className="bg-white mb-2 border border-dark mt-2">
-                        <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}>Sistema de Referencia:</div>
-                        <p className="mb-0 text-center p-1" style={{ fontSize: '0.65rem' }}>DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator</p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
+
+              {/* COLUMNA DERECHA: SIMBOLOGÍA Y MARGINALIA EXTENDIDA HACIA LA DERECHA */}
+              {previewData && (
+                <div
+                  className="bg-white d-flex flex-column"
+                  style={{
+                    width: '290px',
+                    flexShrink: 0,
+                    maxHeight: '736px',
+                    marginLeft: '36px',
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* ENCABEZADO INSTITUCIONAL */}
+                  <div className="d-flex align-items-center mb-2">
+                    <img
+                      src={profepaLogo}
+                      alt="PROFEPA"
+                      className="me-2"
+                      style={{ height: '38px', width: 'auto', flexShrink: 0 }}
+                    />
+                    <div className="d-flex flex-column text-center flex-grow-1">
+                      <h6
+                        className="fw-bold mb-1"
+                        style={{ fontSize: '0.68rem', lineHeight: '1.15', color: '#000' }}
+                      >
+                        PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE
+                      </h6>
+                      <span
+                        className="text-muted"
+                        style={{ fontSize: '0.58rem', lineHeight: '1.1' }}
+                      >
+                        Subprocuraduría de Recursos Naturales
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* MINIMAPA DE LOCALIZACIÓN */}
+                  <MiniMapLocator
+                    data={geoJsonData}
+                    buffer10km={buffer10km}
+                    currentPlano={currentPlano}
+                    selectedVegSerie={selectedVegSerie}
+                    ecoNearby={miniVisibleLayers.eco}
+                    vegNearby={miniVisibleLayers.veg}
+                    climateNearby={miniVisibleLayers.climate}
+                    edafologiaNearby={miniVisibleLayers.edafologia}
+                    cuencasNearby={miniVisibleLayers.cuencas}
+                    subcuencasNearby={miniVisibleLayers.subcuencas}
+                    cuerposAguaNearby={miniVisibleLayers.cuerposAgua}
+                    corrientesNearby={miniVisibleLayers.corrientes}
+                    microcuencaData={microcuencaData}
+                    estado={previewData.estado}
+                    municipio={previewData.municipio}
+                  />
+
+                  {/* LEYENDA DINÁMICA POR PLANO */}
+                  {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
+                  {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                  {currentPlano === 3 && (
+                    <LegendVegetacion
+                      vegNearby={vegNearby}
+                      selectedVegSerie={selectedVegSerie}
+                      setSelectedVegSerie={setSelectedVegSerie}
+                      currentViewportBbox={currentViewportBbox}
+                      targetDate={previewData.targetDate}
+                      isLoading={isLoadingVeg}
+                      isExporting={isExporting}
+                    />
+                  )}
+                  {currentPlano === 4 && <LegendClima climateNearby={climateNearby} isLoading={isLoadingClimate} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                  {currentPlano === 5 && <LegendEdafologia edafologiaNearby={edafologiaNearby} isLoading={isLoadingEdafologia} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                  {currentPlano === 6 && (
+                    <LegendHidrologia
+                      cuencasNearby={cuencasNearby}
+                      subcuencasNearby={subcuencasNearby}
+                      corrientesNearby={corrientesNearby}
+                      cuerposAguaNearby={cuerposAguaNearby}
+                      hasMicrocuenca={Boolean(microcuencaData?.features?.length)}
+                      isLoading={isLoadingHidrologia}
+                      targetDate={previewData.targetDate}
+                      currentViewportBbox={currentViewportBbox}
+                    />
+                  )}
+
+                  {/* SISTEMA DE REFERENCIA */}
+                  <div className="bg-white border border-dark">
+                    <div className="fw-bold text-white text-center" style={{ backgroundColor: '#163f37', fontSize: '0.70rem', padding: '2px' }}>
+                      Sistema de Referencia:
+                    </div>
+                    <p className="mb-0 text-center p-1" style={{ fontSize: '0.62rem', lineHeight: '1.15' }}>
+                      DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {geoJsonData && (
             <div
               className="w-100 d-flex flex-column align-items-center gap-2 ignore-print mb-4"
-              style={{ maxWidth: '1050px' }}
+              style={{ maxWidth: '1132px' }}
             >
               {/* SUBMENÚ EXTERNO: CRITERIO DE ACTIVACIÓN DE CAPAS */}
               <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap justify-content-between align-items-center gap-3 w-100">
