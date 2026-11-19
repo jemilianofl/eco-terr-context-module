@@ -11,6 +11,7 @@ import {
   ECO_LAYERS_CONFIG,
   getStrahlerStyle,
   getEcoSiteName,
+  calcularDistanciaPoligono,
 } from '../../config/mapConfig';
 
 interface UserPolygonLayerProps {
@@ -93,10 +94,15 @@ export const UserPolygonLayer = ({
 
 interface EcoLayerProps {
   ecoNearby: TypedMapFeature[];
+  userPolygonGeom?: Feature<Polygon | MultiPolygon> | null;
   interactive?: boolean;
 }
 
-export const EcoLayer = ({ ecoNearby, interactive = true }: EcoLayerProps) => {
+export const EcoLayer = ({
+  ecoNearby,
+  userPolygonGeom = null,
+  interactive = true,
+}: EcoLayerProps) => {
   const map = useMapEvents({
     click(e) {
       if (!interactive) return;
@@ -109,9 +115,16 @@ export const EcoLayer = ({ ecoNearby, interactive = true }: EcoLayerProps) => {
           const title = f.properties?._title ?? 'Área Protegida';
           const name = getEcoSiteName(f.properties) ?? 'Área Protegida';
           const color = f.properties?._color ?? '#000';
+          const dist = calcularDistanciaPoligono(userPolygonGeom, f);
+          const distHtml = dist
+            ? `<div style="margin-top:4px; font-size:0.78rem;"><strong>Distancia al polígono:</strong> ${dist.label}</div>`
+            : '';
+
           L.popup()
             .setLatLng(e.latlng)
-            .setContent(`<div><strong style="color:${color}">${title}</strong><br/>${name}</div>`)
+            .setContent(
+              `<div><strong style="color:${color}">${title}</strong><br/>${name}${distHtml}</div>`
+            )
             .openOn(map);
           return;
         }

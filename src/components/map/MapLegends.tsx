@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import * as turf from '@turf/turf';
-import type { Feature, Polygon } from 'geojson';
+import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import type {
   SentinelMetadata,
   TypedMapFeature,
@@ -13,6 +13,8 @@ import {
   compactarNombreVeg,
   STRAHLER_ORDER_CONFIG,
   getEcoSiteName,
+  calcularDistanciaPoligono,
+  type PolygonDistanceResult,
 } from '../../config/mapConfig';
 
 interface PreviewData {
@@ -26,8 +28,11 @@ interface LegendUbicacionProps {
   areaDetails: { name: string; area: string }[];
   totalArea: string;
   useSentinel: boolean;
+  isExporting?: boolean;
+  onUpdateArea?: (details: { name: string; area: string }[], total: string) => void;
+  onResetArea?: () => void;
+  isAreaModified?: boolean;
 }
-
 interface LegendVegetacionProps {
   vegNearby: TypedMapFeature[];
   selectedVegSerie: string;
@@ -75,97 +80,208 @@ export const LegendUbicacion = ({
   areaDetails,
   totalArea,
   useSentinel,
-}: LegendUbicacionProps) => (
-  <>
-    <div className="bg-white mb-2 border border-dark">
-      <div
-        className="fw-bold text-white text-center mb-1"
-        style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
-      >
-        Datos del expediente
-      </div>
-      <div className="p-2 text-center" style={{ fontSize: '0.65rem' }}>
-        <p className="mb-1">
-          <strong>Acta de inspección:</strong> {previewData.acta || 'N/A'}
-        </p>
-        <p className="mb-0">
-          <strong>Fecha de inspección:</strong> {previewData.targetDate || 'N/A'}
-        </p>
-      </div>
-    </div>
+  isExporting = false,
+  onUpdateArea,
+  onResetArea,
+  isAreaModified = false,
+}: LegendUbicacionProps) => {
+  const [isEditing, setIsEditing] = useState(false);
 
-    {useSentinel && sentinelMetadata && (
+  const showEditForm = isEditing && !isExporting && Boolean(onUpdateArea);
+
+  const handleDetailChange = (index: number, field: 'name' | 'area', value: string) => {
+    if (!onUpdateArea) return;
+
+    const updatedDetails = areaDetails.map((item, idx) =>
+      idx === index ? { ...item, [field]: value } : item
+    );
+
+    let updatedTotal = totalArea;
+    if (field === 'area') {
+      const sum = updatedDetails.reduce((acc, item) => {
+        const parsed = Number.parseFloat(item.area.replace(/,/g, '').trim());
+        return Number.isFinite(parsed) ? acc + parsed : acc;
+      }, 0);
+      updatedTotal = sum.toFixed(2);
+    }
+
+    onUpdateArea(updatedDetails, updatedTotal);
+  };
+
+  return (
+    <>
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
         >
-          Metadatos Satelitales
+          Datos del expediente
         </div>
-        <div className="p-2 text-center" style={{ fontSize: '0.60rem' }}>
+        <div className="p-2 text-center" style={{ fontSize: '0.65rem' }}>
           <p className="mb-1">
-            <strong>Sensor:</strong> {sentinelMetadata.platform ?? 'N/A'}
+            <strong>Acta de inspección:</strong> {previewData.acta || 'N/A'}
           </p>
-          <p className="mb-1">
-            <strong>Captura:</strong>{' '}
-            {sentinelMetadata.date
-              ? new Date(sentinelMetadata.date).toLocaleDateString('es-MX')
-              : 'N/A'}
+          <p className="mb-0">
+            <strong>Fecha de inspección:</strong> {previewData.targetDate || 'N/A'}
           </p>
         </div>
       </div>
-    )}
 
-    <div className="bg-white mb-2 border border-dark">
-      <div
-        className="fw-bold text-white text-center mb-1"
-        style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
-      >
-        Simbología
-      </div>
-      <div className="p-2">
-        <div className="d-flex align-items-center mb-1">
+      {useSentinel && sentinelMetadata && (
+        <div className="bg-white mb-2 border border-dark">
           <div
-            style={{
-              width: '12px',
-              height: '12px',
-              backgroundColor: 'transparent',
-              border: '2px solid #ff0000',
-              marginRight: '8px',
-              flexShrink: 0,
-            }}
-          ></div>
-          <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
-            Polígono(s) Inspeccionado(s)
-          </span>
+            className="fw-bold text-white text-center mb-1"
+            style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}
+          >
+            Metadatos Satelitales
+          </div>
+          <div className="p-2 text-center" style={{ fontSize: '0.60rem' }}>
+            <p className="mb-1">
+              <strong>Sensor:</strong> {sentinelMetadata.platform ?? 'N/A'}
+            </p>
+            <p className="mb-1">
+              <strong>Captura:</strong>{' '}
+              {sentinelMetadata.date
+                ? new Date(sentinelMetadata.date).toLocaleDateString('es-MX')
+                : 'N/A'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+        >
+          Simbología
+        </div>
+        <div className="p-2">
+          <div className="d-flex align-items-center mb-1">
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: 'transparent',
+                border: '2px solid #ff0000',
+                marginRight: '8px',
+                flexShrink: 0,
+              }}
+            ></div>
+            <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+              Polígono(s) Inspeccionado(s)
+            </span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div className="bg-white mb-2 border border-dark">
-      <div
-        className="fw-bold text-white text-center mb-1"
-        style={{ backgroundColor: '#163f37', fontSize: '0.75rem' }}
-      >
-        Superficie:
-      </div>
-      <div className="p-2 text-center">
-        {areaDetails.map((item) => (
-          <p key={`area-${item.name}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
-            <strong>{item.name}:</strong> {item.area} m²
-          </p>
-        ))}
-        <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
-        <p className="mb-0" style={{ fontSize: '0.7rem' }}>
-          <strong>Total:</strong> {totalArea} m²
-        </p>
-      </div>
-    </div>
-  </>
-);
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1 position-relative"
+          style={{ backgroundColor: '#163f37', fontSize: '0.75rem' }}
+        >
+          Superficie:
+          {!isExporting && onUpdateArea && (
+            <button
+              type="button"
+              onClick={() => setIsEditing((prev) => !prev)}
+              className="btn btn-link text-white p-0 position-absolute ignore-print"
+              style={{
+                right: '6px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                fontSize: '0.68rem',
+                lineHeight: 1,
+              }}
+              title={isEditing ? 'Finalizar edición' : 'Editar superficie'}
+              aria-label={isEditing ? 'Finalizar edición de superficie' : 'Editar superficie'}
+            >
+              <i className={`bi ${isEditing ? 'bi-check-lg' : 'bi-pencil-square'}`}></i>
+            </button>
+          )}
+        </div>
 
+        {showEditForm ? (
+          <div className="p-2 ignore-print" style={{ fontSize: '0.65rem' }}>
+            {areaDetails.map((item, idx) => (
+              <div key={`area-edit-${idx}`} className="d-flex align-items-center gap-1 mb-1">
+                <input
+                  type="text"
+                  aria-label={`Etiqueta del polígono ${idx + 1}`}
+                  className="form-control form-control-sm px-1 py-0"
+                  style={{ fontSize: '0.62rem', width: '48%' }}
+                  value={item.name}
+                  onChange={(e) => handleDetailChange(idx, 'name', e.target.value)}
+                />
+                <input
+                  type="text"
+                  aria-label={`Superficie de ${item.name}`}
+                  className="form-control form-control-sm px-1 py-0 text-end"
+                  style={{ fontSize: '0.62rem', width: '40%' }}
+                  value={item.area}
+                  onChange={(e) => handleDetailChange(idx, 'area', e.target.value)}
+                />
+                <span style={{ fontSize: '0.62rem', flexShrink: 0 }}>m²</span>
+              </div>
+            ))}
+
+            <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
+
+            <div className="d-flex align-items-center gap-1 mb-2">
+              <strong style={{ fontSize: '0.65rem', width: '48%' }}>Total:</strong>
+              <input
+                type="text"
+                aria-label="Superficie total"
+                className="form-control form-control-sm px-1 py-0 text-end fw-bold"
+                style={{ fontSize: '0.64rem', width: '40%' }}
+                value={totalArea}
+                onChange={(e) => onUpdateArea?.(areaDetails, e.target.value)}
+              />
+              <span style={{ fontSize: '0.62rem', flexShrink: 0 }}>m²</span>
+            </div>
+
+            <div className="d-flex justify-content-end gap-1">
+              {isAreaModified && onResetArea && (
+                <button
+                  type="button"
+                  onClick={onResetArea}
+                  className="btn btn-outline-secondary btn-sm py-0 px-2"
+                  style={{ fontSize: '0.60rem' }}
+                  title="Restaurar superficie calculada automáticamente"
+                >
+                  Restaurar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="btn btn-success btn-sm py-0 px-2"
+                style={{ fontSize: '0.60rem' }}
+              >
+                Listo
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-2 text-center">
+            {areaDetails.map((item, idx) => (
+              <p key={`area-${idx}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
+                <strong>{item.name}:</strong> {item.area} m²
+              </p>
+            ))}
+            <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
+            <p className="mb-0" style={{ fontSize: '0.7rem' }}>
+              <strong>Total:</strong> {totalArea} m²
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
 interface LegendEcologicaProps {
   ecoNearby: TypedMapFeature[];
+  userPolygonGeom: Feature<Polygon | MultiPolygon> | null;
   isLoading: boolean;
   targetDate?: string;
   currentViewportBbox: [number, number, number, number] | null;
@@ -173,6 +289,7 @@ interface LegendEcologicaProps {
 
 export const LegendEcologica = ({
   ecoNearby,
+  userPolygonGeom,
   isLoading,
   targetDate,
   currentViewportBbox,
@@ -189,7 +306,7 @@ export const LegendEcologica = ({
       }
     }
 
-    const namesByLayerId = new Map<string, Set<string>>();
+    const sitesByLayerId = new Map<string, Map<string, PolygonDistanceResult | null>>();
 
     ecoNearby.forEach((f) => {
       if (!f?.geometry || !f.properties?._layerId) return;
@@ -204,21 +321,33 @@ export const LegendEcologica = ({
 
       if (isVisible) {
         const layerId = f.properties._layerId;
-        if (!namesByLayerId.has(layerId)) {
-          namesByLayerId.set(layerId, new Set<string>());
+        if (!sitesByLayerId.has(layerId)) {
+          sitesByLayerId.set(layerId, new Map<string, PolygonDistanceResult | null>());
         }
         const siteName = getEcoSiteName(f.properties);
         if (siteName) {
-          namesByLayerId.get(layerId)!.add(siteName);
+          const dist = calcularDistanciaPoligono(userPolygonGeom, f);
+          const layerSites = sitesByLayerId.get(layerId)!;
+          const prevDist = layerSites.get(siteName);
+
+          if (
+            prevDist === undefined ||
+            (dist && (!prevDist || dist.distanceKm < prevDist.distanceKm))
+          ) {
+            layerSites.set(siteName, dist);
+          }
         }
       }
     });
 
-    return ECO_LAYERS_CONFIG.filter((layer) => namesByLayerId.has(layer.id)).map((layer) => ({
+    return ECO_LAYERS_CONFIG.filter((layer) => sitesByLayerId.has(layer.id)).map((layer) => ({
       ...layer,
-      siteNames: Array.from(namesByLayerId.get(layer.id) ?? []),
+      sites: Array.from(sitesByLayerId.get(layer.id)?.entries() ?? []).map(([name, dist]) => ({
+        name,
+        dist,
+      })),
     }));
-  }, [ecoNearby, currentViewportBbox]);
+  }, [ecoNearby, userPolygonGeom, currentViewportBbox]);
 
   return (
     <>
@@ -271,15 +400,29 @@ export const LegendEcologica = ({
                       {layer.title}
                     </span>
                   </div>
-                  {layer.siteNames.length > 0 && (
+                  {layer.sites.length > 0 && (
                     <div style={{ paddingLeft: '20px', marginTop: '2px' }}>
-                      {layer.siteNames.map((siteName) => (
+                      {layer.sites.map(({ name, dist }) => (
                         <div
-                          key={`${layer.id}-${siteName}`}
-                          className="text-muted"
-                          style={{ fontSize: '0.56rem', lineHeight: '1.2' }}
+                          key={`${layer.id}-${name}`}
+                          className="text-muted d-flex justify-content-between align-items-baseline gap-1"
+                          style={{ fontSize: '0.56rem', lineHeight: '1.25' }}
                         >
-                          - {siteName}
+                          <span>- {name}</span>
+                          {dist && (
+                            <span
+                              className="fw-bold px-1 rounded"
+                              style={{
+                                fontSize: '0.52rem',
+                                whiteSpace: 'nowrap',
+                                backgroundColor: dist.intersects ? '#fee2e2' : '#f1f5f9',
+                                color: dist.intersects ? '#b91c1c' : '#334155',
+                                border: `1px solid ${dist.intersects ? '#fca5a5' : '#cbd5e1'}`,
+                              }}
+                            >
+                              {dist.label}
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>

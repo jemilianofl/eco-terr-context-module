@@ -638,8 +638,8 @@ const TemporalControlPanel: React.FC<{
   const handleCollectionChange = (newCol: SatelliteCollectionOption) => {
     setTemporalCollection(newCol);
     if (newCol === 'sentinel-2-l2a' && temporalYear < 2015) {
-    setTemporalYear(2015);
-  }
+      setTemporalYear(2015);
+    }
   };
 
   return (
@@ -1074,6 +1074,7 @@ export const GeoViewer: React.FC = () => {
       }
 
       setGeoJsonData(parsedPredio);
+      setCustomAreaOverride(null); // <-- Agregar esta línea
       setActivatedPlanos({ [currentPlano]: true });
       setIsSidebarOpen(false);
     } catch (err) {
@@ -1083,8 +1084,8 @@ export const GeoViewer: React.FC = () => {
     }
   };
 
-  const { totalArea, areaDetails } = useMemo(() => {
-    if (!geoJsonData) return { totalArea: '0.00', areaDetails: [] };
+  const calculatedArea = useMemo(() => {
+    if (!geoJsonData) return { totalArea: '0.00', areaDetails: [] as { name: string; area: string }[] };
     let areaSum = 0;
     const details: { name: string; area: string }[] = [];
     geoJsonData.features.forEach((f) => {
@@ -1098,6 +1099,14 @@ export const GeoViewer: React.FC = () => {
     });
     return { totalArea: areaSum.toFixed(2), areaDetails: details };
   }, [geoJsonData]);
+
+  const [customAreaOverride, setCustomAreaOverride] = useState<{
+    totalArea: string;
+    areaDetails: { name: string; area: string }[];
+  } | null>(null);
+
+  const totalArea = customAreaOverride ? customAreaOverride.totalArea : calculatedArea.totalArea;
+  const areaDetails = customAreaOverride ? customAreaOverride.areaDetails : calculatedArea.areaDetails;
 
   const nombreActual = NOMBRES_PLANOS[currentPlano - 1];
   const isAnyLayerLoading =
@@ -1230,7 +1239,13 @@ export const GeoViewer: React.FC = () => {
                       <ScaleControl position="bottomleft" imperial={false} />
                     </div>
 
-                    {currentPlano === 2 && <EcoLayer key={`eco-${currentPlano}-${layerFilterMode}`} ecoNearby={ecoNearby} />}
+                    {currentPlano === 2 && (
+                      <EcoLayer
+                        key={`eco-${currentPlano}-${layerFilterMode}`}
+                        ecoNearby={ecoNearby}
+                        userPolygonGeom={userPolygonGeom}
+                      />
+                    )}
                     {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}-${layerFilterMode}`} vegNearby={vegNearby} />}
                     {currentPlano === 4 && <ClimateLayer key={`climate-${currentPlano}-${layerFilterMode}`} climateNearby={climateNearby} />}
                     {currentPlano === 5 && <EdafologiaLayer key={`edafologia-${currentPlano}-${layerFilterMode}`} edafologiaNearby={edafologiaNearby} />}
@@ -1309,8 +1324,30 @@ export const GeoViewer: React.FC = () => {
                   />
 
                   {/* LEYENDA DINÁMICA POR PLANO */}
-                  {currentPlano === 1 && <LegendUbicacion previewData={previewData} useSentinel={useSentinel} sentinelMetadata={sentinelMetadata} areaDetails={areaDetails} totalArea={totalArea} />}
-                  {currentPlano === 2 && <LegendEcologica ecoNearby={ecoNearby} isLoading={isLoadingEco} targetDate={previewData.targetDate} currentViewportBbox={currentViewportBbox} />}
+                  {currentPlano === 1 && (
+                    <LegendUbicacion
+                      previewData={previewData}
+                      useSentinel={useSentinel}
+                      sentinelMetadata={sentinelMetadata}
+                      areaDetails={areaDetails}
+                      totalArea={totalArea}
+                      isExporting={isExporting}
+                      onUpdateArea={(details, total) =>
+                        setCustomAreaOverride({ areaDetails: details, totalArea: total })
+                      }
+                      onResetArea={() => setCustomAreaOverride(null)}
+                      isAreaModified={customAreaOverride !== null}
+                    />
+                  )}
+                  {currentPlano === 2 && (
+                    <LegendEcologica
+                      ecoNearby={ecoNearby}
+                      userPolygonGeom={userPolygonGeom}
+                      isLoading={isLoadingEco}
+                      targetDate={previewData.targetDate}
+                      currentViewportBbox={currentViewportBbox}
+                    />
+                  )}
                   {currentPlano === 3 && (
                     <LegendVegetacion
                       vegNearby={vegNearby}
