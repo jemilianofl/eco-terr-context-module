@@ -1,3 +1,6 @@
+import * as turf from '@turf/turf';
+import type { Feature, Polygon, MultiPolygon, LineString, MultiLineString } from 'geojson';
+
 export interface EcoLayerConfigItem {
   id: string;
   file: string;
@@ -276,3 +279,75 @@ export const getEcoSiteName = (props?: Record<string, unknown> | null): string |
 
   return null;
 };
+
+export interface PolygonDistanceResult {
+  intersects: boolean;
+  distanceKm: number;
+  label: string;
+}
+
+export function calcularDistanciaPoligono(
+  userGeom: Feature<Polygon | MultiPolygon> | null,
+  targetFeature: Feature
+): PolygonDistanceResult | null {
+  if (!userGeom || !targetFeature?.geometry) return null;
+
+  try {
+    if (turf.booleanIntersects(userGeom, targetFeature)) {
+      return { intersects: true, distanceKm: 0, label: 'Intersecta' };
+    }
+
+    const extractLines = (feat: Feature) => {
+      const { type } = feat.geometry;
+      if (type === 'Polygon' || type === 'MultiPolygon') {
+        return turf.flatten(turf.polygonToLine(feat as Feature<Polygon | MultiPolygon>)).features;
+      }
+      if (type === 'LineString' || type === 'MultiLineString') {
+        return turf.flatten(feat as Feature<LineString | MultiLineString>).features;
+      }
+      return [];
+    };
+
+    const userLines = extractLines(userGeom);
+    const targetLines = extractLines(targetFeature);
+    const userPoints = turf.explode(userGeom).features;
+    const targetPoints = turf.explode(targetFeature).features;
+
+    let minKm = Infinity;
+
+    // Vértices del polígono inspeccionado hacia bordes del sitio cercano
+    for (const pt of userPoints) {
+      for (const line of targetLines) {
+        const d = turf.pointToLineDistance(pt, line, { units: 'kilometers' });
+        if (d < minKm) minKm = d;
+      }
+    }
+
+    // Vértices del sitio cercano hacia bordes del polígono inspeccionado
+    for (const pt of targetPoints) {
+      for (const line of userLines) {
+        const d = turf.pointToLineDistance(pt, line, { units: 'kilometers' });
+        if (d < minKm) minKm = d;
+      }
+    }
+
+    // Respaldo si el sitio cercano es geometría puntual
+    if (!Number.isFinite(minKm)) {
+      for (const p1 of userPoints) {
+        for (const p2 of targetPoints) {
+          const d = turf.distance(p1, p2, { units: 'kilometers' });
+          if (d < minKm) minKm = d;
+        }
+      }
+    }
+
+    if (!Number.isFinite(minKm)) return null;
+
+    const label =
+      minKm < 1 ? `${Math.round(minKm * 1000)} m` : `${minKm.toFixed(2)} km`;
+
+    return { intersects: false, distanceKm: minKm, label };
+  } catch {
+    return null;
+  }
+}
