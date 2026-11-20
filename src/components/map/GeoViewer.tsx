@@ -628,98 +628,98 @@ const TemporalControlPanel: React.FC<{
   isLoadingTemporal,
   temporalError,
 }) => {
-  const currentYear = new Date().getFullYear();
-  const startYear = temporalCollection === 'sentinel-2-l2a' ? 2015 : 1984;
-  const years: number[] = [];
-  for (let y = currentYear; y >= startYear; y--) {
-    years.push(y);
-  }
-
-  const handleCollectionChange = (newCol: SatelliteCollectionOption) => {
-    setTemporalCollection(newCol);
-    if (newCol === 'sentinel-2-l2a' && temporalYear < 2015) {
-      setTemporalYear(2015);
+    const currentYear = new Date().getFullYear();
+    const startYear = temporalCollection === 'sentinel-2-l2a' ? 2015 : 1984;
+    const years: number[] = [];
+    for (let y = currentYear; y >= startYear; y--) {
+      years.push(y);
     }
+
+    const handleCollectionChange = (newCol: SatelliteCollectionOption) => {
+      setTemporalCollection(newCol);
+      if (newCol === 'sentinel-2-l2a' && temporalYear < 2015) {
+        setTemporalYear(2015);
+      }
+    };
+
+    return (
+      <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap align-items-end gap-3 w-100">
+        <div>
+          <label htmlFor="tempCollection" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+            Catálogo satelital:
+          </label>
+          <select
+            id="tempCollection"
+            className="form-select form-select-sm"
+            value={temporalCollection}
+            onChange={(e) => handleCollectionChange(e.target.value as SatelliteCollectionOption)}
+          >
+            <option value="sentinel-2-l2a">Copernicus Sentinel-2 (2015–hoy)</option>
+            <option value="landsat-c2-l2">Landsat 4-9 Histórico (1984–hoy)</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="tempYearSelect" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+            Año de consulta:
+          </label>
+          <select
+            id="tempYearSelect"
+            className="form-select form-select-sm"
+            value={temporalYear}
+            onChange={(e) => setTemporalYear(Number(e.target.value))}
+          >
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="tempPreset" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+            Composición espectral:
+          </label>
+          <select
+            id="tempPreset"
+            className="form-select form-select-sm"
+            value={temporalPreset}
+            onChange={(e) => setTemporalPreset(e.target.value as SpectralPreset)}
+          >
+            <option value="rgb">Color Natural (RGB)</option>
+            <option value="nir">Infrarrojo (Vegetación)</option>
+            <option value="swir">SWIR (Suelo / Incendios)</option>
+            <option value="ndvi">Índice NDVI (Vigor Vegetal)</option>
+          </select>
+        </div>
+
+        <div className="flex-grow-1" style={{ minWidth: '220px' }}>
+          <span className="form-label fw-bold mb-1 d-block" style={{ fontSize: '0.75rem' }}>
+            Mejor escena seleccionada del año:
+          </span>
+          <div className="form-control form-control-sm bg-light text-truncate">
+            {isLoadingTemporal && 'Consultando escena anual...'}
+            {!isLoadingTemporal && activeScene && (
+              <>
+                <strong>{new Date(activeScene.date).toLocaleDateString('es-MX')}</strong> —{' '}
+                {activeScene.platform.toUpperCase()} ({activeScene.cloudCover}% nubes)
+              </>
+            )}
+            {!isLoadingTemporal && !activeScene && 'Sin escena disponible'}
+          </div>
+        </div>
+
+        {temporalError && (
+          <div className="w-100 text-danger small fw-semibold mt-1">
+            <i className="bi bi-exclamation-triangle-fill me-1"></i>
+            {' '}
+            {temporalError}
+          </div>
+        )}
+      </div>
+    );
   };
-
-  return (
-    <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap align-items-end gap-3 w-100">
-      <div>
-        <label htmlFor="tempCollection" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-          Catálogo satelital:
-        </label>
-        <select
-          id="tempCollection"
-          className="form-select form-select-sm"
-          value={temporalCollection}
-          onChange={(e) => handleCollectionChange(e.target.value as SatelliteCollectionOption)}
-        >
-          <option value="sentinel-2-l2a">Copernicus Sentinel-2 (2015–hoy)</option>
-          <option value="landsat-c2-l2">Landsat 4-9 Histórico (1984–hoy)</option>
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="tempYearSelect" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-          Año de consulta:
-        </label>
-        <select
-          id="tempYearSelect"
-          className="form-select form-select-sm"
-          value={temporalYear}
-          onChange={(e) => setTemporalYear(Number(e.target.value))}
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="tempPreset" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
-          Composición espectral:
-        </label>
-        <select
-          id="tempPreset"
-          className="form-select form-select-sm"
-          value={temporalPreset}
-          onChange={(e) => setTemporalPreset(e.target.value as SpectralPreset)}
-        >
-          <option value="rgb">Color Natural (RGB)</option>
-          <option value="nir">Infrarrojo (Vegetación)</option>
-          <option value="swir">SWIR (Suelo / Incendios)</option>
-          <option value="ndvi">Índice NDVI (Vigor Vegetal)</option>
-        </select>
-      </div>
-
-      <div className="flex-grow-1" style={{ minWidth: '220px' }}>
-        <span className="form-label fw-bold mb-1 d-block" style={{ fontSize: '0.75rem' }}>
-          Mejor escena seleccionada del año:
-        </span>
-        <div className="form-control form-control-sm bg-light text-truncate">
-          {isLoadingTemporal && 'Consultando escena anual...'}
-          {!isLoadingTemporal && activeScene && (
-            <>
-              <strong>{new Date(activeScene.date).toLocaleDateString('es-MX')}</strong> —{' '}
-              {activeScene.platform.toUpperCase()} ({activeScene.cloudCover}% nubes)
-            </>
-          )}
-          {!isLoadingTemporal && !activeScene && 'Sin escena disponible'}
-        </div>
-      </div>
-
-      {temporalError && (
-        <div className="w-100 text-danger small fw-semibold mt-1">
-          <i className="bi bi-exclamation-triangle-fill me-1"></i>
-          {' '}
-          {temporalError}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const PLANO_BUTTONS = [
   { id: 1, icon: 'bi-geo-alt', label: 'Ubicación Geográfica' },
@@ -1031,8 +1031,8 @@ export const GeoViewer: React.FC = () => {
     const corrientes =
       visibleOrders.size > 0
         ? visibleCorrientes.filter((f) =>
-            visibleOrders.has(getStrahlerOrderNumber(f.properties?.ORDER_1))
-          )
+          visibleOrders.has(getStrahlerOrderNumber(f.properties?.ORDER_1))
+        )
         : [];
 
     return {
@@ -1154,7 +1154,7 @@ export const GeoViewer: React.FC = () => {
                 padding: previewData ? '40px 30px 40px 40px' : '40px',
                 boxSizing: 'border-box',
                 width: previewData ? '1132px' : '816px',
-                height: '816px',
+                minHeight: '816px', // <-- Agrega esta línea
               }}
             >
               {/* COLUMNA IZQUIERDA: MAPA CUADRADO ORIGINAL (736px x 736px) */}
@@ -1274,10 +1274,8 @@ export const GeoViewer: React.FC = () => {
                   style={{
                     width: '290px',
                     flexShrink: 0,
-                    maxHeight: '736px',
                     marginLeft: '36px',
                     boxSizing: 'border-box',
-                    overflow: 'hidden',
                   }}
                 >
                   {/* ENCABEZADO INSTITUCIONAL */}
