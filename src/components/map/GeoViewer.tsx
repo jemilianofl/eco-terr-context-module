@@ -22,6 +22,7 @@ import {
   useClimateLayers,
   useEdafologiaLayers,
   useHidrologiaLayers,
+  useClimogramaData,
   type TypedMapFeature,
   type TemporalSceneItem,
   type SatelliteCollectionOption,
@@ -43,11 +44,12 @@ import {
   LegendEdafologia,
   LegendHidrologia,
   LegendEspacioTemporal,
+  LegendClimograma,
 } from './MapLegends';
+import { ClimogramaChart } from './ClimogramaChart';
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
-// CRÍTICO: Forzamos a Leaflet a no usar animaciones 3D que confunden a html2canvas
 (L.Browser as unknown as { any3d: boolean }).any3d = false;
 
 interface FormData {
@@ -76,9 +78,10 @@ const PLANO_FILE_NAMES: Record<number, string> = {
   5: 'Edafologia',
   6: 'Hidrologia_Cuencas_Corrientes',
   7: 'Analisis_Espacio_Temporal',
+  8: 'Climograma_CONAGUA',
 };
 
-const NOMBRES_PLANOS = ['Plano 1', 'Plano 2', 'Plano 3', 'Plano 4', 'Plano 5', 'Plano 6', 'Plano 7'];
+const NOMBRES_PLANOS = ['Plano 1', 'Plano 2', 'Plano 3', 'Plano 4', 'Plano 5', 'Plano 6', 'Plano 7', 'Plano 8'];
 
 async function parseSpatialFileListLocal(files: FileList): Promise<FeatureCollection> {
   let parsedData: unknown = null;
@@ -585,7 +588,7 @@ const LayerFilterBar: React.FC<{
         className={`btn ${layerFilterMode === 'intersect' ? 'text-white fw-bold' : 'btn-outline-secondary'}`}
         style={layerFilterMode === 'intersect' ? { backgroundColor: '#163f37', borderColor: '#163f37' } : undefined}
       >
-        <i className="bi bi-bullseye me-1"></i>
+        <i className="bi bi-bullseye me-1"></i>{' '}
         Capas intersectadas
       </button>
       <button
@@ -594,7 +597,7 @@ const LayerFilterBar: React.FC<{
         className={`btn ${layerFilterMode === 'buffer10km' ? 'text-white fw-bold' : 'btn-outline-secondary'}`}
         style={layerFilterMode === 'buffer10km' ? { backgroundColor: '#163f37', borderColor: '#163f37' } : undefined}
       >
-        <i className="bi bi-record-circle me-1"></i>
+        <i className="bi bi-record-circle me-1"></i>{' '}
         Buffer 10 KM
       </button>
     </div>
@@ -712,8 +715,7 @@ const TemporalControlPanel: React.FC<{
 
         {temporalError && (
           <div className="w-100 text-danger small fw-semibold mt-1">
-            <i className="bi bi-exclamation-triangle-fill me-1"></i>
-            {' '}
+            <i className="bi bi-exclamation-triangle-fill me-1"></i>{' '}
             {temporalError}
           </div>
         )}
@@ -729,6 +731,7 @@ const PLANO_BUTTONS = [
   { id: 5, icon: 'bi-layers', label: 'Edafología' },
   { id: 6, icon: 'bi-water', label: 'Hidrología' },
   { id: 7, icon: 'bi-clock-history', label: 'Espacio Temporal' },
+  { id: 8, icon: 'bi-bar-chart-fill', label: 'Climograma' },
 ] as const;
 
 const PlanosNavBar: React.FC<{
@@ -751,8 +754,7 @@ const PlanosNavBar: React.FC<{
         onClick={() => onSelectPlano(btn.id)}
         className={`btn btn-sm ${currentPlano === btn.id ? 'btn-light fw-bold text-dark' : 'btn-outline-light'}`}
       >
-        <i className={`bi ${btn.icon} me-1`}></i>
-        {' '}
+        <i className={`bi ${btn.icon} me-1`}></i>{' '}
         {btn.label}
       </button>
     ))}
@@ -765,8 +767,7 @@ const PlanosNavBar: React.FC<{
       className="btn btn-sm btn-outline-warning"
       title="Encuadrar la vista sobre el polígono inspeccionado"
     >
-      <i className="bi bi-arrows-collapse me-1"></i>
-      {' '}
+      <i className="bi bi-arrows-collapse me-1"></i>{' '}
       Centrar Polígono
     </button>
 
@@ -778,8 +779,7 @@ const PlanosNavBar: React.FC<{
           onClick={() => setUseSentinel(!useSentinel)}
           className={`btn btn-sm ${useSentinel ? 'btn-primary' : 'btn-outline-primary'}`}
         >
-          <i className="bi bi-satellite me-1"></i>
-          {' '}
+          <i className="bi bi-satellite me-1"></i>{' '}
           {useSentinel ? 'Sentinel-2 (Temporal)' : 'ESRI (Alta Res)'}
         </button>
       </>
@@ -871,7 +871,6 @@ export const GeoViewer: React.FC = () => {
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
 
-  // Estados para Plano 7: Análisis Espacio-Temporal Anual
   const [temporalYear, setTemporalYear] = useState<number>(2018);
   const [temporalCollection, setTemporalCollection] = useState<SatelliteCollectionOption>('sentinel-2-l2a');
   const [temporalPreset, setTemporalPreset] = useState<SpectralPreset>('rgb');
@@ -987,7 +986,13 @@ export const GeoViewer: React.FC = () => {
     layerFilterMode,
   );
 
-  // Filtrar en el minimapa únicamente las capas visibles dentro del encuadre completo del mapa
+  const { climaData, isLoadingClima, errorClima } = useClimogramaData(
+    predioCentroid,
+    previewData?.estado,
+    previewData?.municipio,
+    Boolean(activatedPlanos[8]) && currentPlano === 8
+  );
+
   const miniVisibleLayers = useMemo(() => {
     let viewportPoly: Feature<Polygon> | null = null;
 
@@ -1074,7 +1079,7 @@ export const GeoViewer: React.FC = () => {
       }
 
       setGeoJsonData(parsedPredio);
-      setCustomAreaOverride(null); // <-- Agregar esta línea
+      setCustomAreaOverride(null);
       setActivatedPlanos({ [currentPlano]: true });
       setIsSidebarOpen(false);
     } catch (err) {
@@ -1115,7 +1120,47 @@ export const GeoViewer: React.FC = () => {
     isLoadingClimate ||
     isLoadingEdafologia ||
     isLoadingHidrologia ||
-    isLoadingTemporal;
+    isLoadingTemporal ||
+    isLoadingClima;
+
+
+  // Función para renderizar el Plano 8 sin anidar ternarios y reduciendo complejidad cognitiva
+  const renderPlanoOcho = () => {
+    if (isLoadingClima) {
+      return (
+        <div className="w-100 h-100 d-flex flex-column align-items-center justify-content-center text-muted">
+          <span className="spinner-border text-primary mb-2"></span>Buscando estaciones y procesando SMN...
+        </div>
+      );
+    }
+
+    if (errorClima) {
+      return (
+        <div className="w-100 h-100 d-flex flex-column align-items-center justify-content-center text-muted">
+          <span className="text-danger fw-bold">{errorClima}</span>
+        </div>
+      );
+    }
+
+    if (climaData) {
+      return (
+        <ClimogramaChart
+          data={climaData.datos}
+          estacionNombre={climaData.estacion}
+          estado={climaData.estado}
+          clave={climaData.clave}
+          coords={climaData.coordenadas}
+          periodo={climaData.periodo}
+        />
+      );
+    }
+
+    return (
+      <div className="w-100 h-100 d-flex flex-column align-items-center justify-content-center text-muted">
+        Esperando coordenadas y municipio...
+      </div>
+    );
+  };
 
   return (
     <div className="container-fluid my-4 px-2 d-flex flex-column position-relative shadow-sm rounded border" style={{ minHeight: '850px', backgroundColor: '#f8f9fa', zIndex: 1, isolation: 'isolate' }}>
@@ -1129,7 +1174,6 @@ export const GeoViewer: React.FC = () => {
           onSubmit={onSubmit}
         />
 
-        {/* ÁREA CENTRAL Y LIENZO CARTOGRÁFICO */}
         <div className="flex-grow-1 position-relative p-0 d-flex flex-column align-items-center" style={{ backgroundColor: '#e9ecef', overflowY: 'auto' }}>
           {!isSidebarOpen && (
             <button type="button" onClick={() => setIsSidebarOpen(true)} className="btn text-white position-absolute shadow ignore-print" style={{ top: '15px', left: '15px', zIndex: 1040, backgroundColor: '#163f37', borderRadius: '50%' }}>
@@ -1141,7 +1185,7 @@ export const GeoViewer: React.FC = () => {
               {isExporting ? (
                 <><output className="spinner-border spinner-border-sm me-2" aria-hidden="true"></output>Generando...</>
               ) : (
-                <><i className="bi bi-download me-2"></i>Descargar {nombreActual}</>
+                <><i className="bi bi-download me-2"></i>{' '}Descargar {nombreActual}</>
               )}
             </button>
           )}
@@ -1154,10 +1198,9 @@ export const GeoViewer: React.FC = () => {
                 padding: previewData ? '40px 30px 40px 40px' : '40px',
                 boxSizing: 'border-box',
                 width: previewData ? '1132px' : '816px',
-                minHeight: '816px', // <-- Agrega esta línea
+                minHeight: '816px',
               }}
             >
-              {/* COLUMNA IZQUIERDA: MAPA CUADRADO ORIGINAL (736px x 736px) */}
               <div
                 className="position-relative"
                 style={{
@@ -1167,107 +1210,109 @@ export const GeoViewer: React.FC = () => {
                   border: '2px solid black',
                 }}
               >
-                <CoordinateLabels frameData={frameData} />
-                <ZebraFrame frameData={frameData} />
+                {currentPlano === 8 ? renderPlanoOcho() : (
+                  <>
+                    <CoordinateLabels frameData={frameData} />
+                    <ZebraFrame frameData={frameData} />
 
-                <div className="h-100 w-100 position-relative bg-white" style={{ outline: '1px solid black' }}>
-                  <div aria-hidden="true" style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 1000, pointerEvents: 'none' }}>
-                    <svg width="45" height="45" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                      <polygon points="50,0 60,40 50,50 40,40" fill="black" />
-                      <polygon points="50,100 60,60 50,50 40,60" fill="white" stroke="black" />
-                      <polygon points="100,50 60,60 50,50 60,40" fill="black" />
-                      <polygon points="0,50 40,60 50,50 40,40" fill="white" stroke="black" />
-                      <circle cx="50" cy="50" r="8" fill="white" stroke="black" />
-                      <text x="50" y="-5" fontSize="22" textAnchor="middle" fill="black" fontWeight="bold">N</text>
-                    </svg>
-                  </div>
+                    <div className="h-100 w-100 position-relative bg-white" style={{ outline: '1px solid black' }}>
+                      <div aria-hidden="true" style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 1000, pointerEvents: 'none' }}>
+                        <svg width="45" height="45" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                          <polygon points="50,0 60,40 50,50 40,40" fill="black" />
+                          <polygon points="50,100 60,60 50,50 40,60" fill="white" stroke="black" />
+                          <polygon points="100,50 60,60 50,50 60,40" fill="black" />
+                          <polygon points="0,50 40,60 50,50 40,40" fill="white" stroke="black" />
+                          <circle cx="50" cy="50" r="8" fill="white" stroke="black" />
+                          <text x="50" y="-5" fontSize="22" textAnchor="middle" fill="black" fontWeight="bold">N</text>
+                        </svg>
+                      </div>
 
-                  {isAnyLayerLoading && (
-                    <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
-                      <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
-                      <span className="small fw-semibold text-dark">
-                        {isLoadingTemporal ? 'Consultando Google Earth Engine...' : 'Consultando coberturas SIG...'}
-                      </span>
-                    </output>
-                  )}
+                      {isAnyLayerLoading && (
+                        <output className="position-absolute d-flex align-items-center justify-content-center bg-white bg-opacity-75 shadow-sm rounded px-3 py-2 ignore-print" style={{ top: '15px', left: '70px', zIndex: 1100 }}>
+                          <span className="spinner-border spinner-border-sm text-success me-2" aria-hidden="true"></span>
+                          <span className="small fw-semibold text-dark">
+                            {isLoadingTemporal ? 'Consultando Google Earth Engine...' : 'Consultando coberturas SIG...'}
+                          </span>
+                        </output>
+                      )}
 
-                  <MapContainer
-                    ref={setMapRef}
-                    center={mapCenter}
-                    zoom={6}
-                    maxZoom={18}
-                    zoomControl={false}
-                    scrollWheelZoom="center"
-                    doubleClickZoom="center"
-                    preferCanvas={true}
-                    style={{ height: '100%', width: '100%' }}
-                  >
-                    <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
+                      <MapContainer
+                        ref={setMapRef}
+                        center={mapCenter}
+                        zoom={6}
+                        maxZoom={18}
+                        zoomControl={false}
+                        scrollWheelZoom="center"
+                        doubleClickZoom="center"
+                        preferCanvas={true}
+                        style={{ height: '100%', width: '100%' }}
+                      >
+                        <ViewportWatcher onBoundsChange={setCurrentViewportBbox} />
 
-                    {/* CRÍTICO: isExporting no está en las dependencias. Esto evita que el canvas se limpie antes de capturar */}
-                    <InvalidateMap
-                      dependencies={[
-                        geoJsonData,
-                        useSentinel,
-                        isSidebarOpen,
-                        selectedVegSerie,
-                        layerFilterMode,
-                        currentPlano,
-                        activeTemporalScene?.tileUrl,
-                      ]}
-                    />
+                        <InvalidateMap
+                          dependencies={[
+                            geoJsonData,
+                            useSentinel,
+                            isSidebarOpen,
+                            selectedVegSerie,
+                            layerFilterMode,
+                            currentPlano,
+                            activeTemporalScene?.tileUrl,
+                          ]}
+                        />
 
-                    <BaseSatelliteTileLayer
-                      currentPlano={currentPlano}
-                      activeTemporalScene={activeTemporalScene}
-                      useSentinel={useSentinel}
-                      sentinelUrl={sentinelUrl}
-                    />
+                        <BaseSatelliteTileLayer
+                          currentPlano={currentPlano}
+                          activeTemporalScene={activeTemporalScene}
+                          useSentinel={useSentinel}
+                          sentinelUrl={sentinelUrl}
+                        />
 
-                    <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
+                        <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
 
-                    <GraticuleEngine />
-                    <MapUpdater
-                      data={geoJsonData}
-                      plano={currentPlano}
-                      filterMode={layerFilterMode}
-                      trigger={recenterTrigger}
-                    />
-                    <ZoomCenterOnPolygon data={geoJsonData} />
+                        <GraticuleEngine />
+                        <MapUpdater
+                          data={geoJsonData}
+                          plano={currentPlano}
+                          filterMode={layerFilterMode}
+                          trigger={recenterTrigger}
+                        />
+                        <ZoomCenterOnPolygon data={geoJsonData} />
 
-                    <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
-                      <ScaleControl position="bottomleft" imperial={false} />
+                        <div className="ignore-print" style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 5px', pointerEvents: 'none' }}>
+                          <ScaleControl position="bottomleft" imperial={false} />
+                        </div>
+
+                        {currentPlano === 2 && (
+                          <EcoLayer
+                            key={`eco-${currentPlano}-${layerFilterMode}`}
+                            ecoNearby={ecoNearby}
+                            userPolygonGeom={userPolygonGeom}
+                          />
+                        )}
+                        {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}-${layerFilterMode}`} vegNearby={vegNearby} />}
+                        {currentPlano === 4 && <ClimateLayer key={`climate-${currentPlano}-${layerFilterMode}`} climateNearby={climateNearby} />}
+                        {currentPlano === 5 && <EdafologiaLayer key={`edafologia-${currentPlano}-${layerFilterMode}`} edafologiaNearby={edafologiaNearby} />}
+                        {currentPlano === 6 && (
+                          <HidrologiaLayer
+                            key={`hidrologia-${currentPlano}-${layerFilterMode}`}
+                            cuencasNearby={cuencasNearby}
+                            subcuencasNearby={subcuencasNearby}
+                            cuerposAguaNearby={cuerposAguaNearby}
+                            corrientesNearby={corrientesNearby}
+                            microcuencaData={microcuencaData}
+                          />
+                        )}
+
+                        {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
+                        {(currentPlano === 1 || currentPlano === 7) && <SmartLabels data={geoJsonData} plano={currentPlano} />}
+
+                      </MapContainer>
                     </div>
-
-                    {currentPlano === 2 && (
-                      <EcoLayer
-                        key={`eco-${currentPlano}-${layerFilterMode}`}
-                        ecoNearby={ecoNearby}
-                        userPolygonGeom={userPolygonGeom}
-                      />
-                    )}
-                    {currentPlano === 3 && <VegLayer key={`veg-${currentPlano}-${selectedVegSerie}-${layerFilterMode}`} vegNearby={vegNearby} />}
-                    {currentPlano === 4 && <ClimateLayer key={`climate-${currentPlano}-${layerFilterMode}`} climateNearby={climateNearby} />}
-                    {currentPlano === 5 && <EdafologiaLayer key={`edafologia-${currentPlano}-${layerFilterMode}`} edafologiaNearby={edafologiaNearby} />}
-                    {currentPlano === 6 && (
-                      <HidrologiaLayer
-                        key={`hidrologia-${currentPlano}-${layerFilterMode}`}
-                        cuencasNearby={cuencasNearby}
-                        subcuencasNearby={subcuencasNearby}
-                        cuerposAguaNearby={cuerposAguaNearby}
-                        corrientesNearby={corrientesNearby}
-                        microcuencaData={microcuencaData}
-                      />
-                    )}
-
-                    {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
-                    {(currentPlano === 1 || currentPlano === 7) && <SmartLabels data={geoJsonData} plano={currentPlano} />}
-
-                  </MapContainer>
-                </div>
+                  </>
+                )}
               </div>
 
-              {/* COLUMNA DERECHA: SIMBOLOGÍA Y MARGINALIA EXTENDIDA HACIA LA DERECHA */}
               {previewData && (
                 <div
                   className="bg-white d-flex flex-column"
@@ -1278,7 +1323,6 @@ export const GeoViewer: React.FC = () => {
                     boxSizing: 'border-box',
                   }}
                 >
-                  {/* ENCABEZADO INSTITUCIONAL */}
                   <div className="d-flex align-items-center mb-2">
                     <img
                       src={profepaLogo}
@@ -1302,26 +1346,26 @@ export const GeoViewer: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* MINIMAPA DE LOCALIZACIÓN */}
-                  <MiniMapLocator
-                    data={geoJsonData}
-                    buffer10km={buffer10km}
-                    currentPlano={currentPlano}
-                    selectedVegSerie={selectedVegSerie}
-                    ecoNearby={miniVisibleLayers.eco}
-                    vegNearby={miniVisibleLayers.veg}
-                    climateNearby={miniVisibleLayers.climate}
-                    edafologiaNearby={miniVisibleLayers.edafologia}
-                    cuencasNearby={miniVisibleLayers.cuencas}
-                    subcuencasNearby={miniVisibleLayers.subcuencas}
-                    cuerposAguaNearby={miniVisibleLayers.cuerposAgua}
-                    corrientesNearby={miniVisibleLayers.corrientes}
-                    microcuencaData={microcuencaData}
-                    estado={previewData.estado}
-                    municipio={previewData.municipio}
-                  />
+                  {currentPlano !== 8 && (
+                    <MiniMapLocator
+                      data={geoJsonData}
+                      buffer10km={buffer10km}
+                      currentPlano={currentPlano}
+                      selectedVegSerie={selectedVegSerie}
+                      ecoNearby={miniVisibleLayers.eco}
+                      vegNearby={miniVisibleLayers.veg}
+                      climateNearby={miniVisibleLayers.climate}
+                      edafologiaNearby={miniVisibleLayers.edafologia}
+                      cuencasNearby={miniVisibleLayers.cuencas}
+                      subcuencasNearby={miniVisibleLayers.subcuencas}
+                      cuerposAguaNearby={miniVisibleLayers.cuerposAgua}
+                      corrientesNearby={miniVisibleLayers.corrientes}
+                      microcuencaData={microcuencaData}
+                      estado={previewData.estado}
+                      municipio={previewData.municipio}
+                    />
+                  )}
 
-                  {/* LEYENDA DINÁMICA POR PLANO */}
                   {currentPlano === 1 && (
                     <LegendUbicacion
                       previewData={previewData}
@@ -1380,16 +1424,25 @@ export const GeoViewer: React.FC = () => {
                       totalArea={totalArea}
                     />
                   )}
+                  {currentPlano === 8 && (
+                    <LegendClimograma
+                      targetDate={previewData.targetDate}
+                      isLoading={isLoadingClima}
+                      climaData={climaData}
+                      error={errorClima || undefined}
+                    />
+                  )}
 
-                  {/* SISTEMA DE REFERENCIA */}
-                  <div className="bg-white border border-dark">
-                    <div className="fw-bold text-white text-center" style={{ backgroundColor: '#163f37', fontSize: '0.70rem', padding: '2px' }}>
-                      Sistema de Referencia:
+                  {currentPlano !== 8 && (
+                    <div className="bg-white border border-dark mt-auto">
+                      <div className="fw-bold text-white text-center" style={{ backgroundColor: '#163f37', fontSize: '0.70rem', padding: '2px' }}>
+                        Sistema de Referencia:
+                      </div>
+                      <p className="mb-0 text-center p-1" style={{ fontSize: '0.62rem', lineHeight: '1.15' }}>
+                        DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator
+                      </p>
                     </div>
-                    <p className="mb-0 text-center p-1" style={{ fontSize: '0.62rem', lineHeight: '1.15' }}>
-                      DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator
-                    </p>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
