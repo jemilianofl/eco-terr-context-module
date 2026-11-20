@@ -379,7 +379,7 @@ export const LegendEcologica = ({
           </div>
 
           {activeEcoLegend.length > 0 ? (
-            <div style={{ maxHeight: '175px', overflowY: 'auto' }}>
+            <div>
               {activeEcoLegend.map((layer) => (
                 <div key={layer.id} className="mb-2">
                   <div className="d-flex align-items-center">
@@ -531,7 +531,7 @@ export const LegendVegetacion = ({
             </select>
           )}
 
-          <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
+          <div className="mt-2">
             <div className="d-flex align-items-center mb-1">
               <div
                 style={{
@@ -618,8 +618,8 @@ export const LegendClima = ({
             Capa extraída de: CONABIO (García - 1998)
           </p>
 
-          <div className="mt-2" style={{ maxHeight: '165px', overflowY: 'auto' }}>
-            <div className="d-flex align-items-center mb-1">
+          <div className="mt-2">
+  <div className="d-flex align-items-center mb-1">
               <div
                 style={{
                   width: '12px',
@@ -705,8 +705,8 @@ export const LegendEdafologia = ({
             Capa extraída de: INEGI (Esc. 1:250,000)
           </p>
 
-          <div className="mt-2" style={{ maxHeight: '165px', overflowY: 'auto' }}>
-            <div className="d-flex align-items-center mb-1">
+          <div className="mt-2">
+  <div className="d-flex align-items-center mb-1">
               <div
                 style={{
                   width: '12px',
@@ -826,12 +826,12 @@ export const LegendHidrologia = ({
       cuencaNamesFromSubc.length > 0
         ? cuencaNamesFromSubc
         : Array.from(
-            new Set(
-              visibleCuencas
-                .map((f) => (typeof f.properties?._type === 'string' ? f.properties._type.trim() : ''))
-                .filter(Boolean)
-            )
-          );
+          new Set(
+            visibleCuencas
+              .map((f) => (typeof f.properties?._type === 'string' ? f.properties._type.trim() : ''))
+              .filter(Boolean)
+          )
+        );
 
     const hasVisibleWaterBodies = cuerposAguaNearby.some(isInView);
     const visibleOrders = new Set<number>();
@@ -935,25 +935,25 @@ export const LegendHidrologia = ({
 
           {(activeHydroContext.cuencaNames.length > 0 ||
             activeHydroContext.subcuencaNames.length > 0) && (
-            <div
-              className="mb-2 p-1 rounded"
-              style={{
-                backgroundColor: '#f0f9ff',
-                border: '1px solid #bae6fd',
-                fontSize: '0.58rem',
-                lineHeight: '1.25',
-              }}
-            >
-              <div>
-                <strong>Cuenca:</strong> {activeHydroContext.cuencaNames.join(', ') || 'N/D'}
-              </div>
-              {activeHydroContext.subcuencaNames.length > 0 && (
+              <div
+                className="mb-2 p-1 rounded"
+                style={{
+                  backgroundColor: '#f0f9ff',
+                  border: '1px solid #bae6fd',
+                  fontSize: '0.58rem',
+                  lineHeight: '1.25',
+                }}
+              >
                 <div>
-                  <strong>Subcuenca:</strong> {activeHydroContext.subcuencaNames.join(', ')}
+                  <strong>Cuenca:</strong> {activeHydroContext.cuencaNames.join(', ') || 'N/D'}
                 </div>
-              )}
-            </div>
-          )}
+                {activeHydroContext.subcuencaNames.length > 0 && (
+                  <div>
+                    <strong>Subcuenca:</strong> {activeHydroContext.subcuencaNames.join(', ')}
+                  </div>
+                )}
+              </div>
+            )}
 
           {/* Polígonos */}
           <div style={rowStyle}>
