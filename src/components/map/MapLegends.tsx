@@ -803,13 +803,36 @@ export const LegendHidrologia = ({
       }
     };
 
+    // Helper para corregir problemas de codificación de Shapefiles de CONAGUA/INEGI
+    const fixEncoding = (str: string) => {
+      if (!str) return '';
+      return str
+        .replace(/┴/g, 'Á')
+        .replace(/╔/g, 'É')
+        .replace(/═/g, 'Í')
+        .replace(/╙/g, 'Ó')
+        .replace(/┌/g, 'Ú')
+        .replace(/ß/g, 'á')
+        .replace(/Ú/g, 'é') // En CP437, 0xE9 (é) se lee como Ú
+        .replace(/φ/g, 'í')
+        .replace(/≤/g, 'ó')
+        .replace(/·/g, 'ú')
+        .replace(/╤/g, 'Ñ')
+        .replace(/±/g, 'ñ');
+    };
+
     const visibleCuencas = cuencasNearby.filter(isInView);
     const visibleSubcuencas = subcuencasNearby.filter(isInView);
 
     const subcuencaNames = Array.from(
       new Set(
         visibleSubcuencas
-          .map((f) => (typeof f.properties?.SUBCUENCA === 'string' ? f.properties.SUBCUENCA.trim() : ''))
+          .map((f) => {
+            const nombre = typeof f.properties?.SUBCUENCA === 'string' ? fixEncoding(f.properties.SUBCUENCA.trim()) : '';
+            const cve = typeof f.properties?.CVE_SUBCUE === 'string' ? f.properties.CVE_SUBCUE.trim() : '';
+            if (!nombre) return '';
+            return cve ? `${nombre} (Clave: ${cve})` : nombre;
+          })
           .filter(Boolean)
       )
     );
@@ -817,7 +840,12 @@ export const LegendHidrologia = ({
     const cuencaNamesFromSubc = Array.from(
       new Set(
         visibleSubcuencas
-          .map((f) => (typeof f.properties?.CUENCA === 'string' ? f.properties.CUENCA.trim() : ''))
+          .map((f) => {
+            const nombre = typeof f.properties?.CUENCA === 'string' ? fixEncoding(f.properties.CUENCA.trim()) : '';
+            const rh = typeof f.properties?.RH === 'string' ? fixEncoding(f.properties.RH.trim()) : '';
+            if (!nombre) return '';
+            return rh ? `${nombre} (RH: ${rh})` : nombre;
+          })
           .filter(Boolean)
       )
     );
@@ -826,12 +854,31 @@ export const LegendHidrologia = ({
       cuencaNamesFromSubc.length > 0
         ? cuencaNamesFromSubc
         : Array.from(
-          new Set(
-            visibleCuencas
-              .map((f) => (typeof f.properties?._type === 'string' ? f.properties._type.trim() : ''))
-              .filter(Boolean)
-          )
-        );
+            new Set(
+              visibleCuencas
+                .map((f) => {
+                  const nombre = typeof f.properties?._type === 'string' ? fixEncoding(f.properties._type.trim()) : '';
+                  const cve = typeof f.properties?.CVE_CUENCA === 'string' ? f.properties.CVE_CUENCA.trim() : '';
+                  if (!nombre) return '';
+                  return cve ? `${nombre} (Clave: ${cve})` : nombre;
+                })
+                .filter(Boolean)
+            )
+          );
+
+    const corrientesNombres = Array.from(
+      new Set(
+        corrientesNearby
+          .filter(isInView)
+          .map((f) => {
+            const nombre = typeof f.properties?.ENTIDAD === 'string' ? fixEncoding(f.properties.ENTIDAD.trim()) : '';
+            const cve = typeof f.properties?.CVE_SUBC === 'string' ? f.properties.CVE_SUBC.trim() : '';
+            if (!nombre || nombre.toLowerCase() === 'ninguno' || nombre.toLowerCase() === 'no aplica') return '';
+            return cve ? `${nombre} (Subc: ${cve})` : nombre;
+          })
+          .filter(Boolean)
+      )
+    );
 
     const hasVisibleWaterBodies = cuerposAguaNearby.some(isInView);
     const visibleOrders = new Set<number>();
@@ -850,6 +897,7 @@ export const LegendHidrologia = ({
       hasCuenca: visibleCuencas.length > 0 || cuencaNames.length > 0,
       subcuencaNames,
       cuencaNames,
+      corrientesNombres,
       hasVisibleWaterBodies,
       displayedStrahlerItems,
     };
@@ -945,11 +993,16 @@ export const LegendHidrologia = ({
                 }}
               >
                 <div>
-                  <strong>Cuenca:</strong> {activeHydroContext.cuencaNames.join(', ') || 'N/D'}
+                  <strong>Cuenca:</strong> {activeHydroContext.cuencaNames.join(' | ') || 'N/D'}
                 </div>
                 {activeHydroContext.subcuencaNames.length > 0 && (
-                  <div>
-                    <strong>Subcuenca:</strong> {activeHydroContext.subcuencaNames.join(', ')}
+                  <div className="mt-1">
+                    <strong>Subcuenca:</strong> {activeHydroContext.subcuencaNames.join(' | ')}
+                  </div>
+                )}
+                {activeHydroContext.corrientesNombres && activeHydroContext.corrientesNombres.length > 0 && (
+                  <div className="mt-1">
+                    <strong>Corrientes:</strong> {activeHydroContext.corrientesNombres.join(' | ')}
                   </div>
                 )}
               </div>
