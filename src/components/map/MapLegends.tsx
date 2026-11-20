@@ -1231,3 +1231,137 @@ export const LegendEspacioTemporal = ({
     </>
   );
 };
+
+interface LegendClimogramaProps {
+  targetDate?: string;
+  isLoading: boolean;
+  climaData?: {
+    estacion: string;
+    clave: string;
+    municipio: string;
+    periodo?: string;
+    distanciaKm?: number | null;
+    datos: {
+      mes: string;
+      tMax: number;
+      tMin: number;
+      tMed: number;
+      precipitacion: number;
+    }[];
+  } | null;
+  error?: string;
+}
+
+export const LegendClimograma = ({
+  targetDate,
+  isLoading,
+  climaData,
+  error,
+}: LegendClimogramaProps) => {
+  const resumen = useMemo(() => {
+    const pts = climaData?.datos ?? [];
+    if (pts.length === 0) return null;
+
+    const precipAnual = pts.reduce((acc, p) => acc + p.precipitacion, 0);
+    const tMedAnual = pts.reduce((acc, p) => acc + p.tMed, 0) / pts.length;
+    const mesMaxTemp = pts.reduce((a, b) => (b.tMax > a.tMax ? b : a), pts[0]);
+    const mesMinTemp = pts.reduce((a, b) => (b.tMin < a.tMin ? b : a), pts[0]);
+    const mesMasLluvioso = pts.reduce(
+      (a, b) => (b.precipitacion > a.precipitacion ? b : a),
+      pts[0]
+    );
+
+    return {
+      precipAnual: precipAnual.toFixed(1),
+      tMedAnual: tMedAnual.toFixed(1),
+      mesMaxTemp: `${mesMaxTemp.tMax.toFixed(1)} °C (${mesMaxTemp.mes})`,
+      mesMinTemp: `${mesMinTemp.tMin.toFixed(1)} °C (${mesMinTemp.mes})`,
+      mesMasLluvioso: `${mesMasLluvioso.precipitacion.toFixed(1)} mm (${mesMasLluvioso.mes})`,
+    };
+  }, [climaData]);
+
+  return (
+    <>
+      <div className="bg-white mb-2 border border-dark">
+        <div
+          className="fw-bold text-white text-center mb-1"
+          style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}
+        >
+          Estación Climatológica SMN
+        </div>
+        <div className="p-2" style={{ fontSize: '0.63rem', lineHeight: '1.35' }}>
+          <p className="mb-1 text-muted text-center">
+            Normales Climatológicas ({climaData?.periodo ?? '1981-2010'})
+          </p>
+
+          {isLoading && (
+            <p className="mb-0 fw-bold text-center">Localizando estación cercana...</p>
+          )}
+
+          {!isLoading && error && (
+            <p className="mb-0 fw-bold text-danger text-center">{error}</p>
+          )}
+
+          {!isLoading && !error && climaData && (
+            <>
+              <div className="mb-1">
+                <strong>Estación:</strong> {climaData.estacion}
+              </div>
+              <div className="mb-1">
+                <strong>Clave SMN:</strong> {climaData.clave}
+              </div>
+              <div className="mb-1">
+                <strong>Municipio:</strong> {climaData.municipio}
+              </div>
+              {climaData.distanciaKm !== null && climaData.distanciaKm !== undefined && (
+                <div className="mb-0">
+                  <strong>Distancia al predio:</strong> {climaData.distanciaKm} km
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {resumen && (
+        <div className="bg-white mb-2 border border-dark">
+          <div
+            className="fw-bold text-white text-center"
+            style={{ backgroundColor: '#9e1c3f', fontSize: '0.73rem', padding: '2px' }}
+          >
+            Resumen Estadístico Normal
+          </div>
+          <div className="p-2" style={{ fontSize: '0.62rem', lineHeight: '1.35' }}>
+            <div className="d-flex justify-content-between border-bottom pb-1 mb-1">
+              <span className="text-muted">Temp. media anual:</span>
+              <strong>{resumen.tMedAnual} °C</strong>
+            </div>
+            <div className="d-flex justify-content-between border-bottom pb-1 mb-1">
+              <span className="text-muted">Temp. máx. promedio:</span>
+              <strong style={{ color: '#8b0000' }}>{resumen.mesMaxTemp}</strong>
+            </div>
+            <div className="d-flex justify-content-between border-bottom pb-1 mb-1">
+              <span className="text-muted">Temp. mín. promedio:</span>
+              <strong style={{ color: '#005a8b' }}>{resumen.mesMinTemp}</strong>
+            </div>
+            <div className="d-flex justify-content-between border-bottom pb-1 mb-1">
+              <span className="text-muted">Mes más lluvioso:</span>
+              <strong>{resumen.mesMasLluvioso}</strong>
+            </div>
+            <div className="d-flex justify-content-between pt-1">
+              <span className="fw-bold">Precipitación anual:</span>
+              <strong style={{ color: '#0f4c5c' }}>{resumen.precipAnual} mm</strong>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div
+        className="border border-dark mb-2 p-1 text-center bg-white"
+        style={{ fontSize: '0.65rem' }}
+      >
+        <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
+      </div>
+    </>
+  );
+};

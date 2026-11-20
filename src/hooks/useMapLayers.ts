@@ -767,3 +767,64 @@ export const useHidrologiaLayers = (
   };
 };
 
+export interface ClimogramaData {
+  mes: string;
+  tMax: number;
+  tMin: number;
+  tMed: number;
+  precipitacion: number;
+}
+
+export interface ClimogramaResponse {
+  estacion: string;
+  municipio: string;
+  clave: string;
+  estado: string;
+  periodo?: string;
+  distanciaKm?: number | null;
+  coordenadas: [number, number];
+  datos: ClimogramaData[];
+}
+
+export const useClimogramaData = (
+  predioCentroid: Feature<Point> | null, 
+  estado: string | undefined, 
+  municipio: string | undefined, 
+  isEnabled: boolean
+) => {
+  // Ahora tiene tipo estricto en lugar de "any"
+  const [climaData, setClimaData] = useState<ClimogramaResponse | null>(null);
+  const [isLoadingClima, setIsLoading] = useState<boolean>(false);
+  const [errorClima, setErrorClima] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!predioCentroid || !estado || !municipio || !isEnabled) return;
+    
+    const fetchClima = async () => {
+      setIsLoading(true);
+      setErrorClima(null);
+      try {
+        const [lng, lat] = predioCentroid.geometry.coordinates;
+        const backendUrl = getGisBackendUrl();
+        const params = new URLSearchParams({ estado, municipio, lat: String(lat), lng: String(lng) });
+        
+        const res = await fetch(`${backendUrl}/conagua/climograma?${params.toString()}`);
+        if (!res.ok) {
+          const errData = (await res.json()) as { message?: string };
+          throw new Error(errData.message || 'Error obteniendo climograma');
+        }
+        
+        const data = (await res.json()) as ClimogramaResponse;
+        setClimaData(data);
+      } catch (error) {
+        setErrorClima(error instanceof Error ? error.message : 'Error al conectar con el servidor');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    void fetchClima(); 
+  }, [predioCentroid, estado, municipio, isEnabled]);
+
+  return { climaData, isLoadingClima, errorClima };
+};
