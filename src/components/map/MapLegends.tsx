@@ -1327,31 +1327,61 @@ export const LegendClimograma = ({
         <div className="bg-white mb-2 border border-dark">
           <div
             className="fw-bold text-white text-center"
-            style={{ backgroundColor: '#9e1c3f', fontSize: '0.73rem', padding: '2px' }}
+            style={{ backgroundColor: '#9e1c3f', fontSize: '0.73rem', padding: '3px' }}
           >
             Resumen Estadístico Normal
           </div>
-          <div className="p-2" style={{ fontSize: '0.62rem', lineHeight: '1.35' }}>
-            <div className="d-flex justify-content-between border-bottom pb-1 mb-1">
-              <span className="text-muted">Temp. media anual:</span>
-              <strong>{resumen.tMedAnual} °C</strong>
-            </div>
-            <div className="d-flex justify-content-between border-bottom pb-1 mb-1">
-              <span className="text-muted">Temp. máx. promedio:</span>
-              <strong style={{ color: '#8b0000' }}>{resumen.mesMaxTemp}</strong>
-            </div>
-            <div className="d-flex justify-content-between border-bottom pb-1 mb-1">
-              <span className="text-muted">Temp. mín. promedio:</span>
-              <strong style={{ color: '#005a8b' }}>{resumen.mesMinTemp}</strong>
-            </div>
-            <div className="d-flex justify-content-between border-bottom pb-1 mb-1">
-              <span className="text-muted">Mes más lluvioso:</span>
-              <strong>{resumen.mesMasLluvioso}</strong>
-            </div>
-            <div className="d-flex justify-content-between pt-1">
-              <span className="fw-bold">Precipitación anual:</span>
-              <strong style={{ color: '#0f4c5c' }}>{resumen.precipAnual} mm</strong>
-            </div>
+          <div className="p-2">
+            <table
+              className="w-100 mb-0"
+              style={{
+                fontSize: '0.60rem',
+                lineHeight: '1.25',
+                borderCollapse: 'collapse',
+              }}
+            >
+              <tbody>
+                <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                  <td className="text-muted py-1 pe-1">Temp. media anual:</td>
+                  <td className="text-end fw-bold py-1" style={{ whiteSpace: 'nowrap' }}>
+                    {resumen.tMedAnual} °C
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                  <td className="text-muted py-1 pe-1">Temp. máx. promedio:</td>
+                  <td
+                    className="text-end fw-bold py-1"
+                    style={{ color: '#8b0000', whiteSpace: 'nowrap' }}
+                  >
+                    {resumen.mesMaxTemp}
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                  <td className="text-muted py-1 pe-1">Temp. mín. promedio:</td>
+                  <td
+                    className="text-end fw-bold py-1"
+                    style={{ color: '#005a8b', whiteSpace: 'nowrap' }}
+                  >
+                    {resumen.mesMinTemp}
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #dee2e6' }}>
+                  <td className="text-muted py-1 pe-1">Mes más lluvioso:</td>
+                  <td className="text-end fw-bold py-1" style={{ whiteSpace: 'nowrap' }}>
+                    {resumen.mesMasLluvioso}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="fw-bold pt-1 pe-1">Precipitación anual:</td>
+                  <td
+                    className="text-end fw-bold pt-1"
+                    style={{ color: '#0f4c5c', whiteSpace: 'nowrap' }}
+                  >
+                    {resumen.precipAnual} mm
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       )}
