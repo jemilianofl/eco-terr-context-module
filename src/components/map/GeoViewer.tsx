@@ -8,7 +8,7 @@ import L from 'leaflet';
 import domtoimage from 'dom-to-image';
 import * as turf from '@turf/turf';
 
-import { toDMS, getStrahlerOrderNumber } from '../../config/mapConfig';
+import { toDMS, getStrahlerOrderNumber, type AreaUnit } from '../../config/mapConfig';
 import {
   GisBackendUnavailableError,
   parseSpatialFileViaBackend,
@@ -917,6 +917,8 @@ export const GeoViewer: React.FC = () => {
   const printRef = useRef<HTMLDivElement>(null);
 
   const [recenterTrigger, setRecenterTrigger] = useState<number>(0);
+  /** Unidad de superficie en leyendas (por defecto hectáreas); compartida por Plano 1 y Plano 7. */
+  const [areaUnit, setAreaUnit] = useState<AreaUnit>('ha');
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
 
@@ -1597,6 +1599,8 @@ export const GeoViewer: React.FC = () => {
                       }
                       onResetArea={() => setCustomAreaOverride(null)}
                       isAreaModified={customAreaOverride !== null}
+                      areaUnit={areaUnit}
+                      onChangeAreaUnit={setAreaUnit}
                     />
                   )}
                   {currentPlano === 2 && (
@@ -1641,6 +1645,8 @@ export const GeoViewer: React.FC = () => {
                       areaDetails={areaDetails}
                       totalArea={totalArea}
                       seriesInfo={seriesInfo}
+                      areaUnit={areaUnit}
+                      onChangeAreaUnit={setAreaUnit}
                     />
                   )}
                   {currentPlano === 8 && (

@@ -12,6 +12,7 @@ import {
   getStrahlerStyle,
   getEcoSiteName,
   calcularDistanciaPoligono,
+  formatArea,
 } from '../../config/mapConfig';
 
 interface UserPolygonLayerProps {
@@ -36,7 +37,7 @@ export const UserPolygonLayer = ({
           let areaHtml = '';
           try {
             const areaSqMeters = turf.area(f);
-            areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
+            areaHtml = `<strong>Superficie calculada:</strong> ${formatArea(areaSqMeters, 'ha')} (${formatArea(areaSqMeters, 'm2')})<br/>`;
           } catch {
             /* ignorar */
           }
