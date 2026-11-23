@@ -47,6 +47,9 @@ import {
   LegendClimograma,
 } from './MapLegends';
 import { ClimogramaChart } from './ClimogramaChart';
+import { TemporalSeriesGallery, type SeriesExportProgress } from './TemporalSeriesGallery';
+import { useTemporalSeries, type SeriesScene } from '../../hooks/useTemporalSeries';
+import { createZipBlob, downloadBlob, type ZipEntry } from '../../utils/zipStore';
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
@@ -465,16 +468,20 @@ const BaseSatelliteTileLayer: React.FC<{
   activeTemporalScene: TemporalSceneItem | null;
   useSentinel: boolean;
   sentinelUrl: string | null;
-}> = ({ currentPlano, activeTemporalScene, useSentinel, sentinelUrl }) => {
+  /** Se dispara cuando todos los tiles visibles de la escena temporal terminaron de cargar. */
+  onTemporalTilesLoaded?: (tileUrl: string) => void;
+}> = ({ currentPlano, activeTemporalScene, useSentinel, sentinelUrl, onTemporalTilesLoaded }) => {
   if (currentPlano === 7 && activeTemporalScene) {
+    const tileUrl = activeTemporalScene.tileUrl;
     return (
       <TileLayer
-        key={activeTemporalScene.tileUrl}
+        key={tileUrl}
         crossOrigin="anonymous"
-        url={activeTemporalScene.tileUrl}
+        url={tileUrl}
         opacity={1}
         maxNativeZoom={18}
         maxZoom={18}
+        eventHandlers={{ load: () => onTemporalTilesLoaded?.(tileUrl) }}
       />
     );
   }
@@ -787,6 +794,44 @@ const PlanosNavBar: React.FC<{
   </div>
 );
 
+/** Escala de exportación de un plano individual. */
+const EXPORT_SCALE = 3;
+/** Escala para la serie multitemporal: 2× (≈2264×1632 px) mantiene calidad de dictamen sin agotar memoria en series largas. */
+const SERIES_EXPORT_SCALE = 2;
+/** Tiempo máximo de espera de tiles por año antes de capturar de todos modos. */
+const SERIES_TILE_TIMEOUT_MS = 25000;
+/** Pausa tras cargar tiles para que leyenda, etiquetas y marco se repinten. */
+const SERIES_SETTLE_MS = 700;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Captura la plantilla oficial (mapa + panel lateral) como PNG, igual para plano individual y serie. */
+function capturePrintNode(node: HTMLElement, scale: number): Promise<Blob> {
+  const baseWidth = node.offsetWidth || 1132;
+  const baseHeight = node.offsetHeight || 816;
+  return domtoimage.toBlob(node, {
+    bgcolor: '#ffffff',
+    width: baseWidth * scale,
+    height: baseHeight * scale,
+    style: {
+      margin: '0',
+      width: `${baseWidth}px`,
+      height: `${baseHeight}px`,
+      transform: `scale(${scale})`,
+      transformOrigin: 'top left',
+    },
+    filter: (domNode: Node) => {
+      if (domNode instanceof HTMLElement) {
+        return (
+          !domNode.classList.contains('ignore-print') &&
+          !domNode.classList.contains('leaflet-control-container')
+        );
+      }
+      return true;
+    },
+  });
+}
+
 function useMapImageExport(
   printRef: React.RefObject<HTMLDivElement | null>,
   mapRef: L.Map | null,
@@ -806,39 +851,11 @@ function useMapImageExport(
       mapRef.setView(mapRef.getCenter(), mapRef.getZoom(), { animate: false });
     }
 
-    const EXPORT_SCALE = 3;
-    const baseWidth = node.offsetWidth || 1132;
-    const baseHeight = node.offsetHeight || 816;
-
     setTimeout(() => {
-      domtoimage
-        .toPng(node, {
-          bgcolor: '#ffffff',
-          width: baseWidth * EXPORT_SCALE,
-          height: baseHeight * EXPORT_SCALE,
-          style: {
-            margin: '0',
-            width: `${baseWidth}px`,
-            height: `${baseHeight}px`,
-            transform: `scale(${EXPORT_SCALE})`,
-            transformOrigin: 'top left',
-          },
-          filter: (domNode: Node) => {
-            if (domNode instanceof HTMLElement) {
-              return (
-                !domNode.classList.contains('ignore-print') &&
-                !domNode.classList.contains('leaflet-control-container')
-              );
-            }
-            return true;
-          },
-        })
-        .then((dataUrl) => {
-          const link = document.createElement('a');
+      capturePrintNode(node, EXPORT_SCALE)
+        .then((blob) => {
           const planoName = PLANO_FILE_NAMES[currentPlano] ?? 'Ubicacion_Geografica';
-          link.download = `Mapa_Oficial_${expediente || 'Dictamen'}_${planoName}.png`;
-          link.href = dataUrl;
-          link.click();
+          downloadBlob(blob, `Mapa_Oficial_${expediente || 'Dictamen'}_${planoName}.png`);
         })
         .catch((error) => {
           console.error('Error al exportar la imagen:', error);
@@ -851,6 +868,38 @@ function useMapImageExport(
   }, [printRef, mapRef, currentPlano, expediente]);
 
   return { isExporting, handleDownloadImage };
+}
+
+function buildSeriesManifestCsv(scenes: SeriesScene[], expediente: string): Blob {
+  const header = [
+    'EXPEDIENTE',
+    'ORDEN',
+    'ANIO',
+    'FECHA_ADQUISICION',
+    'PROGRAMA',
+    'NIVEL_PROCESAMIENTO',
+    'SENSOR',
+    'NUBOSIDAD_ESCENA_PCT',
+    'AOI_DESPEJADO_PCT',
+    'ID_ESCENA',
+  ];
+  const rows = scenes.map((s, i) => [
+    expediente,
+    String(i + 1),
+    String(s.year),
+    s.date.slice(0, 10),
+    s.collection.includes('landsat') ? 'USGS/NASA Landsat C2' : 'Copernicus Sentinel-2',
+    s.processingLevel ?? '',
+    s.platform,
+    String(s.cloudCover),
+    s.aoiClearPct === null || s.aoiClearPct === undefined ? '' : String(s.aoiClearPct),
+    s.id,
+  ]);
+  const csv = [header, ...rows]
+    .map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+  // BOM para que Excel abra bien los acentos
+  return new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
 }
 
 export const GeoViewer: React.FC = () => {
@@ -957,6 +1006,174 @@ export const GeoViewer: React.FC = () => {
     collection: temporalCollection,
     preset: temporalPreset,
   });
+
+  // ---------------- SERIE MULTITEMPORAL (Plano 7) ----------------
+  const {
+    items: seriesItems,
+    bbox: seriesBbox,
+    scenesByYear,
+    availableYears,
+    progress: seriesProgress,
+    reload: reloadSeries,
+  } = useTemporalSeries(userPolygonGeom, Boolean(activatedPlanos[7]), temporalCollection);
+
+  const [selectedSeriesYears, setSelectedSeriesYears] = useState<Set<number>>(new Set());
+  const [isPlayingSeries, setIsPlayingSeries] = useState(false);
+  const [exportScene, setExportScene] = useState<SeriesScene | null>(null);
+  const [seriesExportProgress, setSeriesExportProgress] = useState<SeriesExportProgress | null>(null);
+  const cancelSeriesExportRef = useRef(false);
+  const tilesLoadedResolverRef = useRef<((tileUrl: string) => void) | null>(null);
+  const displayedTileUrlRef = useRef<string | null>(null);
+
+  // Escena que se pinta en el Plano 7: la de exportación > la de la serie (RGB) > la consulta anual existente
+  const seriesSceneForYear = temporalPreset === 'rgb' ? scenesByYear.get(temporalYear) : undefined;
+  const displayedTemporalScene: SeriesScene | TemporalSceneItem | null =
+    exportScene ?? seriesSceneForYear ?? activeTemporalScene;
+
+  useEffect(() => {
+    displayedTileUrlRef.current = currentPlano === 7 ? displayedTemporalScene?.tileUrl ?? null : null;
+  }, [displayedTemporalScene, currentPlano]);
+
+  // Selección efectiva: solo años que existen en la serie actual (otro polígono / catálogo los descarta)
+  const effectiveSelectedYears = useMemo(
+    () => new Set([...selectedSeriesYears].filter((y) => scenesByYear.has(y))),
+    [selectedSeriesYears, scenesByYear],
+  );
+
+  // Reproducción: recorre los años disponibles en el mapa principal
+  const isPlayingEffective = isPlayingSeries && availableYears.length >= 2;
+  useEffect(() => {
+    if (!isPlayingEffective) return;
+    const id = setInterval(() => {
+      setTemporalYear((prev) => {
+        const idx = availableYears.indexOf(prev);
+        return availableYears[(idx + 1) % availableYears.length];
+      });
+    }, 1800);
+    return () => clearInterval(id);
+  }, [isPlayingEffective, availableYears]);
+
+  const handleTemporalTilesLoaded = useCallback((tileUrl: string) => {
+    tilesLoadedResolverRef.current?.(tileUrl);
+  }, []);
+
+  const waitForSceneTiles = useCallback((tileUrl: string) => {
+    return new Promise<void>((resolveWait) => {
+      if (displayedTileUrlRef.current === tileUrl) {
+        resolveWait();
+        return;
+      }
+      const timer = setTimeout(() => {
+        tilesLoadedResolverRef.current = null;
+        console.warn(`Tiempo de espera agotado para tiles de ${tileUrl}; se captura igualmente.`);
+        resolveWait();
+      }, SERIES_TILE_TIMEOUT_MS);
+      tilesLoadedResolverRef.current = (loadedUrl) => {
+        if (loadedUrl !== tileUrl) return;
+        clearTimeout(timer);
+        tilesLoadedResolverRef.current = null;
+        resolveWait();
+      };
+    });
+  }, []);
+
+  const handlePreviewSeriesYear = useCallback((year: number) => {
+    setIsPlayingSeries(false);
+    setTemporalPreset('rgb');
+    setTemporalYear(year);
+  }, []);
+
+  const toggleSeriesYear = useCallback((year: number) => {
+    setSelectedSeriesYears((prev) => {
+      const next = new Set(prev);
+      if (next.has(year)) next.delete(year);
+      else next.add(year);
+      return next;
+    });
+  }, []);
+
+  const exportSeries = useCallback(
+    async (years: number[]) => {
+      const node = printRef.current;
+      if (!node) return;
+
+      const scenes = years
+        .map((y) => scenesByYear.get(y))
+        .filter((s): s is SeriesScene => Boolean(s))
+        .sort((a, b) => a.year - b.year);
+
+      if (scenes.length === 0) {
+        alert('No hay escenas disponibles para los años seleccionados.');
+        return;
+      }
+
+      const expediente = (previewData?.expediente || 'Dictamen').replace(/[^\w.-]+/g, '_');
+      cancelSeriesExportRef.current = false;
+      setIsPlayingSeries(false);
+      window.scrollTo(0, 0);
+
+      const files: ZipEntry[] = [];
+      try {
+        for (let i = 0; i < scenes.length; i++) {
+          if (cancelSeriesExportRef.current) break;
+          const scene = scenes[i];
+          setSeriesExportProgress({ current: i + 1, total: scenes.length, year: scene.year });
+
+          const tilesReady = waitForSceneTiles(scene.tileUrl);
+          setExportScene(scene);
+          await tilesReady;
+          await sleep(SERIES_SETTLE_MS);
+          if (cancelSeriesExportRef.current) break;
+
+          const blob = await capturePrintNode(node, SERIES_EXPORT_SCALE);
+          const order = String(i + 1).padStart(2, '0');
+          files.push({
+            name: `${order}_${scene.year}_${scene.date.slice(0, 10)}_RGB_${expediente}.png`,
+            blob,
+          });
+        }
+
+        if (cancelSeriesExportRef.current && files.length === 0) return;
+
+        const exported = scenes.slice(0, files.length);
+        if (files.length === 1) {
+          downloadBlob(files[0].blob, `Mapa_Oficial_${expediente}_Multitemporal_${exported[0].year}.png`);
+        } else if (files.length > 1) {
+          files.push({
+            name: `cronologia_escenas_${expediente}.csv`,
+            blob: buildSeriesManifestCsv(exported, expediente),
+          });
+          const zip = await createZipBlob(files);
+          const first = exported[0].year;
+          const last = exported[exported.length - 1].year;
+          downloadBlob(zip, `Analisis_Multitemporal_${expediente}_${first}-${last}.zip`);
+        }
+      } catch (error) {
+        console.error('Error al exportar la serie multitemporal:', error);
+        alert('Error al generar la serie multitemporal. Revisa la consola para más detalle.');
+      } finally {
+        tilesLoadedResolverRef.current = null;
+        setExportScene(null);
+        setSeriesExportProgress(null);
+      }
+    },
+    [scenesByYear, previewData?.expediente, waitForSceneTiles],
+  );
+
+  const isSeriesExporting = seriesExportProgress !== null;
+  const seriesInfo = useMemo(() => {
+    if (!displayedTemporalScene || availableYears.length === 0) return null;
+    const year = (displayedTemporalScene as SeriesScene).year;
+    const idx = availableYears.indexOf(year);
+    if (idx < 0) return null;
+    return {
+      index: idx + 1,
+      total: availableYears.length,
+      firstYear: availableYears[0],
+      lastYear: availableYears[availableYears.length - 1],
+    };
+  }, [displayedTemporalScene, availableYears]);
+  // ----------------------------------------------------------------
 
   const { ecoNearby, isLoadingEco } = useEcoLayers(
     activatedPlanos[2] ? userPolygonGeom : null,
@@ -1181,7 +1398,7 @@ export const GeoViewer: React.FC = () => {
             </button>
           )}
           {!isSidebarOpen && geoJsonData && (
-            <button type="button" onClick={handleDownloadImage} disabled={isExporting} className="btn btn-warning position-absolute shadow fw-bold ignore-print" style={{ top: '15px', left: '65px', zIndex: 1040 }}>
+            <button type="button" onClick={handleDownloadImage} disabled={isExporting || isSeriesExporting} className="btn btn-warning position-absolute shadow fw-bold ignore-print" style={{ top: '15px', left: '65px', zIndex: 1040 }}>
               {isExporting ? (
                 <><output className="spinner-border spinner-border-sm me-2" aria-hidden="true"></output>Generando...</>
               ) : (
@@ -1257,15 +1474,16 @@ export const GeoViewer: React.FC = () => {
                             selectedVegSerie,
                             layerFilterMode,
                             currentPlano,
-                            activeTemporalScene?.tileUrl,
+                            displayedTemporalScene?.tileUrl,
                           ]}
                         />
 
                         <BaseSatelliteTileLayer
                           currentPlano={currentPlano}
-                          activeTemporalScene={activeTemporalScene}
+                          activeTemporalScene={displayedTemporalScene}
                           useSentinel={useSentinel}
                           sentinelUrl={sentinelUrl}
+                          onTemporalTilesLoaded={handleTemporalTilesLoaded}
                         />
 
                         <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
@@ -1418,10 +1636,11 @@ export const GeoViewer: React.FC = () => {
                   {currentPlano === 7 && (
                     <LegendEspacioTemporal
                       targetDate={previewData.targetDate}
-                      activeScene={activeTemporalScene}
-                      preset={temporalPreset}
+                      activeScene={displayedTemporalScene}
+                      preset={exportScene ? 'rgb' : temporalPreset}
                       areaDetails={areaDetails}
                       totalArea={totalArea}
+                      seriesInfo={seriesInfo}
                     />
                   )}
                   {currentPlano === 8 && (
@@ -1468,15 +1687,41 @@ export const GeoViewer: React.FC = () => {
                   setTemporalCollection={setTemporalCollection}
                   temporalPreset={temporalPreset}
                   setTemporalPreset={setTemporalPreset}
-                  activeScene={activeTemporalScene}
-                  isLoadingTemporal={isLoadingTemporal}
+                  activeScene={displayedTemporalScene}
+                  isLoadingTemporal={isLoadingTemporal && !displayedTemporalScene}
                   temporalError={temporalError}
+                />
+              )}
+
+              {currentPlano === 7 && (
+                <TemporalSeriesGallery
+                  items={seriesItems}
+                  bbox={seriesBbox}
+                  polygon={userPolygonGeom}
+                  activeYear={exportScene?.year ?? (temporalPreset === 'rgb' ? temporalYear : null)}
+                  onPreviewYear={handlePreviewSeriesYear}
+                  selectedYears={effectiveSelectedYears}
+                  onToggleYear={toggleSeriesYear}
+                  onSelectAll={() => setSelectedSeriesYears(new Set(availableYears))}
+                  onSelectNone={() => setSelectedSeriesYears(new Set())}
+                  onExportSelected={() => void exportSeries([...effectiveSelectedYears])}
+                  onExportAll={() => void exportSeries(availableYears)}
+                  onCancelExport={() => { cancelSeriesExportRef.current = true; }}
+                  onReload={reloadSeries}
+                  isPlaying={isPlayingEffective}
+                  onTogglePlay={() => {
+                    setTemporalPreset('rgb');
+                    setIsPlayingSeries((p) => !p);
+                  }}
+                  isExporting={isSeriesExporting}
+                  exportProgress={seriesExportProgress}
+                  progress={seriesProgress}
                 />
               )}
 
               <PlanosNavBar
                 currentPlano={currentPlano}
-                onSelectPlano={handleSelectPlano}
+                onSelectPlano={isSeriesExporting ? () => undefined : handleSelectPlano}
                 onRecenter={() => setRecenterTrigger((prev) => prev + 1)}
                 sentinelUrl={sentinelUrl}
                 useSentinel={useSentinel}
