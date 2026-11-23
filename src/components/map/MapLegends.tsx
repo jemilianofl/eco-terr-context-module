@@ -1109,12 +1109,19 @@ export const LegendHidrologia = ({
   );
 };
 
+type LegendTemporalScene = TemporalSceneItem & {
+  processingLevel?: string | null;
+  aoiClearPct?: number | null;
+};
+
 interface LegendEspacioTemporalProps {
   targetDate?: string;
-  activeScene: TemporalSceneItem | null;
+  activeScene: LegendTemporalScene | null;
   preset: SpectralPreset;
   areaDetails: { name: string; area: string }[];
   totalArea: string;
+  /** Posición de la escena dentro de la serie multitemporal (para planos exportados en lote). */
+  seriesInfo?: { index: number; total: number; firstYear: number; lastYear: number } | null;
 }
 
 export const LegendEspacioTemporal = ({
@@ -1123,6 +1130,7 @@ export const LegendEspacioTemporal = ({
   preset,
   areaDetails,
   totalArea,
+  seriesInfo = null,
 }: LegendEspacioTemporalProps) => {
   const presetLabels: Record<SpectralPreset, string> = {
     rgb: 'Color Natural (RGB)',
@@ -1133,7 +1141,7 @@ export const LegendEspacioTemporal = ({
 
   const sourceLabel = activeScene?.collection?.includes('landsat')
     ? 'USGS / NASA Landsat C2 L2'
-    : 'Copernicus Sentinel-2 L2A';
+    : `Copernicus Sentinel-2 ${activeScene?.processingLevel ?? 'L2A'}`;
 
   const formattedHistoricalDate = activeScene?.date
     ? `${activeScene.year} (${new Date(activeScene.date).toLocaleDateString('es-MX')})`
@@ -1149,6 +1157,12 @@ export const LegendEspacioTemporal = ({
           Análisis Espacio-Temporal
         </div>
         <div className="p-2 text-center" style={{ fontSize: '0.62rem', lineHeight: '1.25' }}>
+          {seriesInfo && (
+            <p className="mb-1">
+              <strong>Serie multitemporal:</strong> {seriesInfo.index} de {seriesInfo.total} (
+              {seriesInfo.firstYear}–{seriesInfo.lastYear})
+            </p>
+          )}
           <p className="mb-1">
             <strong>Escena anual:</strong> {formattedHistoricalDate}
           </p>
@@ -1174,7 +1188,16 @@ export const LegendEspacioTemporal = ({
               <strong>Sensor:</strong> {activeScene.platform.toUpperCase()}
             </p>
             <p className="mb-1">
-              <strong>Nubosidad:</strong> {activeScene.cloudCover}%
+              <strong>Nubosidad (escena):</strong> {activeScene.cloudCover}%
+            </p>
+            {activeScene.aoiClearPct !== null && activeScene.aoiClearPct !== undefined && (
+              <p className="mb-1">
+                <strong>Polígono despejado:</strong> {activeScene.aoiClearPct}%
+              </p>
+            )}
+            <p className="mb-1">
+              <strong>ID escena:</strong>{' '}
+              <span style={{ wordBreak: 'break-all' }}>{activeScene.id}</span>
             </p>
             <p className="mb-0">
               <strong>Bandas:</strong> {presetLabels[preset]}
