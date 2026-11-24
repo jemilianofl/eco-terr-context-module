@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import * as turf from '@turf/turf';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import type {
@@ -15,6 +15,11 @@ import {
   getEcoSiteName,
   calcularDistanciaPoligono,
   type PolygonDistanceResult,
+  type AreaUnit,
+  formatArea,
+  m2ToUnitInput,
+  unitInputToM2,
+  parseAreaM2,
 } from '../../config/mapConfig';
 
 interface PreviewData {
@@ -32,6 +37,9 @@ interface LegendUbicacionProps {
   onUpdateArea?: (details: { name: string; area: string }[], total: string) => void;
   onResetArea?: () => void;
   isAreaModified?: boolean;
+  areaUnit?: AreaUnit;
+  onChangeAreaUnit?: (unit: AreaUnit) => void;
+  geometryKinds?: UserGeometryKinds;
 }
 interface LegendVegetacionProps {
   vegNearby: TypedMapFeature[];
@@ -74,6 +82,88 @@ function getVisibleTypesInViewport(
   return Array.from(uniqueTypes.entries()).map(([label, color]) => ({ label, color }));
 }
 
+/** Selector ha / m² (no aparece en la imagen exportada). */
+export interface UserGeometryKinds {
+  hasPolygons: boolean;
+  hasLines: boolean;
+  hasPoints: boolean;
+}
+
+/** Simbología de lo que subió el usuario: polígono, línea y/o vértices. */
+const UserGeometrySymbology = ({ kinds }: { kinds?: UserGeometryKinds }) => {
+  const showPolygon = !kinds || kinds.hasPolygons;
+  const rowStyle: CSSProperties = { fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' };
+  return (
+    <>
+      {showPolygon && (
+        <div className="d-flex align-items-center mb-1">
+          <div style={{ width: '12px', height: '12px', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+          <span style={rowStyle}>Polígono(s) Inspeccionado(s)</span>
+        </div>
+      )}
+      {kinds?.hasLines && (
+        <div className="d-flex align-items-center mb-1">
+          <div style={{ width: '12px', borderTop: '3px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+          <span style={rowStyle}>Trazo(s) / línea(s)</span>
+        </div>
+      )}
+      {kinds?.hasPoints && (
+        <div className="d-flex align-items-center mb-1">
+          <div
+            style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              backgroundColor: '#ff0000',
+              border: '1.5px solid #ffffff',
+              boxShadow: '0 0 0 1px #000',
+              margin: '0 9px 0 1px',
+              flexShrink: 0,
+            }}
+          ></div>
+          <span style={rowStyle}>Vértice(s) / punto(s)</span>
+        </div>
+      )}
+    </>
+  );
+};
+
+const AreaUnitToggle = ({
+  unit,
+  onChange,
+  disabled = false,
+}: {
+  unit: AreaUnit;
+  onChange?: (unit: AreaUnit) => void;
+  disabled?: boolean;
+}) => {
+  if (!onChange) return null;
+  const options: { id: AreaUnit; label: string }[] = [
+    { id: 'ha', label: 'ha' },
+    { id: 'm2', label: 'm²' },
+  ];
+  return (
+    <div className="d-flex justify-content-center gap-1 pt-1 ignore-print" role="group" aria-label="Unidad de superficie">
+      {options.map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(opt.id)}
+          className={`btn btn-sm py-0 px-2 ${unit === opt.id ? 'text-white fw-bold' : 'btn-outline-secondary'}`}
+          style={{
+            fontSize: '0.60rem',
+            ...(unit === opt.id ? { backgroundColor: '#163f37', borderColor: '#163f37' } : {}),
+          }}
+          title={disabled ? 'Termina la edición para cambiar de unidad' : `Mostrar en ${opt.label}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+};
+
 export const LegendUbicacion = ({
   previewData,
   sentinelMetadata,
@@ -84,28 +174,54 @@ export const LegendUbicacion = ({
   onUpdateArea,
   onResetArea,
   isAreaModified = false,
+  areaUnit = 'ha',
+  onChangeAreaUnit,
+  geometryKinds,
 }: LegendUbicacionProps) => {
-  const [isEditing, setIsEditing] = useState(false);
+  // Borrador en la unidad visible: permite escribir "1." o "0.05" sin que el redondeo lo pise.
+  const [draft, setDraft] = useState<{ details: { name: string; area: string }[]; total: string } | null>(null);
+  const isEditing = draft !== null;
 
   const showEditForm = isEditing && !isExporting && Boolean(onUpdateArea);
+  const unitLabel = areaUnit === 'ha' ? 'ha' : 'm²';
+
+  const startEditing = () =>
+    setDraft({
+      details: areaDetails.map((d) => ({ name: d.name, area: m2ToUnitInput(d.area, areaUnit) })),
+      total: m2ToUnitInput(totalArea, areaUnit),
+    });
+  const stopEditing = () => setDraft(null);
 
   const handleDetailChange = (index: number, field: 'name' | 'area', value: string) => {
-    if (!onUpdateArea) return;
+    if (!onUpdateArea || !draft) return;
 
-    const updatedDetails = areaDetails.map((item, idx) =>
+    const draftDetails = draft.details.map((item, idx) =>
       idx === index ? { ...item, [field]: value } : item
     );
+    const detailsM2 = draftDetails.map((d) => ({ name: d.name, area: unitInputToM2(d.area, areaUnit) }));
 
-    let updatedTotal = totalArea;
+    let totalM2 = totalArea;
+    let draftTotal = draft.total;
     if (field === 'area') {
-      const sum = updatedDetails.reduce((acc, item) => {
-        const parsed = Number.parseFloat(item.area.replace(/,/g, '').trim());
+      const sum = detailsM2.reduce((acc, item) => {
+        const parsed = parseAreaM2(item.area);
         return Number.isFinite(parsed) ? acc + parsed : acc;
       }, 0);
-      updatedTotal = sum.toFixed(2);
+      totalM2 = sum.toFixed(2);
+      draftTotal = m2ToUnitInput(totalM2, areaUnit);
     }
 
-    onUpdateArea(updatedDetails, updatedTotal);
+    setDraft({ details: draftDetails, total: draftTotal });
+    onUpdateArea(detailsM2, totalM2);
+  };
+
+  const handleTotalChange = (value: string) => {
+    if (!onUpdateArea || !draft) return;
+    setDraft({ ...draft, total: value });
+    onUpdateArea(
+      draft.details.map((d) => ({ name: d.name, area: unitInputToM2(d.area, areaUnit) })),
+      unitInputToM2(value, areaUnit),
+    );
   };
 
   return (
@@ -157,21 +273,7 @@ export const LegendUbicacion = ({
           Simbología
         </div>
         <div className="p-2">
-          <div className="d-flex align-items-center mb-1">
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                backgroundColor: 'transparent',
-                border: '2px solid #ff0000',
-                marginRight: '8px',
-                flexShrink: 0,
-              }}
-            ></div>
-            <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
-              Polígono(s) Inspeccionado(s)
-            </span>
-          </div>
+          <UserGeometrySymbology kinds={geometryKinds} />
         </div>
       </div>
 
@@ -184,7 +286,7 @@ export const LegendUbicacion = ({
           {!isExporting && onUpdateArea && (
             <button
               type="button"
-              onClick={() => setIsEditing((prev) => !prev)}
+              onClick={() => (isEditing ? stopEditing() : startEditing())}
               className="btn btn-link text-white p-0 position-absolute ignore-print"
               style={{
                 right: '6px',
@@ -201,9 +303,9 @@ export const LegendUbicacion = ({
           )}
         </div>
 
-        {showEditForm ? (
+        {showEditForm && draft ? (
           <div className="p-2 ignore-print" style={{ fontSize: '0.65rem' }}>
-            {areaDetails.map((item, idx) => (
+            {draft.details.map((item, idx) => (
               <div key={`area-edit-${idx}`} className="d-flex align-items-center gap-1 mb-1">
                 <input
                   type="text"
@@ -215,13 +317,14 @@ export const LegendUbicacion = ({
                 />
                 <input
                   type="text"
-                  aria-label={`Superficie de ${item.name}`}
+                  inputMode="decimal"
+                  aria-label={`Superficie de ${item.name} en ${unitLabel}`}
                   className="form-control form-control-sm px-1 py-0 text-end"
                   style={{ fontSize: '0.62rem', width: '40%' }}
                   value={item.area}
                   onChange={(e) => handleDetailChange(idx, 'area', e.target.value)}
                 />
-                <span style={{ fontSize: '0.62rem', flexShrink: 0 }}>m²</span>
+                <span style={{ fontSize: '0.62rem', flexShrink: 0 }}>{unitLabel}</span>
               </div>
             ))}
 
@@ -231,20 +334,24 @@ export const LegendUbicacion = ({
               <strong style={{ fontSize: '0.65rem', width: '48%' }}>Total:</strong>
               <input
                 type="text"
-                aria-label="Superficie total"
+                inputMode="decimal"
+                aria-label={`Superficie total en ${unitLabel}`}
                 className="form-control form-control-sm px-1 py-0 text-end fw-bold"
                 style={{ fontSize: '0.64rem', width: '40%' }}
-                value={totalArea}
-                onChange={(e) => onUpdateArea?.(areaDetails, e.target.value)}
+                value={draft.total}
+                onChange={(e) => handleTotalChange(e.target.value)}
               />
-              <span style={{ fontSize: '0.62rem', flexShrink: 0 }}>m²</span>
+              <span style={{ fontSize: '0.62rem', flexShrink: 0 }}>{unitLabel}</span>
             </div>
 
             <div className="d-flex justify-content-end gap-1">
               {isAreaModified && onResetArea && (
                 <button
                   type="button"
-                  onClick={onResetArea}
+                  onClick={() => {
+                    onResetArea();
+                    stopEditing();
+                  }}
                   className="btn btn-outline-secondary btn-sm py-0 px-2"
                   style={{ fontSize: '0.60rem' }}
                   title="Restaurar superficie calculada automáticamente"
@@ -254,7 +361,7 @@ export const LegendUbicacion = ({
               )}
               <button
                 type="button"
-                onClick={() => setIsEditing(false)}
+                onClick={stopEditing}
                 className="btn btn-success btn-sm py-0 px-2"
                 style={{ fontSize: '0.60rem' }}
               >
@@ -264,15 +371,21 @@ export const LegendUbicacion = ({
           </div>
         ) : (
           <div className="p-2 text-center">
+            {areaDetails.length === 0 && (
+              <p className="mb-1 text-muted" style={{ fontSize: '0.62rem' }}>
+                Sin polígonos graficados (solo puntos o líneas)
+              </p>
+            )}
             {areaDetails.map((item, idx) => (
               <p key={`area-${idx}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
-                <strong>{item.name}:</strong> {item.area} m²
+                <strong>{item.name}:</strong> {formatArea(item.area, areaUnit)}
               </p>
             ))}
             <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
             <p className="mb-0" style={{ fontSize: '0.7rem' }}>
-              <strong>Total:</strong> {totalArea} m²
+              <strong>Total:</strong> {formatArea(totalArea, areaUnit)}
             </p>
+            {!isExporting && <AreaUnitToggle unit={areaUnit} onChange={onChangeAreaUnit} />}
           </div>
         )}
       </div>
@@ -903,14 +1016,14 @@ export const LegendHidrologia = ({
     };
   }, [cuencasNearby, subcuencasNearby, corrientesNearby, cuerposAguaNearby, currentViewportBbox]);
 
-  const rowStyle: React.CSSProperties = {
+  const rowStyle: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     marginBottom: '5px',
     minHeight: '15px',
   };
 
-  const labelStyle: React.CSSProperties = {
+  const labelStyle: CSSProperties = {
     fontSize: '0.60rem',
     lineHeight: '1.2',
     whiteSpace: 'nowrap',
@@ -1122,6 +1235,9 @@ interface LegendEspacioTemporalProps {
   totalArea: string;
   /** Posición de la escena dentro de la serie multitemporal (para planos exportados en lote). */
   seriesInfo?: { index: number; total: number; firstYear: number; lastYear: number } | null;
+  areaUnit?: AreaUnit;
+  onChangeAreaUnit?: (unit: AreaUnit) => void;
+  geometryKinds?: UserGeometryKinds;
 }
 
 export const LegendEspacioTemporal = ({
@@ -1131,6 +1247,9 @@ export const LegendEspacioTemporal = ({
   areaDetails,
   totalArea,
   seriesInfo = null,
+  areaUnit = 'ha',
+  onChangeAreaUnit,
+  geometryKinds,
 }: LegendEspacioTemporalProps) => {
   const presetLabels: Record<SpectralPreset, string> = {
     rgb: 'Color Natural (RGB)',
@@ -1214,21 +1333,7 @@ export const LegendEspacioTemporal = ({
           Simbología
         </div>
         <div className="p-2">
-          <div className="d-flex align-items-center mb-1">
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                backgroundColor: 'transparent',
-                border: '2px solid #ff0000',
-                marginRight: '8px',
-                flexShrink: 0,
-              }}
-            ></div>
-            <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
-              Polígono(s) Inspeccionado(s)
-            </span>
-          </div>
+          <UserGeometrySymbology kinds={geometryKinds} />
         </div>
       </div>
 
@@ -1242,13 +1347,14 @@ export const LegendEspacioTemporal = ({
         <div className="p-2 text-center">
           {areaDetails.map((item) => (
             <p key={`temp-area-${item.name}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
-              <strong>{item.name}:</strong> {item.area} m²
+              <strong>{item.name}:</strong> {formatArea(item.area, areaUnit)}
             </p>
           ))}
           <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
           <p className="mb-0" style={{ fontSize: '0.7rem' }}>
-            <strong>Total:</strong> {totalArea} m²
+            <strong>Total:</strong> {formatArea(totalArea, areaUnit)}
           </p>
+          <AreaUnitToggle unit={areaUnit} onChange={onChangeAreaUnit} />
         </div>
       </div>
     </>

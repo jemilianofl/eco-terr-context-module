@@ -12,16 +12,21 @@ import {
   getStrahlerStyle,
   getEcoSiteName,
   calcularDistanciaPoligono,
+  formatArea,
 } from '../../config/mapConfig';
+import { DATUMS, type DatumId, formatUtmInDatum, fromWgs84 } from '../../utils/datum';
 
 interface UserPolygonLayerProps {
   geoJsonData: FeatureCollection;
   interactive?: boolean;
+  /** Datum en el que se muestran las coordenadas de los puntos (por defecto WGS84). */
+  datum?: DatumId;
 }
 
 export const UserPolygonLayer = ({
   geoJsonData,
   interactive = true,
+  datum = 'WGS84',
 }: UserPolygonLayerProps) => {
   const map = useMapEvents({
     click(e) {
@@ -36,7 +41,7 @@ export const UserPolygonLayer = ({
           let areaHtml = '';
           try {
             const areaSqMeters = turf.area(f);
-            areaHtml = `<strong>Superficie calculada:</strong> ${areaSqMeters.toFixed(2)} m²<br/>`;
+            areaHtml = `<strong>Superficie calculada:</strong> ${formatArea(areaSqMeters, 'ha')} (${formatArea(areaSqMeters, 'm2')})<br/>`;
           } catch {
             /* ignorar */
           }
@@ -46,6 +51,7 @@ export const UserPolygonLayer = ({
             if (
               key !== 'polyId' &&
               key !== 'style' &&
+              !key.startsWith('_') &&
               (typeof val === 'string' || typeof val === 'number') &&
               val !== ''
             ) {
@@ -67,18 +73,48 @@ export const UserPolygonLayer = ({
     typeof geoJsonData.features[0]?.properties?.polyId === 'string'
       ? geoJsonData.features[0].properties.polyId
       : '0';
-  const layerKey = `user-layer-${interactive ? 'main' : 'mini'}-${geoJsonData.features.length}-${firstPolyId}`;
+  const pointCount = geoJsonData.features.filter(
+    (f) => f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint'
+  ).length;
+  // Con muchos puntos las etiquetas se enciman: solo se rotulan hasta 80
+  const showPointLabels = interactive && pointCount <= 80;
+  const layerKey = `user-layer-${interactive ? 'main' : 'mini'}-${geoJsonData.features.length}-${firstPolyId}-${pointCount}-${datum}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={geoJsonData}
       interactive={interactive}
-      filter={(feature) =>
-        Boolean(feature.geometry) &&
-        feature.geometry.type !== 'Point' &&
-        feature.geometry.type !== 'MultiPoint'
+      filter={(feature) => Boolean(feature.geometry)}
+      pointToLayer={(_feature, latlng) =>
+        L.circleMarker(latlng, {
+          radius: interactive ? 4.5 : 2.5,
+          color: '#ffffff',
+          weight: interactive ? 1.5 : 1,
+          fillColor: '#ff0000',
+          fillOpacity: 1,
+          interactive,
+        })
       }
+      onEachFeature={(feature, layer) => {
+        if (!showPointLabels || feature.geometry?.type !== 'Point') return;
+        const props = (feature.properties ?? {}) as Record<string, unknown>;
+        const label = typeof props._label === 'string' ? props._label : '';
+        const [lon, lat] = feature.geometry.coordinates;
+        if (label) {
+          layer.bindTooltip(
+            `<span style="font-size:0.66rem;font-weight:800;color:#ff0000;text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff">${label}</span>`,
+            { permanent: true, direction: 'top', offset: [0, -4], className: 'bg-transparent border-0 shadow-none p-0' }
+          );
+        }
+        const [dLon, dLat] = fromWgs84(lon, lat, datum);
+        layer.bindPopup(
+          `<div style="font-size:0.82rem"><strong style="color:#d63384">${label || 'Punto'}</strong>` +
+            `<span style="color:#64748b"> · ${DATUMS[datum].label}</span><br/>` +
+            `<strong>Lat:</strong> ${dLat.toFixed(6)}<br/><strong>Lon:</strong> ${dLon.toFixed(6)}<br/>` +
+            `<strong>UTM:</strong> ${formatUtmInDatum(lon, lat, datum)}</div>`
+        );
+      }}
       style={() => ({
         color: '#ff0000',
         weight: interactive ? 3 : 2,

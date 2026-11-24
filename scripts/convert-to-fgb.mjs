@@ -66,7 +66,12 @@ const layers = [
   { id: 'usv_serie_4', shp: 'public/layers/Uso de suelo y vegetacion/Serie IV/USyV_S_IV_SHP/usv250ks4gw.shp' },
   { id: 'usv_serie_5', shp: 'public/layers/Uso de suelo y vegetacion/Serie V/USyV_S_V_SHP/usv250s5ugw.shp' },
   { id: 'usv_serie_6', shp: 'public/layers/Uso de suelo y vegetacion/Serie VI/USyV_S_VI_SHP/usv250s6gw.shp' },
-  { id: 'usv_serie_7', shp: 'public/layers/Uso de suelo y vegetacion/Serie VII/USyV_S_VII_SHP/usv250s7gw.shp' }
+  { id: 'usv_serie_7', shp: 'public/layers/Uso de suelo y vegetacion/Serie VII/USyV_S_VII_SHP/usv250s7gw.shp' },
+
+  // Ordenamientos ecológicos (SIORE) - GeoJSON generados con unir_ugas_geojson.py
+  // ogr2ogr lee GeoJSON igual que shapefile, por eso basta con apuntar al archivo.
+  { id: 'uga', shp: 'public/layers/geojson/uga.geojson' },
+  { id: 'poe_limites', shp: 'public/layers/geojson/poe_limites.geojson' }
 ];
 
 const outDir = path.resolve('public/layers/fgb');

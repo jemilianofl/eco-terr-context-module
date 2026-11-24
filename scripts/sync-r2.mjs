@@ -40,6 +40,7 @@ const s3 = new S3Client({
 });
 
 const shouldUpload = process.argv.includes('--upload');
+const forceShrink = process.argv.includes('--force-shrink');
 
 async function inspectLocalFgb(fileName) {
   const filePath = path.resolve('public/layers/fgb', fileName);
@@ -87,9 +88,13 @@ async function main() {
     const inSubfolder = r2Map.has(`fgb/${file}`);
 
     let estado = 'FALTA EN R2';
-    if (inRoot) {
+    if (localBytes < 1024) {
+      estado = 'LOCAL VACÍO - NO SE SUBE';
+    } else if (inRoot) {
       const remoteBytes = r2Map.get(file);
-      if (remoteBytes !== localBytes) {
+      if (remoteBytes !== localBytes && localBytes < remoteBytes * 0.5 && !forceShrink) {
+        estado = `LOCAL MUCHO MENOR (R2: ${(remoteBytes / 1048576).toFixed(2)} MB) - NO SE SUBE (usa --force-shrink)`;
+      } else if (remoteBytes !== localBytes) {
         estado = `TAMAÑO DIFIERE (R2: ${(remoteBytes / 1048576).toFixed(2)} MB)`;
         projectedR2Bytes += localBytes - remoteBytes;
         missingFiles.push(file);

@@ -351,3 +351,36 @@ export function calcularDistanciaPoligono(
     return null;
   }
 }
+// ---------------- Unidades de superficie ----------------
+// Los valores se guardan siempre en m²; la unidad solo afecta cómo se muestran y editan.
+export type AreaUnit = 'ha' | 'm2';
+
+export const M2_PER_HA = 10000;
+
+/** Convierte un texto en m² (admite separador de miles con coma) a número. */
+export const parseAreaM2 = (value: string | number): number =>
+  typeof value === 'number' ? value : Number.parseFloat(value.replace(/,/g, '').trim());
+
+/** Valor en m² → texto en la unidad pedida (sin sufijo), listo para un input editable. */
+export const m2ToUnitInput = (valueM2: string, unit: AreaUnit): string => {
+  const v = parseAreaM2(valueM2);
+  if (!Number.isFinite(v)) return valueM2;
+  return unit === 'ha' ? (v / M2_PER_HA).toFixed(4) : v.toFixed(2);
+};
+
+/** Texto escrito en la unidad pedida → texto en m². Si no es número se devuelve tal cual. */
+export const unitInputToM2 = (value: string, unit: AreaUnit): string => {
+  const v = parseAreaM2(value);
+  if (!Number.isFinite(v)) return value;
+  return (unit === 'ha' ? v * M2_PER_HA : v).toFixed(2);
+};
+
+/** Valor en m² → texto formateado con unidad: "1.2345 ha" o "12,345.00 m²". */
+export const formatArea = (valueM2: string | number, unit: AreaUnit): string => {
+  const v = parseAreaM2(valueM2);
+  if (!Number.isFinite(v)) return String(valueM2);
+  if (unit === 'ha') {
+    return `${(v / M2_PER_HA).toLocaleString('es-MX', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} ha`;
+  }
+  return `${v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`;
+};
