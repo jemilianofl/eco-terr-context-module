@@ -59,7 +59,7 @@ const layers = [
   { id: 'climas', shp: 'public/layers/Unidad climaticas/unidadesClimaticas.shp' },
 
   // Capas Masivas
-  { id: 'edafologia', shp: 'public/layers/Edafologia/cdv_edaf_esc_250k_serie II_cont_nac.shp' },
+  { id: 'edafologia', shp: 'public/layers/Edafologia/cdv_edaf_esc_250k_serie II_cont_nac.shp', s_srs: 'EPSG:6362' }, // shp sin .prj: INEGI CCL ITRF92
   { id: 'usv_serie_1', shp: 'public/layers/Uso de suelo y vegetacion/Serie I/USyV_S_I_SHP/usv250kcs1agw.shp' },
   { id: 'usv_serie_2', shp: 'public/layers/Uso de suelo y vegetacion/Serie II/USyV_S_II_SHP/usv250ks2gw.shp' },
   { id: 'usv_serie_3', shp: 'public/layers/Uso de suelo y vegetacion/Serie III/USyV_S_III_SHP/usv250ks3gw.shp' },
@@ -77,7 +77,14 @@ const layers = [
 const outDir = path.resolve('public/layers/fgb');
 if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
+// Uso: node scripts/convert-to-fgb.mjs            -> convierte todas las capas
+//      node scripts/convert-to-fgb.mjs edafologia -> solo las capas indicadas (por id)
+const soloIds = process.argv.slice(2).filter((a) => !a.startsWith('-'));
+const desconocidos = soloIds.filter((id) => !layers.some((l) => l.id === id));
+if (desconocidos.length) console.warn(`[AVISO] Capas no reconocidas: ${desconocidos.join(', ')}`);
+
 for (const layer of layers) {
+  if (soloIds.length && !soloIds.includes(layer.id)) continue;
   const shpPath = path.resolve(layer.shp);
   if (!fs.existsSync(shpPath)) {
     console.warn(`[OMITIDO] Archivo no encontrado: ${layer.shp}`);
@@ -87,7 +94,9 @@ for (const layer of layers) {
   const outFile = path.join(outDir, `${layer.id}.fgb`);
   console.log(`Convirtiendo ${layer.id} con 100% de calidad y creando índice espacial...`);
 
-  const cmd = `ogr2ogr -f FlatGeobuf "${outFile}" "${shpPath}" -t_srs EPSG:4326 -lco SPATIAL_INDEX=YES`;
+  // s_srs: solo para capas cuyo shapefile no trae .prj (p. ej. { ..., s_srs: 'EPSG:XXXX' })
+  const srcSrs = layer.s_srs ? `-s_srs ${layer.s_srs} ` : '';
+  const cmd = `ogr2ogr -f FlatGeobuf "${outFile}" "${shpPath}" ${srcSrs}-t_srs EPSG:4326 -lco SPATIAL_INDEX=YES`;
   
   try {
     execSync(cmd, { stdio: 'inherit', env: cleanEnv });
@@ -95,5 +104,10 @@ for (const layer of layers) {
     console.log(`[OK] Generado: ${layer.id}.fgb (${sizeMB} MB)\n`);
   } catch (error) {
     console.error(`[ERROR] en ${layer.id}:`, error.message);
+    // Borra el .fgb incompleto para que sync-r2 no lo suba encima de la versión buena
+    if (fs.existsSync(outFile)) {
+      fs.unlinkSync(outFile);
+      console.error(`[INFO] Se borró ${layer.id}.fgb incompleto.`);
+    }
   }
 }
