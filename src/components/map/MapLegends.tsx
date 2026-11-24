@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import * as turf from '@turf/turf';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import type {
@@ -39,6 +39,7 @@ interface LegendUbicacionProps {
   isAreaModified?: boolean;
   areaUnit?: AreaUnit;
   onChangeAreaUnit?: (unit: AreaUnit) => void;
+  geometryKinds?: UserGeometryKinds;
 }
 interface LegendVegetacionProps {
   vegNearby: TypedMapFeature[];
@@ -82,6 +83,51 @@ function getVisibleTypesInViewport(
 }
 
 /** Selector ha / m² (no aparece en la imagen exportada). */
+export interface UserGeometryKinds {
+  hasPolygons: boolean;
+  hasLines: boolean;
+  hasPoints: boolean;
+}
+
+/** Simbología de lo que subió el usuario: polígono, línea y/o vértices. */
+const UserGeometrySymbology = ({ kinds }: { kinds?: UserGeometryKinds }) => {
+  const showPolygon = !kinds || kinds.hasPolygons;
+  const rowStyle: CSSProperties = { fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' };
+  return (
+    <>
+      {showPolygon && (
+        <div className="d-flex align-items-center mb-1">
+          <div style={{ width: '12px', height: '12px', border: '2px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+          <span style={rowStyle}>Polígono(s) Inspeccionado(s)</span>
+        </div>
+      )}
+      {kinds?.hasLines && (
+        <div className="d-flex align-items-center mb-1">
+          <div style={{ width: '12px', borderTop: '3px solid #ff0000', marginRight: '8px', flexShrink: 0 }}></div>
+          <span style={rowStyle}>Trazo(s) / línea(s)</span>
+        </div>
+      )}
+      {kinds?.hasPoints && (
+        <div className="d-flex align-items-center mb-1">
+          <div
+            style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              backgroundColor: '#ff0000',
+              border: '1.5px solid #ffffff',
+              boxShadow: '0 0 0 1px #000',
+              margin: '0 9px 0 1px',
+              flexShrink: 0,
+            }}
+          ></div>
+          <span style={rowStyle}>Vértice(s) / punto(s)</span>
+        </div>
+      )}
+    </>
+  );
+};
+
 const AreaUnitToggle = ({
   unit,
   onChange,
@@ -130,6 +176,7 @@ export const LegendUbicacion = ({
   isAreaModified = false,
   areaUnit = 'ha',
   onChangeAreaUnit,
+  geometryKinds,
 }: LegendUbicacionProps) => {
   // Borrador en la unidad visible: permite escribir "1." o "0.05" sin que el redondeo lo pise.
   const [draft, setDraft] = useState<{ details: { name: string; area: string }[]; total: string } | null>(null);
@@ -226,21 +273,7 @@ export const LegendUbicacion = ({
           Simbología
         </div>
         <div className="p-2">
-          <div className="d-flex align-items-center mb-1">
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                backgroundColor: 'transparent',
-                border: '2px solid #ff0000',
-                marginRight: '8px',
-                flexShrink: 0,
-              }}
-            ></div>
-            <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
-              Polígono(s) Inspeccionado(s)
-            </span>
-          </div>
+          <UserGeometrySymbology kinds={geometryKinds} />
         </div>
       </div>
 
@@ -338,6 +371,11 @@ export const LegendUbicacion = ({
           </div>
         ) : (
           <div className="p-2 text-center">
+            {areaDetails.length === 0 && (
+              <p className="mb-1 text-muted" style={{ fontSize: '0.62rem' }}>
+                Sin polígonos graficados (solo puntos o líneas)
+              </p>
+            )}
             {areaDetails.map((item, idx) => (
               <p key={`area-${idx}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
                 <strong>{item.name}:</strong> {formatArea(item.area, areaUnit)}
@@ -978,14 +1016,14 @@ export const LegendHidrologia = ({
     };
   }, [cuencasNearby, subcuencasNearby, corrientesNearby, cuerposAguaNearby, currentViewportBbox]);
 
-  const rowStyle: React.CSSProperties = {
+  const rowStyle: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     marginBottom: '5px',
     minHeight: '15px',
   };
 
-  const labelStyle: React.CSSProperties = {
+  const labelStyle: CSSProperties = {
     fontSize: '0.60rem',
     lineHeight: '1.2',
     whiteSpace: 'nowrap',
@@ -1199,6 +1237,7 @@ interface LegendEspacioTemporalProps {
   seriesInfo?: { index: number; total: number; firstYear: number; lastYear: number } | null;
   areaUnit?: AreaUnit;
   onChangeAreaUnit?: (unit: AreaUnit) => void;
+  geometryKinds?: UserGeometryKinds;
 }
 
 export const LegendEspacioTemporal = ({
@@ -1210,6 +1249,7 @@ export const LegendEspacioTemporal = ({
   seriesInfo = null,
   areaUnit = 'ha',
   onChangeAreaUnit,
+  geometryKinds,
 }: LegendEspacioTemporalProps) => {
   const presetLabels: Record<SpectralPreset, string> = {
     rgb: 'Color Natural (RGB)',
@@ -1293,21 +1333,7 @@ export const LegendEspacioTemporal = ({
           Simbología
         </div>
         <div className="p-2">
-          <div className="d-flex align-items-center mb-1">
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                backgroundColor: 'transparent',
-                border: '2px solid #ff0000',
-                marginRight: '8px',
-                flexShrink: 0,
-              }}
-            ></div>
-            <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
-              Polígono(s) Inspeccionado(s)
-            </span>
-          </div>
+          <UserGeometrySymbology kinds={geometryKinds} />
         </div>
       </div>
 

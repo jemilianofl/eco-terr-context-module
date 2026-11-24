@@ -47,6 +47,7 @@ export const UserPolygonLayer = ({
             if (
               key !== 'polyId' &&
               key !== 'style' &&
+              !key.startsWith('_') &&
               (typeof val === 'string' || typeof val === 'number') &&
               val !== ''
             ) {
@@ -68,18 +69,45 @@ export const UserPolygonLayer = ({
     typeof geoJsonData.features[0]?.properties?.polyId === 'string'
       ? geoJsonData.features[0].properties.polyId
       : '0';
-  const layerKey = `user-layer-${interactive ? 'main' : 'mini'}-${geoJsonData.features.length}-${firstPolyId}`;
+  const pointCount = geoJsonData.features.filter(
+    (f) => f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint'
+  ).length;
+  // Con muchos puntos las etiquetas se enciman: solo se rotulan hasta 80
+  const showPointLabels = interactive && pointCount <= 80;
+  const layerKey = `user-layer-${interactive ? 'main' : 'mini'}-${geoJsonData.features.length}-${firstPolyId}-${pointCount}`;
 
   return (
     <GeoJSON
       key={layerKey}
       data={geoJsonData}
       interactive={interactive}
-      filter={(feature) =>
-        Boolean(feature.geometry) &&
-        feature.geometry.type !== 'Point' &&
-        feature.geometry.type !== 'MultiPoint'
+      filter={(feature) => Boolean(feature.geometry)}
+      pointToLayer={(_feature, latlng) =>
+        L.circleMarker(latlng, {
+          radius: interactive ? 4.5 : 2.5,
+          color: '#ffffff',
+          weight: interactive ? 1.5 : 1,
+          fillColor: '#ff0000',
+          fillOpacity: 1,
+          interactive,
+        })
       }
+      onEachFeature={(feature, layer) => {
+        if (!showPointLabels || feature.geometry?.type !== 'Point') return;
+        const props = (feature.properties ?? {}) as Record<string, unknown>;
+        const label = typeof props._label === 'string' ? props._label : '';
+        const [lon, lat] = feature.geometry.coordinates;
+        if (label) {
+          layer.bindTooltip(
+            `<span style="font-size:0.66rem;font-weight:800;color:#ff0000;text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff">${label}</span>`,
+            { permanent: true, direction: 'top', offset: [0, -4], className: 'bg-transparent border-0 shadow-none p-0' }
+          );
+        }
+        layer.bindPopup(
+          `<div style="font-size:0.82rem"><strong style="color:#d63384">${label || 'Punto'}</strong><br/>` +
+            `<strong>Lat:</strong> ${lat.toFixed(6)}<br/><strong>Lon:</strong> ${lon.toFixed(6)}</div>`
+        );
+      }}
       style={() => ({
         color: '#ff0000',
         weight: interactive ? 3 : 2,

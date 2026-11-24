@@ -50,6 +50,8 @@ import { ClimogramaChart } from './ClimogramaChart';
 import { TemporalSeriesGallery, type SeriesExportProgress } from './TemporalSeriesGallery';
 import { useTemporalSeries, type SeriesScene } from '../../hooks/useTemporalSeries';
 import { createZipBlob, downloadBlob, type ZipEntry } from '../../utils/zipStore';
+import { ElementManagerModal, type ElementSource } from './ElementManagerModal';
+import { letterLabel, needsElementReview } from '../../utils/featureTools';
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
 
@@ -114,7 +116,7 @@ async function parseSpatialFileListLocal(files: FileList): Promise<FeatureCollec
     const finalF = turf.truncate(f, { precision: 6, coordinates: 2 });
     if (finalF.geometry.type !== 'Point') {
       finalF.properties = finalF.properties || {};
-      finalF.properties.polyId = String.fromCodePoint(65 + polyIndex);
+      finalF.properties.polyId = letterLabel(polyIndex);
       polyIndex++;
     }
     return finalF;
@@ -560,7 +562,10 @@ const SidebarFormPanel: React.FC<{
         </div>
         <div>
           <label htmlFor="fileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Cargar Archivos Espaciales</label>
-          <input id="fileId" type="file" accept=".geojson,.kml,.zip" className="form-control form-control-sm" {...register('polygonFile', { required: true })} />
+          <input id="fileId" type="file" accept=".geojson,.json,.kml,.zip,.csv,.txt" className="form-control form-control-sm" {...register('polygonFile', { required: true })} />
+          <div className="form-text" style={{ fontSize: '0.7rem' }}>
+            Shapefile (.zip), KML, GeoJSON o CSV con coordenadas (grados, GMS o UTM).
+          </div>
         </div>
         <div>
           <label htmlFor="microFileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>
@@ -748,7 +753,8 @@ const PlanosNavBar: React.FC<{
   sentinelUrl: string | null;
   useSentinel: boolean;
   setUseSentinel: (val: boolean) => void;
-}> = ({ currentPlano, onSelectPlano, onRecenter, sentinelUrl, useSentinel, setUseSentinel }) => (
+  onOpenElements?: () => void;
+}> = ({ currentPlano, onSelectPlano, onRecenter, sentinelUrl, useSentinel, setUseSentinel, onOpenElements }) => (
   <div
     className="bg-dark text-white p-3 d-flex flex-wrap justify-content-center align-items-center gap-2 shadow rounded w-100"
     style={{ borderTop: '4px solid #d6b56a' }}
@@ -777,6 +783,18 @@ const PlanosNavBar: React.FC<{
       <i className="bi bi-arrows-collapse me-1"></i>{' '}
       Centrar Polígono
     </button>
+
+    {onOpenElements && (
+      <button
+        type="button"
+        onClick={onOpenElements}
+        className="btn btn-sm btn-outline-info"
+        title="Separar, agrupar vértices o elegir qué elementos del archivo graficar"
+      >
+        <i className="bi bi-diagram-3 me-1"></i>{' '}
+        Elementos
+      </button>
+    )}
 
     {sentinelUrl && currentPlano === 1 && (
       <>
@@ -899,7 +917,7 @@ function buildSeriesManifestCsv(scenes: SeriesScene[], expediente: string): Blob
     .map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(','))
     .join('\r\n');
   // BOM para que Excel abra bien los acentos
-  return new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  return new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
 }
 
 export const GeoViewer: React.FC = () => {
@@ -917,6 +935,10 @@ export const GeoViewer: React.FC = () => {
   const printRef = useRef<HTMLDivElement>(null);
 
   const [recenterTrigger, setRecenterTrigger] = useState<number>(0);
+  /** Último archivo subido (para reabrir el gestor de elementos) y si el gestor está abierto. */
+  const [elementSource, setElementSource] = useState<ElementSource | null>(null);
+  const [isElementManagerOpen, setIsElementManagerOpen] = useState(false);
+  const elementSourceSeq = useRef(0);
   /** Unidad de superficie en leyendas (por defecto hectáreas); compartida por Plano 1 y Plano 7. */
   const [areaUnit, setAreaUnit] = useState<AreaUnit>('ha');
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
@@ -1281,14 +1303,21 @@ export const GeoViewer: React.FC = () => {
     corrientesNearby,
   ]);
 
+  /** Grafica la colección final elegida en el gestor (o el archivo tal cual si no requiere revisión). */
+  function applyUserCollection(collection: FeatureCollection) {
+    setGeoJsonData(collection);
+    setCustomAreaOverride(null);
+    setActivatedPlanos({ [currentPlano]: true });
+    setIsElementManagerOpen(false);
+    setIsSidebarOpen(false);
+  }
+
   const onSubmit = async (data: FormData) => {
     const files = data.polygonFile;
     if (!files || files.length === 0) return;
     setPreviewData(data);
 
     try {
-      const parsedPredio = await parseSpatialFilesWithFallback(files);
-
       const microFiles = data.microcuencaFile;
       if (microFiles && microFiles.length > 0) {
         const parsedMicro = await parseSpatialFilesWithFallback(microFiles);
@@ -1297,16 +1326,47 @@ export const GeoViewer: React.FC = () => {
         setMicrocuencaData(null);
       }
 
-      setGeoJsonData(parsedPredio);
-      setCustomAreaOverride(null);
-      setActivatedPlanos({ [currentPlano]: true });
-      setIsSidebarOpen(false);
+      const fileArray = Array.from(files);
+      const csvFile = fileArray.find((f) => /\.(csv|txt)$/i.test(f.name));
+      elementSourceSeq.current += 1;
+
+      // CSV de puntos: siempre pasa por el gestor (hay que elegir columnas y sistema de coordenadas)
+      if (csvFile) {
+        setElementSource({ id: elementSourceSeq.current, kind: 'csv', fileName: csvFile.name, text: await csvFile.text() });
+        setIsElementManagerOpen(true);
+        return;
+      }
+
+      const parsedPredio = await parseSpatialFilesWithFallback(files);
+      const source: ElementSource = {
+        id: elementSourceSeq.current,
+        kind: 'geojson',
+        fileName: fileArray.map((f) => f.name).join(', '),
+        collection: parsedPredio,
+      };
+      setElementSource(source);
+
+      // Un solo polígono simple se grafica directo; si hay puntos, multipartes o varios elementos, se abre el gestor
+      if (needsElementReview(parsedPredio)) {
+        setIsElementManagerOpen(true);
+      } else {
+        applyUserCollection(parsedPredio);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error procesando el archivo espacial.';
       console.warn('Error procesando el archivo espacial:', err);
       alert(msg);
     }
   };
+
+  const userGeometryKinds = useMemo(() => {
+    const types = new Set((geoJsonData?.features ?? []).map((f) => f.geometry?.type));
+    return {
+      hasPolygons: types.has('Polygon') || types.has('MultiPolygon'),
+      hasLines: types.has('LineString') || types.has('MultiLineString'),
+      hasPoints: types.has('Point') || types.has('MultiPoint'),
+    };
+  }, [geoJsonData]);
 
   const calculatedArea = useMemo(() => {
     if (!geoJsonData) return { totalArea: '0.00', areaDetails: [] as { name: string; area: string }[] };
@@ -1601,6 +1661,7 @@ export const GeoViewer: React.FC = () => {
                       isAreaModified={customAreaOverride !== null}
                       areaUnit={areaUnit}
                       onChangeAreaUnit={setAreaUnit}
+                      geometryKinds={userGeometryKinds}
                     />
                   )}
                   {currentPlano === 2 && (
@@ -1647,6 +1708,7 @@ export const GeoViewer: React.FC = () => {
                       seriesInfo={seriesInfo}
                       areaUnit={areaUnit}
                       onChangeAreaUnit={setAreaUnit}
+                      geometryKinds={userGeometryKinds}
                     />
                   )}
                   {currentPlano === 8 && (
@@ -1732,11 +1794,21 @@ export const GeoViewer: React.FC = () => {
                 sentinelUrl={sentinelUrl}
                 useSentinel={useSentinel}
                 setUseSentinel={setUseSentinel}
+                onOpenElements={elementSource && !isSeriesExporting ? () => setIsElementManagerOpen(true) : undefined}
               />
             </div>
           )}
         </div>
       </div>
+
+      {isElementManagerOpen && elementSource && (
+        <ElementManagerModal
+          key={elementSource.id}
+          source={elementSource}
+          onClose={() => setIsElementManagerOpen(false)}
+          onApply={applyUserCollection}
+        />
+      )}
     </div>
   );
 };
