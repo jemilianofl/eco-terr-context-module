@@ -49,9 +49,13 @@ public/layers/geojson/usv_serie_*.geojson
 public/layers/geojson/climas.geojson
 public/layers/geojson/poe_limites.geojson
 public/layers/geojson/uga.geojson
+public/layers/geojson/corredores_biologicos.geojson
 
 public/layers/fgb
 # Capas geoespaciales locales pesadas (alojadas en R2)
 public/layers/MED_15/
 public/layers/siatl_50k/
 
+public/layers/cog
+
+public/layers/Indice de integridad ecosistemica

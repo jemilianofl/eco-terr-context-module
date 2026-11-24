@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import React, { useMemo, useState, type CSSProperties } from 'react';
 import * as turf from '@turf/turf';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import type {
@@ -20,7 +20,10 @@ import {
   m2ToUnitInput,
   unitInputToM2,
   parseAreaM2,
+  INTEGRIDAD_RASTER,
+  INTEGRIDAD_COLOR_STOPS,
 } from '../../config/mapConfig';
+import type { RasterStats } from '../../hooks/useIntegridadRaster';
 
 interface PreviewData {
   acta?: string;
@@ -392,13 +395,68 @@ export const LegendUbicacion = ({
     </>
   );
 };
+export interface IntegridadLegendInfo {
+  stats: RasterStats | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
 interface LegendEcologicaProps {
   ecoNearby: TypedMapFeature[];
   userPolygonGeom: Feature<Polygon | MultiPolygon> | null;
   isLoading: boolean;
   targetDate?: string;
   currentViewportBbox: [number, number, number, number] | null;
+  /** Solo cuando la capa de integridad está encendida. */
+  integridad?: IntegridadLegendInfo | null;
 }
+
+/** Sitios listados por capa antes de resumir con "+N más" (la ficha es de ancho fijo). */
+const MAX_SITES_PER_LAYER = 8;
+
+const IntegridadLegend = ({ info }: { info: IntegridadLegendInfo }) => {
+  const gradient = `linear-gradient(90deg, ${INTEGRIDAD_COLOR_STOPS.map(([v, c]) => `${c} ${v * 100}%`).join(', ')})`;
+  const fmt = (v: number) => v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let statsText: React.ReactNode;
+  if (info.error) statsText = <span className="text-danger">{info.error}</span>;
+  else if (info.isLoading) statsText = <span className="text-muted">Calculando en el polígono…</span>;
+  else if (info.stats) {
+    statsText = info.stats.fromCentroid ? (
+      <>
+        <strong>Valor en el polígono:</strong> {fmt(info.stats.mean)}{' '}
+        <span className="text-muted">(menor a una celda; valor del centroide)</span>
+      </>
+    ) : (
+      <>
+        <strong>Promedio en polígono(s):</strong> {fmt(info.stats.mean)}
+        <br />
+        <span className="text-muted">
+          mín. {fmt(info.stats.min)} · máx. {fmt(info.stats.max)} · {info.stats.cells} celda(s)
+        </span>
+      </>
+    );
+  } else statsText = <span className="text-muted">Sin datos del índice en el polígono</span>;
+
+  return (
+    <div className="mb-2 border-top pt-2">
+      <div className="fw-semibold mb-1" style={{ fontSize: '0.60rem', lineHeight: '1.2' }}>
+        {INTEGRIDAD_RASTER.title}
+      </div>
+      <div style={{ height: '9px', background: gradient, border: '1px solid #64748b', opacity: INTEGRIDAD_RASTER.opacity + 0.2 }} />
+      <div className="d-flex justify-content-between text-muted" style={{ fontSize: '0.52rem' }}>
+        <span>0 · Degradado</span>
+        <span>0.5</span>
+        <span>1 · Íntegro</span>
+      </div>
+      <div className="mt-1" style={{ fontSize: '0.56rem', lineHeight: '1.25' }}>
+        {statsText}
+      </div>
+      <div className="text-muted" style={{ fontSize: '0.5rem' }}>
+        Fuente: {INTEGRIDAD_RASTER.source}
+      </div>
+    </div>
+  );
+};
 
 export const LegendEcologica = ({
   ecoNearby,
@@ -406,6 +464,7 @@ export const LegendEcologica = ({
   isLoading,
   targetDate,
   currentViewportBbox,
+  integridad = null,
 }: LegendEcologicaProps) => {
   const activeEcoLegend = useMemo(() => {
     if (ecoNearby.length === 0) return [];
@@ -473,7 +532,7 @@ export const LegendEcologica = ({
         </div>
         <div className="p-2">
           <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>
-            Capa extraída de: CONABIO/CONANP
+            Capas extraídas de: CONABIO / CONANP / SEMARNAT (SIORE)
           </p>
           <div className="d-flex align-items-center mb-2 border-bottom pb-2">
             <div
@@ -515,7 +574,10 @@ export const LegendEcologica = ({
                   </div>
                   {layer.sites.length > 0 && (
                     <div style={{ paddingLeft: '20px', marginTop: '2px' }}>
-                      {layer.sites.map(({ name, dist }) => (
+                      {[...layer.sites]
+                        .sort((a, b) => (a.dist?.distanceKm ?? Infinity) - (b.dist?.distanceKm ?? Infinity))
+                        .slice(0, MAX_SITES_PER_LAYER)
+                        .map(({ name, dist }) => (
                         <div
                           key={`${layer.id}-${name}`}
                           className="text-muted d-flex justify-content-between align-items-baseline gap-1"
@@ -538,6 +600,11 @@ export const LegendEcologica = ({
                           )}
                         </div>
                       ))}
+                      {layer.sites.length > MAX_SITES_PER_LAYER && (
+                        <div className="text-muted" style={{ fontSize: '0.54rem' }}>
+                          … y {layer.sites.length - MAX_SITES_PER_LAYER} más (los más cercanos arriba)
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -553,6 +620,8 @@ export const LegendEcologica = ({
                 : 'Sin polígonos ecológicos visibles en encuadre'}
             </output>
           )}
+
+          {integridad && <IntegridadLegend info={integridad} />}
         </div>
       </div>
 

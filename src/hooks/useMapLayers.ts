@@ -9,6 +9,7 @@ import {
 } from '../utils/gisApiClient';
 import {
   ECO_LAYERS_CONFIG,
+  type EcoLayerConfigItem,
   getColorForVegetation,
   getColorForClimate,
   getColorForEdafologia,
@@ -222,6 +223,52 @@ export function useTemporalImagery(
   };
 }
 
+/** Agrega color, título, id de capa y (si la capa lo define) nombre y detalle del elemento. */
+function decorateEcoFeature(f: Feature, layer: EcoLayerConfigItem): TypedMapFeature {
+  const props = (f.properties ?? {}) as LayerFeatureProperties;
+  const described = layer.describe?.(props);
+  return {
+    ...(f as TypedMapFeature),
+    properties: {
+      ...props,
+      _color: layer.color,
+      _title: layer.title,
+      _layerId: layer.id,
+      ...(described?.name ? { _siteName: described.name } : {}),
+      ...(described?.subtitle ? { _subtitle: described.subtitle } : {}),
+    },
+  };
+}
+
+/** Lee varias capas de R2; si una falla (p. ej. aún no se sube) se omite sin tirar las demás. */
+async function queryEcoLayersFromR2(
+  layers: EcoLayerConfigItem[],
+  targetGeom: Feature<Polygon | MultiPolygon>,
+): Promise<TypedMapFeature[]> {
+  const [minX, minY, maxX, maxY] = turf.bbox(targetGeom);
+  const results = await Promise.all(
+    layers.map(async (layer): Promise<TypedMapFeature[]> => {
+      try {
+        const raw = await queryFgbLayer(layer.file, { minX, minY, maxX, maxY });
+        return raw
+          .filter((f) => {
+            if (!f.geometry) return false;
+            try {
+              return turf.booleanIntersects(f, targetGeom);
+            } catch {
+              return false;
+            }
+          })
+          .map((f) => decorateEcoFeature(f, layer));
+      } catch (err) {
+        console.warn(`No se pudo leer ${layer.file} desde R2:`, err);
+        return [];
+      }
+    }),
+  );
+  return results.flat();
+}
+
 export const useEcoLayers = (
   predioGeometry: Feature<Polygon | MultiPolygon> | null,
   filterMode: LayerFilterMode,
@@ -233,50 +280,38 @@ export const useEcoLayers = (
     if (!predioGeometry) return;
     let isCancelled = false;
 
+    const backendLayers = ECO_LAYERS_CONFIG.filter((l) => !l.r2Only);
+    const r2OnlyLayers = ECO_LAYERS_CONFIG.filter((l) => l.r2Only);
+    const layerById = new Map(ECO_LAYERS_CONFIG.map((l) => [l.id, l]));
+
     const loadEcoData = async () => {
       setIsLoading(true);
+      const targetGeom = resolveFallbackFilterGeometry(predioGeometry, filterMode);
+
+      // Capas nuevas (UGA, POE, corredores): siempre directo de R2, en paralelo con el backend
+      const r2OnlyPromise = queryEcoLayersFromR2(r2OnlyLayers, targetGeom);
+
+      let baseFeatures: TypedMapFeature[] | null = null;
       try {
         const backendRes = await fetchGisContextFromBackend({
           geometry: predioGeometry,
           filterMode,
           planos: [2],
         });
-        if (!isCancelled && backendRes.layers.eco) {
-          setEcoNearby(backendRes.layers.eco);
-          return;
+        if (backendRes.layers.eco) {
+          baseFeatures = backendRes.layers.eco.map((f) => {
+            const layer = layerById.get(f.properties?._layerId ?? '');
+            return layer?.describe ? decorateEcoFeature(f, layer) : f;
+          });
         }
       } catch {
         /* Respaldo directo a R2 si el backend no está disponible */
       }
 
       try {
-        const targetGeom = resolveFallbackFilterGeometry(predioGeometry, filterMode);
-        const [minX, minY, maxX, maxY] = turf.bbox(targetGeom);
-        const results = await Promise.all(
-          ECO_LAYERS_CONFIG.map(async (layer): Promise<TypedMapFeature[]> => {
-            const raw = await queryFgbLayer(layer.file, { minX, minY, maxX, maxY });
-            return raw
-              .filter((f) => {
-                try {
-                  return turf.booleanIntersects(f, targetGeom);
-                } catch {
-                  return false;
-                }
-              })
-              .map(
-                (f): TypedMapFeature => ({
-                  ...f,
-                  properties: {
-                    ...(f.properties ?? {}),
-                    _color: layer.color,
-                    _title: layer.title,
-                    _layerId: layer.id,
-                  },
-                }),
-              );
-          }),
-        );
-        if (!isCancelled) setEcoNearby(results.flat());
+        if (!baseFeatures) baseFeatures = await queryEcoLayersFromR2(backendLayers, targetGeom);
+        const extra = await r2OnlyPromise;
+        if (!isCancelled) setEcoNearby([...baseFeatures, ...extra]);
       } catch (err) {
         console.error('Error R2 ecología:', err);
       } finally {

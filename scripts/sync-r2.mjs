@@ -64,8 +64,19 @@ async function inspectLocalFgb(fileName) {
 }
 
 async function main() {
-  const localDir = path.resolve('public/layers/fgb');
-  const localFiles = fs.readdirSync(localDir).filter((f) => f.endsWith('.fgb')).sort();
+  // Vectores (.fgb) y rasters Cloud Optimized GeoTIFF (.tif) que se publican en R2
+  const sources = [
+    { dir: path.resolve('public/layers/fgb'), ext: '.fgb' },
+    { dir: path.resolve('public/layers/cog'), ext: '.tif' },
+  ];
+  const fileDir = new Map();
+  for (const { dir, ext } of sources) {
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) {
+      if (f.toLowerCase().endsWith(ext)) fileDir.set(f, dir);
+    }
+  }
+  const localFiles = [...fileDir.keys()].sort();
 
   // Consultar objetos en la raíz del bucket R2
   const listed = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET_NAME }));
@@ -82,7 +93,7 @@ async function main() {
   let projectedR2Bytes = currentR2Bytes;
   const missingFiles = [];
   const table = localFiles.map((file) => {
-    const localBytes = fs.statSync(path.join(localDir, file)).size;
+    const localBytes = fs.statSync(path.join(fileDir.get(file), file)).size;
     const localMB = `${(localBytes / 1048576).toFixed(2)} MB`;
     const inRoot = r2Map.has(file);
     const inSubfolder = r2Map.has(`fgb/${file}`);
@@ -135,7 +146,7 @@ async function main() {
 
   // Subir archivos faltantes en multipart streaming
   for (const fileName of missingFiles) {
-    const filePath = path.join(localDir, fileName);
+    const filePath = path.join(fileDir.get(fileName), fileName);
     const sizeMB = (fs.statSync(filePath).size / 1048576).toFixed(2);
     console.log(`\nSubiendo ${fileName} (${sizeMB} MB) a la raíz de ${BUCKET_NAME}...`);
 
@@ -145,7 +156,7 @@ async function main() {
         Bucket: BUCKET_NAME,
         Key: fileName,
         Body: fs.createReadStream(filePath),
-        ContentType: 'application/octet-stream',
+        ContentType: fileName.toLowerCase().endsWith('.tif') ? 'image/tiff' : 'application/octet-stream',
       },
       partSize: 32 * 1024 * 1024,
       queueSize: 4,

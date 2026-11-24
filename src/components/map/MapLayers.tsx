@@ -13,6 +13,7 @@ import {
   getEcoSiteName,
   calcularDistanciaPoligono,
   formatArea,
+  escapeHtml,
 } from '../../config/mapConfig';
 import { DATUMS, type DatumId, formatUtmInDatum, fromWgs84 } from '../../utils/datum';
 
@@ -143,28 +144,39 @@ export const EcoLayer = ({
     click(e) {
       if (!interactive) return;
       const pt = turf.point([e.latlng.lng, e.latlng.lat]);
-      for (const f of ecoNearby) {
-        if (
-          (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon') &&
-          turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>)
-        ) {
-          const title = f.properties?._title ?? 'Área Protegida';
-          const name = getEcoSiteName(f.properties) ?? 'Área Protegida';
-          const color = f.properties?._color ?? '#000';
-          const dist = calcularDistanciaPoligono(userPolygonGeom, f);
-          const distHtml = dist
-            ? `<div style="margin-top:4px; font-size:0.78rem;"><strong>Distancia al polígono:</strong> ${dist.label}</div>`
-            : '';
-
-          L.popup()
-            .setLatLng(e.latlng)
-            .setContent(
-              `<div><strong style="color:${color}">${title}</strong><br/>${name}${distHtml}</div>`
-            )
-            .openOn(map);
-          return;
+      // Todas las capas bajo el clic (p. ej. ANP + UGA + corredor), una sección por elemento
+      const hits = ecoNearby.filter((f) => {
+        if (f.geometry?.type !== 'Polygon' && f.geometry?.type !== 'MultiPolygon') return false;
+        try {
+          return turf.booleanPointInPolygon(pt, f as Feature<Polygon | MultiPolygon>);
+        } catch {
+          return false;
         }
-      }
+      });
+      if (hits.length === 0) return;
+
+      const MAX_SECTIONS = 6;
+      const sections = hits.slice(0, MAX_SECTIONS).map((f) => {
+        const title = f.properties?._title ?? 'Área Protegida';
+        const name = getEcoSiteName(f.properties) ?? '';
+        const color = f.properties?._color ?? '#000';
+        const subtitle = f.properties?._subtitle
+          ? `<div style="font-size:0.74rem; margin-top:3px; line-height:1.3;">${f.properties._subtitle}</div>`
+          : '';
+        const dist = calcularDistanciaPoligono(userPolygonGeom, f);
+        const distHtml = dist
+          ? `<div style="margin-top:3px; font-size:0.76rem;"><strong>Distancia al polígono:</strong> ${dist.label}</div>`
+          : '';
+        return `<div><strong style="color:${color}">${title}</strong>${name ? `<br/>${escapeHtml(name)}` : ''}${subtitle}${distHtml}</div>`;
+      });
+      const more = hits.length > MAX_SECTIONS ? `<div style="font-size:0.74rem; color:#64748b;">… y ${hits.length - MAX_SECTIONS} más</div>` : '';
+
+      L.popup({ maxWidth: 340 })
+        .setLatLng(e.latlng)
+        .setContent(
+          `<div style="font-size:0.82rem; max-height:300px; overflow-y:auto;">${sections.join('<hr style="margin:6px 0;"/>')}${more}</div>`
+        )
+        .openOn(map);
     },
   });
 
@@ -191,7 +203,7 @@ export const EcoLayer = ({
           weight: interactive ? 2.5 : 1.5,
           dashArray: layerCfg?.dashArray,
           fillColor: props?._color,
-          fillOpacity: interactive ? 0.35 : 0.45,
+          fillOpacity: layerCfg?.fillOpacity ?? (interactive ? 0.35 : 0.45),
         };
       }}
     />

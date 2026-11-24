@@ -1,13 +1,58 @@
 import * as turf from '@turf/turf';
 import type { Feature, Polygon, MultiPolygon, LineString, MultiLineString } from 'geojson';
 
+/** Grupos en que se ordenan las capas de contexto (panel y leyenda). */
+export const CONTEXT_LAYER_GROUPS = [
+  'Áreas protegidas y regiones prioritarias',
+  'Ordenamiento ecológico (SIORE)',
+  'Conectividad ecológica',
+  'Integridad ecosistémica',
+] as const;
+export type ContextLayerGroup = (typeof CONTEXT_LAYER_GROUPS)[number];
+
+/** Nombre corto para la leyenda y detalle (HTML) para el popup de un elemento. */
+export interface EcoFeatureDescription {
+  name: string | null;
+  subtitle?: string;
+}
+
 export interface EcoLayerConfigItem {
   id: string;
   file: string;
   title: string;
   color: string;
   dashArray?: string;
+  group: ContextLayerGroup;
+  /** Encendida al abrir el visor. */
+  defaultVisible: boolean;
+  /** Relleno propio (p. ej. 0 para capas que solo se dibujan como contorno). */
+  fillOpacity?: number;
+  /**
+   * true = se lee siempre directo de R2 (el backend todavía no la conoce).
+   * Al agregarla al backend, quitar esta bandera.
+   */
+  r2Only?: boolean;
+  /** Arma nombre y detalle a partir de los atributos propios de la capa. */
+  describe?: (props: Record<string, unknown>) => EcoFeatureDescription;
 }
+
+export const escapeHtml = (value: string): string =>
+  value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
+
+/** Texto limpio de un atributo; descarta vacíos y marcadores tipo "N", "N/A", "0". */
+const attr = (props: Record<string, unknown>, key: string): string => {
+  const v = props[key];
+  // Solo valores simples; objetos o arreglos no tienen una forma legible de mostrarse
+  if (typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') return '';
+  const s = String(v).replace(/\s+/g, ' ').trim();
+  return ['', 'N', 'N/A', 'NA', 'NULL', '0', '-'].includes(s.toUpperCase()) ? '' : s;
+};
+
+const htmlRows = (rows: [string, string][]): string =>
+  rows
+    .filter(([, v]) => v)
+    .map(([k, v]) => `<strong>${k}:</strong> ${escapeHtml(v.length > 220 ? `${v.slice(0, 220)}…` : v)}`)
+    .join('<br/>');
 
 export const ECO_LAYERS_CONFIG: EcoLayerConfigItem[] = [
   {
@@ -16,6 +61,8 @@ export const ECO_LAYERS_CONFIG: EcoLayerConfigItem[] = [
     title: 'Área de Importancia para la Conservación de las Aves (AICA)',
     color: '#e11d48',
     dashArray: '6, 3',
+    group: 'Áreas protegidas y regiones prioritarias',
+    defaultVisible: true,
   },
   {
     id: 'ramsar',
@@ -23,18 +70,24 @@ export const ECO_LAYERS_CONFIG: EcoLayerConfigItem[] = [
     title: 'Sitio Ramsar',
     color: '#0284c7',
     dashArray: '10, 4, 2, 4',
+    group: 'Áreas protegidas y regiones prioritarias',
+    defaultVisible: true,
   },
   {
     id: 'anp_federal',
     file: 'anp_federal.fgb',
     title: 'Área Natural Protegida federal',
     color: '#00b050',
+    group: 'Áreas protegidas y regiones prioritarias',
+    defaultVisible: true,
   },
   {
     id: 'anp_estatal',
     file: 'anp_estatal.fgb',
     title: 'Área Natural Protegida estatal o municipal',
     color: '#9333ea',
+    group: 'Áreas protegidas y regiones prioritarias',
+    defaultVisible: true,
   },
   {
     id: 'advc',
@@ -42,6 +95,8 @@ export const ECO_LAYERS_CONFIG: EcoLayerConfigItem[] = [
     title: 'Área Destinada Voluntariamente a la Conservación (ADVC)',
     color: '#0d9488',
     dashArray: '4, 3',
+    group: 'Áreas protegidas y regiones prioritarias',
+    defaultVisible: true,
   },
   {
     id: 'rtp',
@@ -49,6 +104,8 @@ export const ECO_LAYERS_CONFIG: EcoLayerConfigItem[] = [
     title: 'Región Terrestre Prioritaria',
     color: '#f97316',
     dashArray: '8, 4',
+    group: 'Áreas protegidas y regiones prioritarias',
+    defaultVisible: true,
   },
   {
     id: 'rhp',
@@ -56,8 +113,157 @@ export const ECO_LAYERS_CONFIG: EcoLayerConfigItem[] = [
     title: 'Región Hídrica Prioritaria',
     color: '#06b6d4',
     dashArray: '8, 4',
+    group: 'Áreas protegidas y regiones prioritarias',
+    defaultVisible: true,
+  },
+  {
+    id: 'uga',
+    file: 'uga.fgb',
+    title: 'Unidad de Gestión Ambiental (UGA) de ordenamiento ecológico',
+    color: '#b45309',
+    group: 'Ordenamiento ecológico (SIORE)',
+    defaultVisible: true,
+    fillOpacity: 0.22,
+    r2Only: true,
+    describe: (p) => {
+      const clave = attr(p, 'clave_uga');
+      const politica = attr(p, 'politica');
+      const poe = attr(p, 'nombre_poe');
+      const uga = clave ? `UGA ${clave}` : attr(p, 'nombre_uga') || 'UGA';
+      return {
+        name: `${poe ? `${poe}: ` : ''}${uga}${politica ? ` (${politica})` : ''}`,
+        subtitle: htmlRows([
+          ['Programa', poe],
+          ['Modalidad', attr(p, 'modalidad')],
+          ['Estado', attr(p, 'estado')],
+          ['Clave UGA', clave],
+          ['Nombre UGA', attr(p, 'nombre_uga')],
+          ['Política', politica],
+          ['Uso predominante', attr(p, 'uso_predominante')],
+          ['Lineamiento', attr(p, 'lineamiento')],
+          ['Criterios', attr(p, 'criterios')],
+        ]),
+      };
+    },
+  },
+  {
+    id: 'poe_limites',
+    file: 'poe_limites.fgb',
+    title: 'Límite de Programa de Ordenamiento Ecológico (POE)',
+    color: '#7c2d12',
+    dashArray: '12, 4',
+    group: 'Ordenamiento ecológico (SIORE)',
+    defaultVisible: false,
+    fillOpacity: 0,
+    r2Only: true,
+    describe: (p) => {
+      const poe = attr(p, 'nombre_poe');
+      const modalidad = attr(p, 'modalidad');
+      return {
+        name: poe ? `${poe}${modalidad ? ` (${modalidad})` : ''}` : null,
+        subtitle: htmlRows([
+          ['Modalidad', modalidad],
+          ['Estado', attr(p, 'estado')],
+          ['UGA que lo integran', attr(p, 'n_poligonos')],
+        ]),
+      };
+    },
+  },
+  {
+    id: 'corredores_biologicos',
+    file: 'corredores_biologicos.fgb',
+    title: 'Corredor Biológico Mesoamericano-México (CONABIO 2015)',
+    color: '#4d7c0f',
+    dashArray: '14, 6',
+    group: 'Conectividad ecológica',
+    defaultVisible: true,
+    fillOpacity: 0.18,
+    r2Only: true,
+    describe: (p) => {
+      const corredor = attr(p, 'NOM_CB');
+      const region = attr(p, 'NOM_RG');
+      const subregion = attr(p, 'NOM_SRG');
+      return {
+        name: corredor ? `${corredor}${subregion ? ` – ${subregion}` : ''}` : null,
+        subtitle: htmlRows([
+          ['Corredor', corredor],
+          ['Región', region],
+          ['Subregión', subregion],
+          ['Área de trabajo', attr(p, 'NOM_APT')],
+        ]),
+      };
+    },
   },
 ];
+
+/** Raster de contexto (Cloud Optimized GeoTIFF en R2, EPSG:3857). */
+export interface ContextRasterConfigItem {
+  id: string;
+  file: string;
+  title: string;
+  source: string;
+  group: ContextLayerGroup;
+  defaultVisible: boolean;
+  opacity: number;
+}
+
+export const INTEGRIDAD_RASTER: ContextRasterConfigItem = {
+  id: 'integridad_ecosistemica',
+  file: 'integridad_ecosistemica_2018.tif',
+  title: 'Índice de Integridad Ecosistémica (2018)',
+  source: 'CONABIO-INECOL, 250 m',
+  group: 'Integridad ecosistémica',
+  // Cubre todo el país: se deja apagada para no tapar las demás capas
+  defaultVisible: false,
+  opacity: 0.65,
+};
+
+/** Paleta del índice (0 = degradado, 1 = íntegro): se usa en el mapa y en la leyenda. */
+export const INTEGRIDAD_COLOR_STOPS: [number, string][] = [
+  [0, '#b91c1c'],
+  [0.25, '#f97316'],
+  [0.5, '#facc15'],
+  [0.75, '#84cc16'],
+  [1, '#15803d'],
+];
+
+const hexToRgb = (hex: string): [number, number, number] => [
+  Number.parseInt(hex.slice(1, 3), 16),
+  Number.parseInt(hex.slice(3, 5), 16),
+  Number.parseInt(hex.slice(5, 7), 16),
+];
+
+/** Color interpolado de la paleta para un valor del índice (se recorta a 0–1). */
+export const integridadColor = (value: number): string => {
+  const v = Math.min(1, Math.max(0, value));
+  for (let i = 1; i < INTEGRIDAD_COLOR_STOPS.length; i++) {
+    const [v1, c1] = INTEGRIDAD_COLOR_STOPS[i];
+    if (v <= v1) {
+      const [v0, c0] = INTEGRIDAD_COLOR_STOPS[i - 1];
+      const t = (v - v0) / (v1 - v0);
+      const a = hexToRgb(c0);
+      const b = hexToRgb(c1);
+      const mix = a.map((x, k) => Math.round(x + (b[k] - x) * t));
+      return `rgb(${mix[0]},${mix[1]},${mix[2]})`;
+    }
+  }
+  return INTEGRIDAD_COLOR_STOPS[INTEGRIDAD_COLOR_STOPS.length - 1][1];
+};
+
+/** Capas de contexto encendidas al abrir el visor. */
+export const DEFAULT_VISIBLE_CONTEXT_LAYERS: string[] = [
+  ...ECO_LAYERS_CONFIG.filter((l) => l.defaultVisible).map((l) => l.id),
+  ...(INTEGRIDAD_RASTER.defaultVisible ? [INTEGRIDAD_RASTER.id] : []),
+];
+
+/**
+ * URL pública de un archivo en R2. Debe apuntar al mismo bucket que usa utils/fgbReader.
+ * Configura VITE_R2_PUBLIC_URL en el .env del frontend (sin "/" al final).
+ */
+export const getR2FileUrl = (file: string): string => {
+  const base = ((import.meta.env.VITE_R2_PUBLIC_URL as string | undefined) ?? '').replace(/\/+$/, '');
+  return `${base}/${file}`;
+};
 
 // Añadidos los años correspondientes a cada serie según INEGI
 export const vegSeriesOptions = [
@@ -241,6 +447,10 @@ const EXCLUDED_ECO_KEYS = new Set([
 
 export const getEcoSiteName = (props?: Record<string, unknown> | null): string | null => {
   if (!props) return null;
+
+  // Nombre armado por la configuración de la capa (UGA, POE, corredores)
+  const preset = props._siteName;
+  if (typeof preset === 'string' && preset.trim().length > 0) return preset.trim();
 
   const priorityKeys = [
     'NOMBRE',
