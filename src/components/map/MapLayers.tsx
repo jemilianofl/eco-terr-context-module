@@ -14,15 +14,19 @@ import {
   calcularDistanciaPoligono,
   formatArea,
 } from '../../config/mapConfig';
+import { DATUMS, type DatumId, formatUtmInDatum, fromWgs84 } from '../../utils/datum';
 
 interface UserPolygonLayerProps {
   geoJsonData: FeatureCollection;
   interactive?: boolean;
+  /** Datum en el que se muestran las coordenadas de los puntos (por defecto WGS84). */
+  datum?: DatumId;
 }
 
 export const UserPolygonLayer = ({
   geoJsonData,
   interactive = true,
+  datum = 'WGS84',
 }: UserPolygonLayerProps) => {
   const map = useMapEvents({
     click(e) {
@@ -74,7 +78,7 @@ export const UserPolygonLayer = ({
   ).length;
   // Con muchos puntos las etiquetas se enciman: solo se rotulan hasta 80
   const showPointLabels = interactive && pointCount <= 80;
-  const layerKey = `user-layer-${interactive ? 'main' : 'mini'}-${geoJsonData.features.length}-${firstPolyId}-${pointCount}`;
+  const layerKey = `user-layer-${interactive ? 'main' : 'mini'}-${geoJsonData.features.length}-${firstPolyId}-${pointCount}-${datum}`;
 
   return (
     <GeoJSON
@@ -103,9 +107,12 @@ export const UserPolygonLayer = ({
             { permanent: true, direction: 'top', offset: [0, -4], className: 'bg-transparent border-0 shadow-none p-0' }
           );
         }
+        const [dLon, dLat] = fromWgs84(lon, lat, datum);
         layer.bindPopup(
-          `<div style="font-size:0.82rem"><strong style="color:#d63384">${label || 'Punto'}</strong><br/>` +
-            `<strong>Lat:</strong> ${lat.toFixed(6)}<br/><strong>Lon:</strong> ${lon.toFixed(6)}</div>`
+          `<div style="font-size:0.82rem"><strong style="color:#d63384">${label || 'Punto'}</strong>` +
+            `<span style="color:#64748b"> · ${DATUMS[datum].label}</span><br/>` +
+            `<strong>Lat:</strong> ${dLat.toFixed(6)}<br/><strong>Lon:</strong> ${dLon.toFixed(6)}<br/>` +
+            `<strong>UTM:</strong> ${formatUtmInDatum(lon, lat, datum)}</div>`
         );
       }}
       style={() => ({

@@ -11,6 +11,7 @@ import type {
   Position,
 } from 'geojson';
 import { formatArea } from '../config/mapConfig';
+import { DATUMS, type DatumId, toWgs84, utmToLonLat } from './datum';
 
 /* ============================================================================
  * Herramientas para preparar lo que sube el usuario antes de graficarlo:
@@ -331,9 +332,11 @@ export interface CsvPointConfig {
   crs: CsvCrs;
   utmZone: number;
   hemisphere: 'N' | 'S';
+  /** Datum en el que vienen las coordenadas del CSV; se transforman a WGS84 para graficar. */
+  datum: DatumId;
 }
 
-export function detectCsvConfig(table: CsvTable): CsvPointConfig {
+export function detectCsvConfig(table: CsvTable, datum: DatumId = 'WGS84'): CsvPointConfig {
   const find = (names: string[]) =>
     table.headers.find((h) => names.includes(normalizeHeader(h))) ??
     table.headers.find((h) => names.some((n) => n.length > 2 && normalizeHeader(h).includes(n))) ??
@@ -342,51 +345,7 @@ export function detectCsvConfig(table: CsvTable): CsvPointConfig {
   const yColumn = find(LAT_NAMES) || table.headers[1] || '';
   const sample = table.rows.slice(0, 20).map((r) => Math.abs(parseCoordinate(r[xColumn] ?? '')));
   const looksUtm = sample.some((v) => Number.isFinite(v) && v > 180);
-  return { xColumn, yColumn, crs: looksUtm ? 'utm' : 'wgs84', utmZone: 15, hemisphere: 'N' };
-}
-
-/** UTM (WGS84) → [lon, lat] en grados. Fórmulas de Snyder (USGS PP 1395), error < 1 mm. */
-export function utmToLonLat(easting: number, northing: number, zone: number, hemisphere: 'N' | 'S'): [number, number] {
-  const a = 6378137;
-  const f = 1 / 298.257223563;
-  const k0 = 0.9996;
-  const e2 = f * (2 - f);
-  const ep2 = e2 / (1 - e2);
-  const x = easting - 500000;
-  const y = hemisphere === 'N' ? northing : northing - 10000000;
-
-  const m = y / k0;
-  const mu = m / (a * (1 - e2 / 4 - (3 * e2 ** 2) / 64 - (5 * e2 ** 3) / 256));
-  const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
-  const phi1 =
-    mu +
-    ((3 * e1) / 2 - (27 * e1 ** 3) / 32) * Math.sin(2 * mu) +
-    ((21 * e1 ** 2) / 16 - (55 * e1 ** 4) / 32) * Math.sin(4 * mu) +
-    ((151 * e1 ** 3) / 96) * Math.sin(6 * mu) +
-    ((1097 * e1 ** 4) / 512) * Math.sin(8 * mu);
-
-  const sin1 = Math.sin(phi1);
-  const cos1 = Math.cos(phi1);
-  const tan1 = Math.tan(phi1);
-  const n1 = a / Math.sqrt(1 - e2 * sin1 ** 2);
-  const t1 = tan1 ** 2;
-  const c1 = ep2 * cos1 ** 2;
-  const r1 = (a * (1 - e2)) / (1 - e2 * sin1 ** 2) ** 1.5;
-  const d = x / (n1 * k0);
-
-  const lat =
-    phi1 -
-    ((n1 * tan1) / r1) *
-      (d ** 2 / 2 -
-        ((5 + 3 * t1 + 10 * c1 - 4 * c1 ** 2 - 9 * ep2) * d ** 4) / 24 +
-        ((61 + 90 * t1 + 298 * c1 + 45 * t1 ** 2 - 252 * ep2 - 3 * c1 ** 2) * d ** 6) / 720);
-  const lon0 = (((zone - 1) * 6 - 180 + 3) * Math.PI) / 180;
-  const lon =
-    lon0 +
-    (d - ((1 + 2 * t1 + c1) * d ** 3) / 6 + ((5 - 2 * c1 + 28 * t1 - 3 * c1 ** 2 + 8 * ep2 + 24 * t1 ** 2) * d ** 5) / 120) /
-      cos1;
-
-  return [(lon * 180) / Math.PI, (lat * 180) / Math.PI];
+  return { xColumn, yColumn, crs: looksUtm ? 'utm' : 'wgs84', utmZone: 15, hemisphere: 'N', datum };
 }
 
 export interface CsvToPointsResult {
@@ -407,14 +366,15 @@ export function csvToPoints(table: CsvTable, cfg: CsvPointConfig): CsvToPointsRe
     }
     let lon = xv;
     let lat = yv;
-    if (cfg.crs === 'utm') [lon, lat] = utmToLonLat(xv, yv, cfg.utmZone, cfg.hemisphere);
+    if (cfg.crs === 'utm') [lon, lat] = utmToLonLat(xv, yv, cfg.utmZone, cfg.hemisphere, DATUMS[cfg.datum].ellipsoid);
     else if (Math.abs(xv) <= 90 && Math.abs(yv) > 90) [lon, lat] = [yv, xv]; // columnas invertidas
+    [lon, lat] = toWgs84(lon, lat, cfg.datum);
 
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
       invalidRows.push(i + 2);
       return;
     }
-    const props: GeoJsonProperties = { ...row, _fila: i + 2 };
+    const props: GeoJsonProperties = { ...row, _fila: i + 2, _datumOrigen: cfg.datum };
     features.push(withUid(turf.point([Number(lon.toFixed(7)), Number(lat.toFixed(7))], props)));
   });
 

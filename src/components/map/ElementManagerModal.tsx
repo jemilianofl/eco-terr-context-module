@@ -21,6 +21,7 @@ import {
   propertyKeys,
   withUid,
 } from '../../utils/featureTools';
+import { DATUM_OPTIONS, DATUMS, type DatumId } from '../../utils/datum';
 
 export type ElementSource =
   | { id: number; kind: 'csv'; fileName: string; text: string }
@@ -28,6 +29,8 @@ export type ElementSource =
 
 interface ElementManagerModalProps {
   source: ElementSource;
+  /** Datum activo en el visor: se propone como datum de las coordenadas del CSV. */
+  defaultDatum?: DatumId;
   onClose: () => void;
   onApply: (collection: FeatureCollection) => void;
 }
@@ -47,11 +50,12 @@ const smallLabel: React.CSSProperties = { fontSize: '0.72rem' };
 const CsvStep: React.FC<{
   fileName: string;
   text: string;
+  defaultDatum: DatumId;
   onConverted: (features: AnyFeature[], invalidRows: number[]) => void;
   onClose: () => void;
-}> = ({ fileName, text, onConverted, onClose }) => {
+}> = ({ fileName, text, defaultDatum, onConverted, onClose }) => {
   const table = useMemo(() => parseCsv(text), [text]);
-  const [cfg, setCfg] = useState<CsvPointConfig>(() => detectCsvConfig(table));
+  const [cfg, setCfg] = useState<CsvPointConfig>(() => detectCsvConfig(table, defaultDatum));
   const preview = table.rows.slice(0, 5);
 
   const set = <K extends keyof CsvPointConfig>(key: K, value: CsvPointConfig[K]) =>
@@ -87,12 +91,25 @@ const CsvStep: React.FC<{
             </select>
           </div>
           <div className="col-sm-3">
+            <label htmlFor="csvDatum" className="form-label fw-semibold mb-1" style={smallLabel}>
+              Datum de las coordenadas
+            </label>
+            <select id="csvDatum" className="form-select form-select-sm" value={cfg.datum} onChange={(e) => set('datum', e.target.value as DatumId)}>
+              {DATUM_OPTIONS.map((d) => (
+                <option key={d.id} value={d.id}>{d.label}</option>
+              ))}
+            </select>
+            <div className="text-muted mt-1" style={{ fontSize: '0.62rem' }}>
+              {DATUMS[cfg.datum].description} Precisión: {DATUMS[cfg.datum].accuracy}.
+            </div>
+          </div>
+          <div className="col-sm-3">
             <label htmlFor="csvCrs" className="form-label fw-semibold mb-1" style={smallLabel}>
               Sistema de coordenadas
             </label>
             <select id="csvCrs" className="form-select form-select-sm" value={cfg.crs} onChange={(e) => set('crs', e.target.value as CsvPointConfig['crs'])}>
-              <option value="wgs84">Geográficas WGS84 (grados / GMS)</option>
-              <option value="utm">UTM WGS84 (metros)</option>
+              <option value="wgs84">Geográficas (grados / GMS)</option>
+              <option value="utm">UTM (metros)</option>
             </select>
           </div>
           {cfg.crs === 'utm' && (
@@ -433,7 +450,7 @@ const ElementsStep: React.FC<{
  * Gestor de elementos del archivo subido. Se monta con `key={source.id}` para que
  * cada archivo nuevo reinicie su estado sin setState dentro de efectos.
  */
-export const ElementManagerModal: React.FC<ElementManagerModalProps> = ({ source, onClose, onApply }) => {
+export const ElementManagerModal: React.FC<ElementManagerModalProps> = ({ source, defaultDatum = 'WGS84', onClose, onApply }) => {
   const [csvResult, setCsvResult] = useState<{ features: AnyFeature[]; notice: string | null } | null>(null);
 
   const geojsonFeatures = useMemo(
@@ -468,6 +485,7 @@ export const ElementManagerModal: React.FC<ElementManagerModalProps> = ({ source
           <CsvStep
             fileName={source.fileName}
             text={source.text}
+            defaultDatum={defaultDatum}
             onClose={onClose}
             onConverted={(features, invalidRows) =>
               setCsvResult({

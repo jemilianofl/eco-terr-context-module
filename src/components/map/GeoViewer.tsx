@@ -52,8 +52,27 @@ import { useTemporalSeries, type SeriesScene } from '../../hooks/useTemporalSeri
 import { createZipBlob, downloadBlob, type ZipEntry } from '../../utils/zipStore';
 import { ElementManagerModal, type ElementSource } from './ElementManagerModal';
 import { letterLabel, needsElementReview } from '../../utils/featureTools';
+import {
+  DATUM_OPTIONS,
+  DATUMS,
+  type DatumId,
+  fromWgs84,
+  lonLatToUtm,
+  toWgs84,
+  utmToLonLat,
+  utmZoneFromLon,
+} from '../../utils/datum';
 
 import profepaLogo from '../../assets/img/LOGO_PROFEPA.png';
+
+/** Formato de los rótulos del marco: geográficas en GMS, geográficas decimales o UTM (m). */
+type CoordinateFormat = 'dms' | 'dd' | 'utm';
+
+const COORDINATE_FORMAT_OPTIONS: { id: CoordinateFormat; label: string }[] = [
+  { id: 'dms', label: 'Geográficas (° \' ")' },
+  { id: 'dd', label: 'Geográficas (grados decimales)' },
+  { id: 'utm', label: 'UTM (metros)' },
+];
 
 (L.Browser as unknown as { any3d: boolean }).any3d = false;
 
@@ -68,11 +87,23 @@ interface FormData {
   vegetacion: string;
 }
 
+interface FrameTickX {
+  x: number;
+  label: string;
+}
+interface FrameTickY {
+  y: number;
+  label: string;
+}
 interface FrameData {
   w: number;
   h: number;
-  xTicks: { lon: number; x: number }[];
-  yTicks: { lat: number; y: number }[];
+  /** Cruces de la cuadrícula con el borde inferior / izquierdo. */
+  xTicks: FrameTickX[];
+  yTicks: FrameTickY[];
+  /** Cruces con el borde superior / derecho (en UTM la cuadrícula va ligeramente girada). */
+  xTicksTop: FrameTickX[];
+  yTicksRight: FrameTickY[];
 }
 
 const PLANO_FILE_NAMES: Record<number, string> = {
@@ -152,45 +183,157 @@ const ViewportWatcher: React.FC<{ onBoundsChange: (bbox: [number, number, number
   return null;
 };
 
-const GraticuleEngine: React.FC = () => {
+/** Paso "redondo" (1, 2, 5 × 10ⁿ) para ~3 líneas en el encuadre. */
+const niceStep = (span: number): number => {
+  const raw = Math.max(span, 1) / 3;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const m = raw / pow;
+  let n = 10;
+  if (m < 1.5) n = 1;
+  else if (m < 3.5) n = 2;
+  else if (m < 7.5) n = 5;
+  return n * pow;
+};
+
+/** Punto donde una polilínea [lat, lng] cruza un valor de lat (axis 0) o lng (axis 1). */
+const crossAt = (pts: [number, number][], axis: 0 | 1, value: number): [number, number] | null => {
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1][axis];
+    const b = pts[i][axis];
+    if (a !== b && (a - value) * (b - value) <= 0) {
+      const t = (value - a) / (b - a);
+      return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t];
+    }
+  }
+  return null;
+};
+
+const formatMeters = (v: number) => Math.round(v).toLocaleString('es-MX');
+
+/**
+ * Cuadrícula del plano.
+ * - Geográficas: líneas de latitud/longitud (como antes), rotuladas en GMS o decimales en el datum elegido.
+ * - UTM: líneas de Este/Norte constantes cada 1, 2 o 5 × 10ⁿ m en la zona del centro del encuadre.
+ */
+const GraticuleEngine: React.FC<{ datum: DatumId; format: CoordinateFormat }> = ({ datum, format }) => {
   const map = useMap();
-  const [grid, setGrid] = useState<{ lats: number[]; lons: number[]; bounds: L.LatLngBounds | null }>({ lats: [], lons: [], bounds: null });
+  const [lines, setLines] = useState<[number, number][][]>([]);
 
   const updateGrid = useCallback(() => {
     if (!map?.getContainer()) return;
     const b = map.getBounds();
     const mapSize = map.getSize();
-    const mapWidthDegrees = b.getEast() - b.getWest();
-    const mapHeightDegrees = b.getNorth() - b.getSouth();
-    const stepX = mapWidthDegrees / 3;
-    const stepY = mapHeightDegrees / 3;
+    const south = b.getSouth();
+    const north = b.getNorth();
+    const west = b.getWest();
+    const east = b.getEast();
+    const center = b.getCenter();
 
-    const lats: number[] = [];
-    for (let lat = b.getSouth() + stepY / 2; lat < b.getNorth(); lat += stepY) lats.push(lat);
-    const lons: number[] = [];
-    for (let lon = b.getWest() + stepX / 2; lon < b.getEast(); lon += stepX) lons.push(lon);
+    const newLines: [number, number][][] = [];
+    const xTicks: FrameTickX[] = [];
+    const yTicks: FrameTickY[] = [];
+    const xTicksTop: FrameTickX[] = [];
+    const yTicksRight: FrameTickY[] = [];
+    const px = (lat: number, lng: number) => map.latLngToContainerPoint([lat, lng]);
 
-    setGrid({ lats, lons, bounds: b });
-    const xTicks = lons.map((lon) => ({ lon, x: map.latLngToContainerPoint([b.getSouth(), lon]).x }));
-    const yTicks = lats.map((lat) => ({ lat, y: map.latLngToContainerPoint([lat, b.getWest()]).y }));
-    document.dispatchEvent(new CustomEvent('mapFrameUpdated', { detail: { w: mapSize.x, h: mapSize.y, xTicks, yTicks } }));
-  }, [map]);
+    if (format === 'utm') {
+      const ell = DATUMS[datum].ellipsoid;
+      const zone = utmZoneFromLon(fromWgs84(center.lng, center.lat, datum)[0]);
+      const toUtm = (lng: number, lat: number) => {
+        const [dl, dp] = fromWgs84(lng, lat, datum);
+        return lonLatToUtm(dl, dp, ell, zone);
+      };
+      const hemi = toUtm(center.lng, center.lat).hemisphere;
+      const toLatLng = (e: number, n: number): [number, number] => {
+        const [dl, dp] = utmToLonLat(e, n, zone, hemi, ell);
+        const [wl, wp] = toWgs84(dl, dp, datum);
+        return [wp, wl];
+      };
+
+      const corners = [toUtm(west, south), toUtm(east, south), toUtm(west, north), toUtm(east, north)];
+      const minE = Math.min(...corners.map((c) => c.easting));
+      const maxE = Math.max(...corners.map((c) => c.easting));
+      const minN = Math.min(...corners.map((c) => c.northing));
+      const maxN = Math.max(...corners.map((c) => c.northing));
+      const step = niceStep(Math.min(maxE - minE, maxN - minN));
+      const SAMPLES = 12;
+
+      for (let e = Math.ceil(minE / step) * step; e <= maxE; e += step) {
+        const pts: [number, number][] = [];
+        for (let i = 0; i <= SAMPLES; i++) pts.push(toLatLng(e, minN - step + ((maxN - minN + 2 * step) * i) / SAMPLES));
+        newLines.push(pts);
+        const label = `${formatMeters(e)} E`;
+        const bottom = crossAt(pts, 0, south);
+        const top = crossAt(pts, 0, north);
+        if (bottom) xTicks.push({ x: px(south, bottom[1]).x, label });
+        if (top) xTicksTop.push({ x: px(north, top[1]).x, label });
+      }
+      for (let n = Math.ceil(minN / step) * step; n <= maxN; n += step) {
+        const pts: [number, number][] = [];
+        for (let i = 0; i <= SAMPLES; i++) pts.push(toLatLng(minE - step + ((maxE - minE + 2 * step) * i) / SAMPLES, n));
+        newLines.push(pts);
+        const label = `${formatMeters(n)} N`;
+        const left = crossAt(pts, 1, west);
+        const right = crossAt(pts, 1, east);
+        if (left) yTicks.push({ y: px(left[0], west).y, label });
+        if (right) yTicksRight.push({ y: px(right[0], east).y, label });
+      }
+    } else {
+      const stepX = (east - west) / 3;
+      const stepY = (north - south) / 3;
+      const lonText = (lon: number) => {
+        const v = fromWgs84(lon, center.lat, datum)[0];
+        return format === 'dms' ? toDMS(v, false) : `${v.toFixed(5)}°`;
+      };
+      const latText = (lat: number) => {
+        const v = fromWgs84(center.lng, lat, datum)[1];
+        return format === 'dms' ? toDMS(v, true) : `${v.toFixed(5)}°`;
+      };
+      for (let lat = south + stepY / 2; lat < north; lat += stepY) {
+        newLines.push([
+          [lat, west],
+          [lat, east],
+        ]);
+        const tick = { y: px(lat, west).y, label: latText(lat) };
+        yTicks.push(tick);
+        yTicksRight.push(tick);
+      }
+      for (let lon = west + stepX / 2; lon < east; lon += stepX) {
+        newLines.push([
+          [south, lon],
+          [north, lon],
+        ]);
+        const tick = { x: px(south, lon).x, label: lonText(lon) };
+        xTicks.push(tick);
+        xTicksTop.push(tick);
+      }
+    }
+
+    setLines(newLines);
+    document.dispatchEvent(
+      new CustomEvent('mapFrameUpdated', {
+        detail: { w: mapSize.x, h: mapSize.y, xTicks, yTicks, xTicksTop, yTicksRight },
+      }),
+    );
+  }, [map, datum, format]);
 
   useMapEvents({ moveend: updateGrid, zoomend: updateGrid, resize: updateGrid });
   useEffect(() => {
     const timerId = setTimeout(() => updateGrid(), 0);
-    return () => { clearTimeout(timerId); setGrid({ lats: [], lons: [], bounds: null }); };
+    return () => {
+      clearTimeout(timerId);
+      setLines([]);
+    };
   }, [updateGrid]);
-
-  if (!grid.bounds) return null;
 
   return (
     <>
-      {grid.lats.map((lat, i) => (
-        <Polyline key={`lat-${i}-${lat}`} positions={[[lat, grid.bounds!.getWest()], [lat, grid.bounds!.getEast()]]} pathOptions={{ color: 'white', weight: 1.5, opacity: 0.5, dashArray: '5,5', interactive: false }} />
-      ))}
-      {grid.lons.map((lon, i) => (
-        <Polyline key={`lon-${i}-${lon}`} positions={[[grid.bounds!.getSouth(), lon], [grid.bounds!.getNorth(), lon]]} pathOptions={{ color: 'white', weight: 1.5, opacity: 0.5, dashArray: '5,5', interactive: false }} />
+      {lines.map((positions, i) => (
+        <Polyline
+          key={`grid-${format}-${i}`}
+          positions={positions}
+          pathOptions={{ color: 'white', weight: 1.5, opacity: 0.5, dashArray: '5,5', interactive: false }}
+        />
       ))}
     </>
   );
@@ -432,7 +575,7 @@ const ZebraFrame: React.FC<{ frameData: FrameData | null }> = ({ frameData }) =>
 
 const CoordinateLabels: React.FC<{ frameData: FrameData | null }> = ({ frameData }) => {
   if (!frameData) return null;
-  const { w, h, xTicks, yTicks } = frameData;
+  const { w, h, xTicks, yTicks, xTicksTop, yTicksRight } = frameData;
   const labelStyle: React.CSSProperties = {
     position: 'absolute',
     fontSize: '0.62rem',
@@ -449,16 +592,28 @@ const CoordinateLabels: React.FC<{ frameData: FrameData | null }> = ({ frameData
   xTicks.forEach((tick) => {
     if (tick.x > 0 && tick.x < w) {
       elements.push(
-        <div key={`b-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, bottom: '-14px', transform: 'translate(-50%, 50%)' }}>{toDMS(tick.lon, false)}</div>,
-        <div key={`t-${tick.lon}-${tick.x}`} style={{ ...labelStyle, left: tick.x, top: '-14px', transform: 'translate(-50%, -50%)' }}>{toDMS(tick.lon, false)}</div>
+        <div key={`b-${tick.label}-${tick.x}`} style={{ ...labelStyle, left: tick.x, bottom: '-14px', transform: 'translate(-50%, 50%)' }}>{tick.label}</div>
+      );
+    }
+  });
+  xTicksTop.forEach((tick) => {
+    if (tick.x > 0 && tick.x < w) {
+      elements.push(
+        <div key={`t-${tick.label}-${tick.x}`} style={{ ...labelStyle, left: tick.x, top: '-14px', transform: 'translate(-50%, -50%)' }}>{tick.label}</div>
       );
     }
   });
   yTicks.forEach((tick) => {
     if (tick.y > 0 && tick.y < h) {
       elements.push(
-        <div key={`l-${tick.lat}-${tick.y}`} style={{ ...labelStyle, left: '-14px', top: tick.y, transform: 'translate(-50%, -50%) rotate(-90deg)' }}>{toDMS(tick.lat, true)}</div>,
-        <div key={`r-${tick.lat}-${tick.y}`} style={{ ...labelStyle, right: '-14px', top: tick.y, transform: 'translate(50%, -50%) rotate(90deg)' }}>{toDMS(tick.lat, true)}</div>
+        <div key={`l-${tick.label}-${tick.y}`} style={{ ...labelStyle, left: '-14px', top: tick.y, transform: 'translate(-50%, -50%) rotate(-90deg)' }}>{tick.label}</div>
+      );
+    }
+  });
+  yTicksRight.forEach((tick) => {
+    if (tick.y > 0 && tick.y < h) {
+      elements.push(
+        <div key={`r-${tick.label}-${tick.y}`} style={{ ...labelStyle, right: '-14px', top: tick.y, transform: 'translate(50%, -50%) rotate(90deg)' }}>{tick.label}</div>
       );
     }
   });
@@ -735,6 +890,72 @@ const TemporalControlPanel: React.FC<{
     );
   };
 
+/** Ficha "Sistema de Referencia" con selector de datum (el selector no sale en la exportación). */
+const ReferenceSystemBox: React.FC<{
+  datum: DatumId;
+  onChangeDatum: (d: DatumId) => void;
+  coordinateFormat: CoordinateFormat;
+  onChangeFormat: (f: CoordinateFormat) => void;
+  centroid: Feature<Point> | null;
+  isExporting: boolean;
+}> = ({ datum, onChangeDatum, coordinateFormat, onChangeFormat, centroid, isExporting }) => {
+  const def = DATUMS[datum];
+  let zoneText = 'Zona UTM: N/D';
+  if (centroid) {
+    const [lng, lat] = fromWgs84(centroid.geometry.coordinates[0], centroid.geometry.coordinates[1], datum);
+    zoneText = `Zona UTM ${utmZoneFromLon(lng)} ${lat >= 0 ? 'N' : 'S'}`;
+  }
+  return (
+    <div className="bg-white border border-dark mt-auto">
+      <div className="fw-bold text-white text-center" style={{ backgroundColor: '#163f37', fontSize: '0.70rem', padding: '2px' }}>
+        Sistema de Referencia:
+      </div>
+      <p className="mb-0 text-center p-1" style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>
+        DATUM {def.label} · Elipsoide {def.ellipsoid.name}
+        <br />
+        Proyección Universal Transversa de Mercator · {zoneText}
+        <br />
+        Coordenadas del marco:{' '}
+        {COORDINATE_FORMAT_OPTIONS.find((o) => o.id === coordinateFormat)?.label ?? ''}
+        {datum !== 'WGS84' && (
+          <>
+            <br />
+            <span className="text-muted" style={{ fontSize: '0.56rem' }}>
+              Transformación desde WGS84: {def.accuracy}
+            </span>
+          </>
+        )}
+      </p>
+      {!isExporting && (
+        <div className="px-1 pb-1 d-flex gap-1 ignore-print">
+          <select
+            aria-label="Formato de coordenadas"
+            className="form-select form-select-sm py-0"
+            style={{ fontSize: '0.62rem' }}
+            value={coordinateFormat}
+            onChange={(e) => onChangeFormat(e.target.value as CoordinateFormat)}
+          >
+            {COORDINATE_FORMAT_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Datum de referencia"
+            className="form-select form-select-sm py-0"
+            style={{ fontSize: '0.62rem' }}
+            value={datum}
+            onChange={(e) => onChangeDatum(e.target.value as DatumId)}
+          >
+            {DATUM_OPTIONS.map((d) => (
+              <option key={d.id} value={d.id}>{d.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PLANO_BUTTONS = [
   { id: 1, icon: 'bi-geo-alt', label: 'Ubicación Geográfica' },
   { id: 2, icon: 'bi-tree', label: 'Relevancia Ecológica' },
@@ -941,6 +1162,10 @@ export const GeoViewer: React.FC = () => {
   const elementSourceSeq = useRef(0);
   /** Unidad de superficie en leyendas (por defecto hectáreas); compartida por Plano 1 y Plano 7. */
   const [areaUnit, setAreaUnit] = useState<AreaUnit>('ha');
+  /** Datum de referencia para leer/mostrar coordenadas (el visor siempre dibuja en WGS84). */
+  const [datum, setDatum] = useState<DatumId>('WGS84');
+  /** Formato de coordenadas del marco: geográficas (por defecto) o UTM. */
+  const [coordinateFormat, setCoordinateFormat] = useState<CoordinateFormat>('dms');
   const [selectedVegSerie, setSelectedVegSerie] = useState<string>('serie_7');
   const [currentViewportBbox, setCurrentViewportBbox] = useState<[number, number, number, number] | null>(null);
 
@@ -1550,7 +1775,7 @@ export const GeoViewer: React.FC = () => {
 
                         <TileLayer crossOrigin="anonymous" url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxNativeZoom={18} maxZoom={18} />
 
-                        <GraticuleEngine />
+                        <GraticuleEngine datum={datum} format={coordinateFormat} />
                         <MapUpdater
                           data={geoJsonData}
                           plano={currentPlano}
@@ -1584,7 +1809,7 @@ export const GeoViewer: React.FC = () => {
                           />
                         )}
 
-                        {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} />}
+                        {geoJsonData && <UserPolygonLayer key={`user-layer-${currentPlano}`} geoJsonData={geoJsonData} datum={datum} />}
                         {(currentPlano === 1 || currentPlano === 7) && <SmartLabels data={geoJsonData} plano={currentPlano} />}
 
                       </MapContainer>
@@ -1721,14 +1946,14 @@ export const GeoViewer: React.FC = () => {
                   )}
 
                   {currentPlano !== 8 && (
-                    <div className="bg-white border border-dark mt-auto">
-                      <div className="fw-bold text-white text-center" style={{ backgroundColor: '#163f37', fontSize: '0.70rem', padding: '2px' }}>
-                        Sistema de Referencia:
-                      </div>
-                      <p className="mb-0 text-center p-1" style={{ fontSize: '0.62rem', lineHeight: '1.15' }}>
-                        DATUM WGS84 Zona 14 N<br />Proyección Transversal de Mercator
-                      </p>
-                    </div>
+                    <ReferenceSystemBox
+                      datum={datum}
+                      onChangeDatum={setDatum}
+                      coordinateFormat={coordinateFormat}
+                      onChangeFormat={setCoordinateFormat}
+                      centroid={predioCentroid}
+                      isExporting={isExporting || isSeriesExporting}
+                    />
                   )}
                 </div>
               )}
@@ -1805,6 +2030,7 @@ export const GeoViewer: React.FC = () => {
         <ElementManagerModal
           key={elementSource.id}
           source={elementSource}
+          defaultDatum={datum}
           onClose={() => setIsElementManagerOpen(false)}
           onApply={applyUserCollection}
         />
