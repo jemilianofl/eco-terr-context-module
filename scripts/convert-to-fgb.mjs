@@ -71,7 +71,8 @@ const layers = [
   // Ordenamientos ecológicos (SIORE) - GeoJSON generados con unir_ugas_geojson.py
   // ogr2ogr lee GeoJSON igual que shapefile, por eso basta con apuntar al archivo.
   { id: 'uga', shp: 'public/layers/geojson/uga.geojson' },
-  { id: 'poe_limites', shp: 'public/layers/geojson/poe_limites.geojson' }
+  { id: 'poe_limites', shp: 'public/layers/geojson/poe_limites.geojson' },
+    { id: 'corredores_biologicos', shp: 'public/layers/geojson/corredores_biologicos.geojson' }
 ];
 
 const outDir = path.resolve('public/layers/fgb');
