@@ -8,7 +8,14 @@ import L from 'leaflet';
 import domtoimage from 'dom-to-image';
 import * as turf from '@turf/turf';
 
-import { toDMS, getStrahlerOrderNumber, type AreaUnit } from '../../config/mapConfig';
+import {
+  toDMS,
+  getStrahlerOrderNumber,
+  type AreaUnit,
+  DEFAULT_VISIBLE_CONTEXT_LAYERS,
+  INTEGRIDAD_RASTER,
+  getR2FileUrl,
+} from '../../config/mapConfig';
 import {
   GisBackendUnavailableError,
   parseSpatialFileViaBackend,
@@ -47,6 +54,9 @@ import {
   LegendClimograma,
 } from './MapLegends';
 import { ClimogramaChart } from './ClimogramaChart';
+import { ContextLayersPanel } from './ContextLayersPanel';
+import { IntegridadRasterLayer } from './IntegridadRasterLayer';
+import { useGeoraster, useRasterStats } from '../../hooks/useIntegridadRaster';
 import { TemporalSeriesGallery, type SeriesExportProgress } from './TemporalSeriesGallery';
 import { useTemporalSeries, type SeriesScene } from '../../hooks/useTemporalSeries';
 import { createZipBlob, downloadBlob, type ZipEntry } from '../../utils/zipStore';
@@ -1450,6 +1460,33 @@ export const GeoViewer: React.FC = () => {
     activatedPlanos[2] ? userPolygonGeom : null,
     layerFilterMode,
   );
+  // ---------------- CAPAS DE CONTEXTO (Plano 2) ----------------
+  const [visibleContextLayers, setVisibleContextLayers] = useState<Set<string>>(
+    () => new Set(DEFAULT_VISIBLE_CONTEXT_LAYERS),
+  );
+  /** Solo lo encendido en "Capas de contexto" se dibuja y entra en la simbología. */
+  const ecoVisible = useMemo(
+    () => ecoNearby.filter((f) => visibleContextLayers.has(f.properties?._layerId ?? '')),
+    [ecoNearby, visibleContextLayers],
+  );
+  const contextLayerCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    ecoNearby.forEach((f) => {
+      const id = f.properties?._layerId;
+      if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+    });
+    return counts;
+  }, [ecoNearby]);
+
+  const isIntegridadOn = Boolean(activatedPlanos[2]) && visibleContextLayers.has(INTEGRIDAD_RASTER.id);
+  const {
+    georaster: integridadRaster,
+    isLoading: isLoadingIntegridad,
+    error: integridadError,
+  } = useGeoraster(isIntegridadOn ? getR2FileUrl(INTEGRIDAD_RASTER.file) : null);
+  const integridadStats = useRasterStats(isIntegridadOn ? integridadRaster : null, userPolygonGeom);
+  // ----------------------------------------------------------------
+
   const { vegNearby, isLoadingVeg } = useVegetationLayers(
     activatedPlanos[3] ? userPolygonGeom : null,
     layerFilterMode,
@@ -1502,7 +1539,7 @@ export const GeoViewer: React.FC = () => {
       }
     };
 
-    const eco = ecoNearby.filter((f) => Boolean(f.properties?._layerId) && inView(f));
+    const eco = ecoVisible.filter((f) => Boolean(f.properties?._layerId) && inView(f));
     const veg = vegNearby.filter(
       (f) => Boolean(f.properties?._type && f.properties?._color) && inView(f)
     );
@@ -1540,7 +1577,7 @@ export const GeoViewer: React.FC = () => {
     };
   }, [
     currentViewportBbox,
-    ecoNearby,
+    ecoVisible,
     vegNearby,
     climateNearby,
     edafologiaNearby,
@@ -1678,6 +1715,7 @@ export const GeoViewer: React.FC = () => {
   const nombreActual = NOMBRES_PLANOS[currentPlano - 1];
   const isAnyLayerLoading =
     isLoadingEco ||
+    (currentPlano === 2 && isIntegridadOn && isLoadingIntegridad) ||
     isLoadingVeg ||
     isLoadingClimate ||
     isLoadingEdafologia ||
@@ -1846,10 +1884,13 @@ export const GeoViewer: React.FC = () => {
                           <ScaleControl position="bottomleft" imperial={false} />
                         </div>
 
+                        {currentPlano === 2 && isIntegridadOn && integridadRaster && (
+                          <IntegridadRasterLayer georaster={integridadRaster} opacity={INTEGRIDAD_RASTER.opacity} />
+                        )}
                         {currentPlano === 2 && (
                           <EcoLayer
                             key={`eco-${currentPlano}-${layerFilterMode}`}
-                            ecoNearby={ecoNearby}
+                            ecoNearby={ecoVisible}
                             userPolygonGeom={userPolygonGeom}
                           />
                         )}
@@ -1949,11 +1990,20 @@ export const GeoViewer: React.FC = () => {
                   )}
                   {currentPlano === 2 && (
                     <LegendEcologica
-                      ecoNearby={ecoNearby}
+                      ecoNearby={ecoVisible}
                       userPolygonGeom={userPolygonGeom}
                       isLoading={isLoadingEco}
                       targetDate={previewData.targetDate}
                       currentViewportBbox={currentViewportBbox}
+                      integridad={
+                        isIntegridadOn
+                          ? {
+                              stats: integridadStats.stats,
+                              isLoading: isLoadingIntegridad || integridadStats.isLoading,
+                              error: integridadError ?? integridadStats.error,
+                            }
+                          : null
+                      }
                     />
                   )}
                   {currentPlano === 3 && (
@@ -2027,6 +2077,16 @@ export const GeoViewer: React.FC = () => {
                 <LayerFilterBar
                   layerFilterMode={layerFilterMode}
                   setLayerFilterMode={setLayerFilterMode}
+                />
+              )}
+
+              {currentPlano === 2 && (
+                <ContextLayersPanel
+                  visible={visibleContextLayers}
+                  onChange={setVisibleContextLayers}
+                  counts={contextLayerCounts}
+                  isLoading={isLoadingEco}
+                  rasterStatus={{ isLoading: isLoadingIntegridad, error: integridadError }}
                 />
               )}
 
