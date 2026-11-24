@@ -47,6 +47,8 @@ public/layers/Unidad\ climaticas/*
 public/layers/geojson/edafologia.geojson
 public/layers/geojson/usv_serie_*.geojson
 public/layers/geojson/climas.geojson
+public/layers/geojson/poe_limites.geojson
+public/layers/geojson/uga.geojson
 
 public/layers/fgb
 # Capas geoespaciales locales pesadas (alojadas en R2)
