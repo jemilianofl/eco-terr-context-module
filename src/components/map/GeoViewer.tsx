@@ -50,8 +50,14 @@ import { ClimogramaChart } from './ClimogramaChart';
 import { TemporalSeriesGallery, type SeriesExportProgress } from './TemporalSeriesGallery';
 import { useTemporalSeries, type SeriesScene } from '../../hooks/useTemporalSeries';
 import { createZipBlob, downloadBlob, type ZipEntry } from '../../utils/zipStore';
-import { ElementManagerModal, type ElementSource } from './ElementManagerModal';
-import { letterLabel, needsElementReview } from '../../utils/featureTools';
+import { ElementManagerModal, TemplateLinks, type ElementSource } from './ElementManagerModal';
+import { letterLabel, needsElementReview, parseCsv } from '../../utils/featureTools';
+import { parseXlsx } from '../../utils/xlsxReader';
+import {
+  TableBackendUnavailableError,
+  describeTableIssues,
+  parseTableViaBackend,
+} from '../../utils/tableApiClient';
 import {
   DATUM_OPTIONS,
   DATUMS,
@@ -85,6 +91,8 @@ interface FormData {
   estado: string;
   municipio: string;
   vegetacion: string;
+  /** Datum en que vienen las coordenadas del archivo (Excel/CSV). */
+  datumArchivo?: DatumId;
 }
 
 interface FrameTickX {
@@ -717,9 +725,23 @@ const SidebarFormPanel: React.FC<{
         </div>
         <div>
           <label htmlFor="fileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>Cargar Archivos Espaciales</label>
-          <input id="fileId" type="file" accept=".geojson,.json,.kml,.zip,.csv,.txt" className="form-control form-control-sm" {...register('polygonFile', { required: true })} />
+          <input id="fileId" type="file" accept=".geojson,.json,.kml,.zip,.csv,.txt,.xlsx,.xlsm,.xls" className="form-control form-control-sm" {...register('polygonFile', { required: true })} />
           <div className="form-text" style={{ fontSize: '0.7rem' }}>
-            Shapefile (.zip), KML, GeoJSON o CSV con coordenadas (grados, GMS o UTM).
+            Shapefile (.zip), KML, GeoJSON, o Excel/CSV con coordenadas (grados, GMS o UTM).
+          </div>
+          <TemplateLinks className="mt-1" />
+        </div>
+        <div>
+          <label htmlFor="datumFileId" className="form-label fw-semibold" style={{ fontSize: '0.85rem' }}>
+            Datum de las coordenadas <span className="text-muted fw-normal">(Excel/CSV)</span>
+          </label>
+          <select id="datumFileId" className="form-select form-select-sm" defaultValue="WGS84" {...register('datumArchivo')}>
+            {DATUM_OPTIONS.map((d) => (
+              <option key={d.id} value={d.id}>{d.label}</option>
+            ))}
+          </select>
+          <div className="form-text" style={{ fontSize: '0.7rem' }}>
+            GPS → WGS84. Cartografía INEGI anterior a 1998 → NAD27.
           </div>
         </div>
         <div>
@@ -1552,12 +1574,48 @@ export const GeoViewer: React.FC = () => {
       }
 
       const fileArray = Array.from(files);
-      const csvFile = fileArray.find((f) => /\.(csv|txt)$/i.test(f.name));
+      const tableFile = fileArray.find((f) => /\.(csv|txt|xlsx|xlsm|xls)$/i.test(f.name));
       elementSourceSeq.current += 1;
 
-      // CSV de puntos: siempre pasa por el gestor (hay que elegir columnas y sistema de coordenadas)
-      if (csvFile) {
-        setElementSource({ id: elementSourceSeq.current, kind: 'csv', fileName: csvFile.name, text: await csvFile.text() });
+      // Excel / CSV de coordenadas: siempre pasa por el gestor (columnas, datum, zona UTM)
+      if (tableFile) {
+        if (/\.xls$/i.test(tableFile.name)) {
+          throw new Error('Los archivos .xls (Excel 97-2003) no se pueden leer. Guárdalo como .xlsx o CSV UTF-8.');
+        }
+        const fileDatum = data.datumArchivo ?? 'WGS84';
+        try {
+          // 1º backend: reconoce la plantilla oficial, valida fila por fila y arma los polígonos
+          const res = await parseTableViaBackend(tableFile, { datum: fileDatum });
+          if (res.template && res.featureCollection && res.featureCollection.features.length > 0) {
+            setElementSource({
+              id: elementSourceSeq.current,
+              kind: 'geojson',
+              fileName: tableFile.name,
+              collection: res.featureCollection,
+              notice: describeTableIssues(res),
+            });
+          } else if (res.template) {
+            throw new Error(describeTableIssues(res) ?? 'La tabla no tiene vértices válidos.');
+          } else {
+            setElementSource({
+              id: elementSourceSeq.current,
+              kind: 'table',
+              fileName: tableFile.name,
+              table: { headers: res.headers, rows: res.rows ?? [], rowNumbers: res.rowNumbers },
+              sheetName: res.sheetName,
+            });
+          }
+        } catch (err) {
+          if (!(err instanceof TableBackendUnavailableError)) throw err;
+          // 2º respaldo en el navegador si el backend no responde
+          console.warn('Backend no disponible para tablas; se lee en el navegador:', err.message);
+          if (/\.(xlsx|xlsm)$/i.test(tableFile.name)) {
+            const table = await parseXlsx(await tableFile.arrayBuffer());
+            setElementSource({ id: elementSourceSeq.current, kind: 'table', fileName: tableFile.name, table, sheetName: table.sheetName });
+          } else {
+            setElementSource({ id: elementSourceSeq.current, kind: 'table', fileName: tableFile.name, table: parseCsv(await tableFile.text()) });
+          }
+        }
         setIsElementManagerOpen(true);
         return;
       }
@@ -2030,7 +2088,7 @@ export const GeoViewer: React.FC = () => {
         <ElementManagerModal
           key={elementSource.id}
           source={elementSource}
-          defaultDatum={datum}
+          defaultDatum={previewData?.datumArchivo ?? datum}
           onClose={() => setIsElementManagerOpen(false)}
           onApply={applyUserCollection}
         />

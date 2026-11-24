@@ -248,7 +248,10 @@ export function groupPointsIntoShapes(points: AnyFeature[], opts: GroupOptions):
 export interface CsvTable {
   headers: string[];
   rows: Record<string, string>[];
-  delimiter: string;
+  /** Solo CSV leído en el navegador. */
+  delimiter?: string;
+  /** Fila real (como en Excel) de cada elemento de `rows`, si se conoce. */
+  rowNumbers?: number[];
 }
 
 export function parseCsv(text: string): CsvTable {
@@ -334,6 +337,29 @@ export interface CsvPointConfig {
   hemisphere: 'N' | 'S';
   /** Datum en el que vienen las coordenadas del CSV; se transforman a WGS84 para graficar. */
   datum: DatumId;
+  /** Columna con la zona UTM por fila (ej. "15N"); '' = usar utmZone/hemisphere fijos. */
+  zoneColumn: string;
+}
+
+const ZONE_NAMES = ['zona', 'zonautm', 'zone', 'utmzone', 'huso'];
+const GROUP_NAMES = ['poligono', 'polygon', 'predio', 'idpoligono', 'clavepoligono', 'nopoligono'];
+const ORDER_NAMES = ['vertice', 'vertex', 'orden', 'order', 'punto', 'no', 'num', 'numero', 'consecutivo'];
+
+const findHeader = (headers: string[], names: string[]) =>
+  headers.find((h) => names.includes(normalizeHeader(h))) ?? '';
+
+/** Zona UTM de un texto como "15", "15N", "Zona 16 Norte". */
+export function parseUtmZone(raw: string): { zone: number; hemisphere: 'N' | 'S' } | null {
+  const m = /(\d{1,2})\s*([NS])?/i.exec(raw.trim());
+  if (!m) return null;
+  const zone = Number(m[1]);
+  if (zone < 1 || zone > 60) return null;
+  return { zone, hemisphere: m[2]?.toUpperCase() === 'S' ? 'S' : 'N' };
+}
+
+/** Columnas de agrupación detectadas (POLIGONO / VERTICE de las plantillas). */
+export function detectGroupingColumns(table: CsvTable): { groupField: string; orderField: string } {
+  return { groupField: findHeader(table.headers, GROUP_NAMES), orderField: findHeader(table.headers, ORDER_NAMES) };
 }
 
 export function detectCsvConfig(table: CsvTable, datum: DatumId = 'WGS84'): CsvPointConfig {
@@ -345,7 +371,17 @@ export function detectCsvConfig(table: CsvTable, datum: DatumId = 'WGS84'): CsvP
   const yColumn = find(LAT_NAMES) || table.headers[1] || '';
   const sample = table.rows.slice(0, 20).map((r) => Math.abs(parseCoordinate(r[xColumn] ?? '')));
   const looksUtm = sample.some((v) => Number.isFinite(v) && v > 180);
-  return { xColumn, yColumn, crs: looksUtm ? 'utm' : 'wgs84', utmZone: 15, hemisphere: 'N', datum };
+  const zoneColumn = findHeader(table.headers, ZONE_NAMES);
+  const firstZone = zoneColumn ? table.rows.map((r) => parseUtmZone(r[zoneColumn] ?? '')).find(Boolean) : null;
+  return {
+    xColumn,
+    yColumn,
+    crs: looksUtm || Boolean(zoneColumn) ? 'utm' : 'wgs84',
+    utmZone: firstZone?.zone ?? 15,
+    hemisphere: firstZone?.hemisphere ?? 'N',
+    datum,
+    zoneColumn,
+  };
 }
 
 export interface CsvToPointsResult {
@@ -358,23 +394,35 @@ export function csvToPoints(table: CsvTable, cfg: CsvPointConfig): CsvToPointsRe
   const invalidRows: number[] = [];
 
   table.rows.forEach((row, i) => {
+    // Fila como la ve el usuario en Excel (encabezado + base 1) si no viene indicada
+    const rowNumber = table.rowNumbers?.[i] ?? i + 2;
     const xv = parseCoordinate(row[cfg.xColumn] ?? '');
     const yv = parseCoordinate(row[cfg.yColumn] ?? '');
     if (!Number.isFinite(xv) || !Number.isFinite(yv)) {
-      invalidRows.push(i + 2); // +2: encabezado y base 1, como lo ve el usuario en Excel
+      invalidRows.push(rowNumber);
       return;
     }
     let lon = xv;
     let lat = yv;
-    if (cfg.crs === 'utm') [lon, lat] = utmToLonLat(xv, yv, cfg.utmZone, cfg.hemisphere, DATUMS[cfg.datum].ellipsoid);
-    else if (Math.abs(xv) <= 90 && Math.abs(yv) > 90) [lon, lat] = [yv, xv]; // columnas invertidas
+    if (cfg.crs === 'utm') {
+      const rowZone = cfg.zoneColumn ? parseUtmZone(row[cfg.zoneColumn] ?? '') : null;
+      [lon, lat] = utmToLonLat(
+        xv,
+        yv,
+        rowZone?.zone ?? cfg.utmZone,
+        rowZone?.hemisphere ?? cfg.hemisphere,
+        DATUMS[cfg.datum].ellipsoid,
+      );
+    } else if (Math.abs(xv) <= 90 && Math.abs(yv) > 90) {
+      [lon, lat] = [yv, xv]; // columnas invertidas
+    }
     [lon, lat] = toWgs84(lon, lat, cfg.datum);
 
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-      invalidRows.push(i + 2);
+      invalidRows.push(rowNumber);
       return;
     }
-    const props: GeoJsonProperties = { ...row, _fila: i + 2, _datumOrigen: cfg.datum };
+    const props: GeoJsonProperties = { ...row, _fila: rowNumber, _datumOrigen: cfg.datum };
     features.push(withUid(turf.point([Number(lon.toFixed(7)), Number(lat.toFixed(7))], props)));
   });
 
@@ -407,8 +455,10 @@ export function finalizeCollection(features: AnyFeature[]): FeatureCollection {
     const kind = geometryKind(f);
     if (kind === 'point') {
       pointIndex++;
+      // El backend ya etiqueta "A-1", "B-2"… cuando hay varios polígonos: se respeta
+      const existing = scalarToText(props._label);
       const vertex = scalarToText(props.VERTICE ?? props.Vertice ?? props.vertice);
-      props._label = vertex ? `V${vertex}` : `V${pointIndex}`;
+      props._label = existing || (vertex ? `V${vertex}` : `V${pointIndex}`);
       delete props.polyId;
     } else {
       props.polyId = letterLabel(polyIndex++);

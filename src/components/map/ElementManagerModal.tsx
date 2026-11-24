@@ -5,8 +5,10 @@ import {
   type CsvPointConfig,
   type GeometryKind,
   type GroupOptions,
+  type CsvTable,
   csvToPoints,
   detectCsvConfig,
+  detectGroupingColumns,
   explodeMultipart,
   extractVertices,
   featureDetail,
@@ -17,15 +19,21 @@ import {
   getUid,
   groupPointsIntoShapes,
   isMultipart,
-  parseCsv,
   propertyKeys,
   withUid,
 } from '../../utils/featureTools';
 import { DATUM_OPTIONS, DATUMS, type DatumId } from '../../utils/datum';
 
 export type ElementSource =
-  | { id: number; kind: 'csv'; fileName: string; text: string }
-  | { id: number; kind: 'geojson'; fileName: string; collection: FeatureCollection };
+  | { id: number; kind: 'table'; fileName: string; table: CsvTable; sheetName?: string }
+  | {
+      id: number;
+      kind: 'geojson';
+      fileName: string;
+      collection: FeatureCollection;
+      /** Resumen de la lectura (p. ej. plantilla reconocida por el backend, errores por fila). */
+      notice?: string | null;
+    };
 
 interface ElementManagerModalProps {
   source: ElementSource;
@@ -43,19 +51,49 @@ const KIND_ICON: Record<GeometryKind, string> = {
 };
 
 const brand = '#163f37';
+
+/** Enlaces a las plantillas (carpeta public/plantillas del frontend). */
+export const TemplateLinks: React.FC<{ className?: string }> = ({ className }) => {
+  const base = `${import.meta.env.BASE_URL}plantillas/`;
+  const link = (file: string, text: string) => (
+    <a href={`${base}${file}`} download className="text-decoration-none fw-semibold" style={{ color: brand }}>
+      <i className="bi bi-file-earmark-spreadsheet me-1"></i>
+      {text}
+    </a>
+  );
+  return (
+    <div className={className} style={{ fontSize: '0.7rem' }}>
+      Plantillas: {link('Plantilla_Coordenadas_Geograficas.xlsx', 'Geográficas')} ·{' '}
+      {link('Plantilla_Coordenadas_UTM.xlsx', 'UTM')}
+      <span className="text-muted"> (también en </span>
+      <a href={`${base}Plantilla_Coordenadas_Geograficas.csv`} download className="text-muted">CSV geo</a>
+      <span className="text-muted"> / </span>
+      <a href={`${base}Plantilla_Coordenadas_UTM.csv`} download className="text-muted">CSV UTM</a>
+      <span className="text-muted">)</span>
+    </div>
+  );
+};
 const smallLabel: React.CSSProperties = { fontSize: '0.72rem' };
 
 /* ---------------------- Paso 1: configuración de CSV --------------------- */
 
+export interface CsvConversion {
+  features: AnyFeature[];
+  invalidRows: number[];
+  grouping: { groupField: string; orderField: string } | null;
+}
+
 const CsvStep: React.FC<{
   fileName: string;
-  text: string;
+  table: CsvTable;
+  sheetName?: string;
   defaultDatum: DatumId;
-  onConverted: (features: AnyFeature[], invalidRows: number[]) => void;
+  onConverted: (result: CsvConversion) => void;
   onClose: () => void;
-}> = ({ fileName, text, defaultDatum, onConverted, onClose }) => {
-  const table = useMemo(() => parseCsv(text), [text]);
+}> = ({ fileName, table, sheetName, defaultDatum, onConverted, onClose }) => {
   const [cfg, setCfg] = useState<CsvPointConfig>(() => detectCsvConfig(table, defaultDatum));
+  const detectedGrouping = useMemo(() => detectGroupingColumns(table), [table]);
+  const [autoGroup, setAutoGroup] = useState(Boolean(detectedGrouping.groupField || detectedGrouping.orderField));
   const preview = table.rows.slice(0, 5);
 
   const set = <K extends keyof CsvPointConfig>(key: K, value: CsvPointConfig[K]) =>
@@ -65,8 +103,9 @@ const CsvStep: React.FC<{
     <>
       <div className="p-3">
         <p className="mb-2" style={smallLabel}>
-          <strong>{fileName}</strong> — {table.rows.length} filas, {table.headers.length} columnas. Indica qué columnas tienen
-          las coordenadas:
+          <strong>{fileName}</strong>
+          {sheetName ? ` (hoja "${sheetName}")` : ''} — {table.rows.length} filas, {table.headers.length} columnas. Indica qué
+          columnas tienen las coordenadas:
         </p>
 
         <div className="row g-2 mb-3">
@@ -114,10 +153,22 @@ const CsvStep: React.FC<{
           </div>
           {cfg.crs === 'utm' && (
             <div className="col-sm-3">
-              <label htmlFor="csvZone" className="form-label fw-semibold mb-1" style={smallLabel}>
+              <label htmlFor="csvZoneCol" className="form-label fw-semibold mb-1" style={smallLabel}>
                 Zona UTM
               </label>
-              <div className="d-flex gap-1">
+              <select
+                id="csvZoneCol"
+                className="form-select form-select-sm mb-1"
+                value={cfg.zoneColumn}
+                onChange={(e) => set('zoneColumn', e.target.value)}
+              >
+                <option value="">Misma zona para todo el archivo</option>
+                {table.headers.map((h) => (
+                  <option key={h} value={h}>Columna «{h}» (por fila)</option>
+                ))}
+              </select>
+              <div className="d-flex gap-1" style={cfg.zoneColumn ? { opacity: 0.6 } : undefined}
+                title={cfg.zoneColumn ? 'Se usa solo en filas con la zona vacía' : undefined}>
                 <select id="csvZone" className="form-select form-select-sm" value={cfg.utmZone} onChange={(e) => set('utmZone', Number(e.target.value))}>
                   {Array.from({ length: 60 }, (_, i) => i + 1).map((z) => (
                     <option key={z} value={z}>{z}</option>
@@ -169,9 +220,33 @@ const CsvStep: React.FC<{
             </tbody>
           </table>
         </div>
-        <p className="text-muted mt-1 mb-0" style={{ fontSize: '0.62rem' }}>
+        <p className="text-muted mt-1 mb-2" style={{ fontSize: '0.62rem' }}>
           Formatos aceptados: -90.2313 · -90,2313 · 90°13'52.8"W · O 90 13 52.8 · metros UTM.
         </p>
+
+        <div className="form-check mb-1">
+          <input
+            id="csvAutoGroup"
+            type="checkbox"
+            className="form-check-input"
+            checked={autoGroup}
+            disabled={!detectedGrouping.groupField && !detectedGrouping.orderField}
+            onChange={(e) => setAutoGroup(e.target.checked)}
+          />
+          <label htmlFor="csvAutoGroup" className="form-check-label" style={smallLabel}>
+            Formar polígonos automáticamente
+            {detectedGrouping.groupField || detectedGrouping.orderField ? (
+              <span className="text-muted">
+                {' '}
+                (agrupar por «{detectedGrouping.groupField || 'todo el archivo'}», ordenar por «
+                {detectedGrouping.orderField || 'orden del archivo'}»)
+              </span>
+            ) : (
+              <span className="text-muted"> (no se encontraron columnas POLIGONO / VERTICE)</span>
+            )}
+          </label>
+        </div>
+        <TemplateLinks className="text-muted" />
       </div>
 
       <div className="d-flex justify-content-end gap-2 p-3 border-top">
@@ -185,7 +260,7 @@ const CsvStep: React.FC<{
           disabled={!cfg.xColumn || !cfg.yColumn || cfg.xColumn === cfg.yColumn}
           onClick={() => {
             const { features, invalidRows } = csvToPoints(table, cfg);
-            onConverted(features, invalidRows);
+            onConverted({ features, invalidRows, grouping: autoGroup ? detectedGrouping : null });
           }}
         >
           Convertir a puntos <i className="bi bi-arrow-right ms-1"></i>
@@ -200,13 +275,18 @@ const CsvStep: React.FC<{
 const ElementsStep: React.FC<{
   initialFeatures: AnyFeature[];
   initialNotice: string | null;
+  initialGroup?: { groupField: string; orderField: string } | null;
   onApply: (collection: FeatureCollection) => void;
   onClose: () => void;
-}> = ({ initialFeatures, initialNotice, onApply, onClose }) => {
+}> = ({ initialFeatures, initialNotice, initialGroup, onApply, onClose }) => {
   const [features, setFeatures] = useState<AnyFeature[]>(initialFeatures);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialFeatures.map(getUid)));
   const [notice, setNotice] = useState<string | null>(initialNotice);
-  const [group, setGroup] = useState<GroupOptions>({ groupField: '', orderField: '', output: 'polygon' });
+  const [group, setGroup] = useState<GroupOptions>({
+    groupField: initialGroup?.groupField ?? '',
+    orderField: initialGroup?.orderField ?? '',
+    output: 'polygon',
+  });
 
   const counts = useMemo(() => {
     const c: Record<GeometryKind, number> = { polygon: 0, line: 0, point: 0, other: 0 };
@@ -381,7 +461,7 @@ const ElementsStep: React.FC<{
 
         {notice && (
           <div className="alert alert-info py-1 px-2 mb-2 d-flex justify-content-between align-items-start" style={{ fontSize: '0.7rem' }}>
-            <span>{notice}</span>
+            <span style={{ whiteSpace: 'pre-line' }}>{notice}</span>
             <button type="button" className="btn-close btn-sm ms-2" style={{ fontSize: '0.5rem' }} aria-label="Cerrar aviso" onClick={() => setNotice(null)}></button>
           </div>
         )}
@@ -451,7 +531,29 @@ const ElementsStep: React.FC<{
  * cada archivo nuevo reinicie su estado sin setState dentro de efectos.
  */
 export const ElementManagerModal: React.FC<ElementManagerModalProps> = ({ source, defaultDatum = 'WGS84', onClose, onApply }) => {
-  const [csvResult, setCsvResult] = useState<{ features: AnyFeature[]; notice: string | null } | null>(null);
+  const [csvResult, setCsvResult] = useState<{
+    features: AnyFeature[];
+    notice: string | null;
+    grouping: { groupField: string; orderField: string } | null;
+  } | null>(null);
+
+  const handleConverted = ({ features, invalidRows, grouping }: CsvConversion) => {
+    const parts = [`Se importaron ${features.length} puntos.`];
+    if (invalidRows.length > 0) {
+      parts.push(
+        `Filas sin coordenadas válidas: ${invalidRows.slice(0, 15).join(', ')}${invalidRows.length > 15 ? '…' : ''}.`,
+      );
+    }
+    let all = features;
+    if (grouping) {
+      const result = groupPointsIntoShapes(features, { ...grouping, output: 'polygon' });
+      all = [...result.features, ...features];
+      if (result.features.length > 0) parts.push(`Se formaron ${result.features.length} polígono(s) automáticamente.`);
+      if (result.skipped.length) parts.push(`Sin polígono por tener menos de 3 vértices: ${result.skipped.join(', ')}.`);
+      if (result.warnings.length) parts.push(result.warnings.join(' '));
+    }
+    setCsvResult({ features: all, notice: parts.join(' '), grouping });
+  };
 
   const geojsonFeatures = useMemo(
     () =>
@@ -461,7 +563,7 @@ export const ElementManagerModal: React.FC<ElementManagerModalProps> = ({ source
     [source],
   );
 
-  const showCsvStep = source.kind === 'csv' && !csvResult;
+  const showCsvStep = source.kind === 'table' && !csvResult;
 
   return (
     <div
@@ -475,32 +577,26 @@ export const ElementManagerModal: React.FC<ElementManagerModalProps> = ({ source
         <div className="d-flex justify-content-between align-items-center px-3 py-2 text-white rounded-top" style={{ backgroundColor: brand }}>
           <h6 id="elementManagerTitle" className="mb-0 fw-bold">
             <i className="bi bi-diagram-3 me-2"></i>
-            {showCsvStep ? 'Importar puntos desde CSV' : 'Gestor de elementos'}
+            {showCsvStep ? 'Importar coordenadas (Excel / CSV)' : 'Gestor de elementos'}
             <span className="fw-normal ms-2" style={{ fontSize: '0.75rem', opacity: 0.85 }}>{source.fileName}</span>
           </h6>
           <button type="button" className="btn-close btn-close-white" aria-label="Cerrar" onClick={onClose}></button>
         </div>
 
-        {showCsvStep && source.kind === 'csv' ? (
+        {showCsvStep && source.kind === 'table' ? (
           <CsvStep
             fileName={source.fileName}
-            text={source.text}
+            table={source.table}
+            sheetName={source.sheetName}
             defaultDatum={defaultDatum}
             onClose={onClose}
-            onConverted={(features, invalidRows) =>
-              setCsvResult({
-                features,
-                notice:
-                  invalidRows.length > 0
-                    ? `Se importaron ${features.length} puntos. Filas sin coordenadas válidas: ${invalidRows.slice(0, 15).join(', ')}${invalidRows.length > 15 ? '…' : ''}.`
-                    : `Se importaron ${features.length} puntos.`,
-              })
-            }
+            onConverted={handleConverted}
           />
         ) : (
           <ElementsStep
             initialFeatures={csvResult ? csvResult.features : geojsonFeatures}
-            initialNotice={csvResult?.notice ?? null}
+            initialNotice={csvResult?.notice ?? (source.kind === 'geojson' ? source.notice ?? null : null)}
+            initialGroup={csvResult?.grouping ?? null}
             onApply={onApply}
             onClose={onClose}
           />
