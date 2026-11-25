@@ -482,7 +482,7 @@ const MiniMapLocator: React.FC<MiniMapLocatorProps> = ({
 
   return (
     <div className="bg-white p-1 mb-2 border border-dark">
-      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.72rem', padding: '2px' }}>
+      <div className="fw-bold text-white text-center mb-1" style={{ backgroundColor: '#9e1c3f', fontSize: '0.83rem', padding: '2px' }}>
         Localización geográfica
       </div>
       <div style={{ height: '105px', width: '100%', position: 'relative', border: '1px solid #444' }}>
@@ -523,7 +523,7 @@ const MiniMapLocator: React.FC<MiniMapLocatorProps> = ({
           <CircleMarker center={center} radius={3.5} color="black" weight={1} fillColor="red" fillOpacity={1} interactive={false} />
         </MapContainer>
       </div>
-      <div className="text-center mt-1" style={{ fontSize: '0.62rem', lineHeight: '1.15' }}>
+      <div className="text-center mt-1" style={{ fontSize: '0.71rem', lineHeight: '1.15' }}>
         Estado: {estado || 'N/A'}<br />Municipio: {municipio || 'N/A'}
       </div>
     </div>
@@ -922,15 +922,15 @@ const TemporalControlPanel: React.FC<{
     );
   };
 
-/** Ficha "Sistema de Referencia" con selector de datum (el selector no sale en la exportación). */
-const ReferenceSystemBox: React.FC<{
+/** Barra de "Sistema de Referencia" fuera del plano (no sale en la exportación). */
+const ReferenceSystemControls: React.FC<{
   datum: DatumId;
   onChangeDatum: (d: DatumId) => void;
   coordinateFormat: CoordinateFormat;
   onChangeFormat: (f: CoordinateFormat) => void;
   centroid: Feature<Point> | null;
-  isExporting: boolean;
-}> = ({ datum, onChangeDatum, coordinateFormat, onChangeFormat, centroid, isExporting }) => {
+  disabled?: boolean;
+}> = ({ datum, onChangeDatum, coordinateFormat, onChangeFormat, centroid, disabled = false }) => {
   const def = DATUMS[datum];
   let zoneText = 'Zona UTM: N/D';
   if (centroid) {
@@ -938,52 +938,49 @@ const ReferenceSystemBox: React.FC<{
     zoneText = `Zona UTM ${utmZoneFromLon(lng)} ${lat >= 0 ? 'N' : 'S'}`;
   }
   return (
-    <div className="bg-white border border-dark mt-auto">
-      <div className="fw-bold text-white text-center" style={{ backgroundColor: '#163f37', fontSize: '0.70rem', padding: '2px' }}>
-        Sistema de Referencia:
+    <div className="bg-white border shadow-sm rounded px-3 py-2 d-flex flex-wrap align-items-end gap-3 w-100">
+      <div className="d-flex align-items-center gap-2 align-self-center">
+        <i className="bi bi-globe-americas" style={{ color: '#163f37' }}></i>
+        <span className="fw-bold text-dark" style={{ fontSize: '0.85rem' }}>
+          Sistema de referencia:
+        </span>
       </div>
-      <p className="mb-0 text-center p-1" style={{ fontSize: '0.62rem', lineHeight: '1.2' }}>
-        DATUM {def.label} · Elipsoide {def.ellipsoid.name}
-        <br />
-        Proyección Universal Transversa de Mercator · {zoneText}
-        <br />
-        Coordenadas del marco:{' '}
-        {COORDINATE_FORMAT_OPTIONS.find((o) => o.id === coordinateFormat)?.label ?? ''}
-        {datum !== 'WGS84' && (
-          <>
-            <br />
-            <span className="text-muted" style={{ fontSize: '0.56rem' }}>
-              Transformación desde WGS84: {def.accuracy}
-            </span>
-          </>
-        )}
-      </p>
-      {!isExporting && (
-        <div className="px-1 pb-1 d-flex gap-1 ignore-print">
-          <select
-            aria-label="Formato de coordenadas"
-            className="form-select form-select-sm py-0"
-            style={{ fontSize: '0.62rem' }}
-            value={coordinateFormat}
-            onChange={(e) => onChangeFormat(e.target.value as CoordinateFormat)}
-          >
-            {COORDINATE_FORMAT_OPTIONS.map((o) => (
-              <option key={o.id} value={o.id}>{o.label}</option>
-            ))}
-          </select>
-          <select
-            aria-label="Datum de referencia"
-            className="form-select form-select-sm py-0"
-            style={{ fontSize: '0.62rem' }}
-            value={datum}
-            onChange={(e) => onChangeDatum(e.target.value as DatumId)}
-          >
-            {DATUM_OPTIONS.map((d) => (
-              <option key={d.id} value={d.id}>{d.label}</option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div>
+        <label htmlFor="refDatum" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+          Datum
+        </label>
+        <select
+          id="refDatum"
+          className="form-select form-select-sm"
+          value={datum}
+          disabled={disabled}
+          onChange={(e) => onChangeDatum(e.target.value as DatumId)}
+        >
+          {DATUM_OPTIONS.map((d) => (
+            <option key={d.id} value={d.id}>{d.label}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label htmlFor="refFormat" className="form-label fw-bold mb-1" style={{ fontSize: '0.75rem' }}>
+          Coordenadas del marco
+        </label>
+        <select
+          id="refFormat"
+          className="form-select form-select-sm"
+          value={coordinateFormat}
+          disabled={disabled}
+          onChange={(e) => onChangeFormat(e.target.value as CoordinateFormat)}
+        >
+          {COORDINATE_FORMAT_OPTIONS.map((o) => (
+            <option key={o.id} value={o.id}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+      <span className="text-muted align-self-center" style={{ fontSize: '0.75rem' }}>
+        Elipsoide {def.ellipsoid.name} · UTM · {zoneText}
+        {datum !== 'WGS84' && <> · Transformación desde WGS84: {def.accuracy}</>}
+      </span>
     </div>
   );
 };
@@ -1936,17 +1933,11 @@ export const GeoViewer: React.FC = () => {
                     />
                     <div className="d-flex flex-column text-center flex-grow-1">
                       <h6
-                        className="fw-bold mb-1"
-                        style={{ fontSize: '0.68rem', lineHeight: '1.15', color: '#000' }}
+                        className="fw-bold mb-0"
+                        style={{ fontSize: '0.78rem', lineHeight: '1.15', color: '#000' }}
                       >
                         PROCURADURÍA FEDERAL DE PROTECCIÓN AL AMBIENTE
                       </h6>
-                      <span
-                        className="text-muted"
-                        style={{ fontSize: '0.58rem', lineHeight: '1.1' }}
-                      >
-                        Subprocuraduría de Recursos Naturales
-                      </span>
                     </div>
                   </div>
 
@@ -2052,17 +2043,6 @@ export const GeoViewer: React.FC = () => {
                       error={errorClima || undefined}
                     />
                   )}
-
-                  {currentPlano !== 8 && (
-                    <ReferenceSystemBox
-                      datum={datum}
-                      onChangeDatum={setDatum}
-                      coordinateFormat={coordinateFormat}
-                      onChangeFormat={setCoordinateFormat}
-                      centroid={predioCentroid}
-                      isExporting={isExporting || isSeriesExporting}
-                    />
-                  )}
                 </div>
               )}
             </div>
@@ -2073,6 +2053,17 @@ export const GeoViewer: React.FC = () => {
               className="w-100 d-flex flex-column align-items-center gap-2 ignore-print mb-4"
               style={{ maxWidth: '1132px' }}
             >
+              {currentPlano !== 8 && (
+                <ReferenceSystemControls
+                  datum={datum}
+                  onChangeDatum={setDatum}
+                  coordinateFormat={coordinateFormat}
+                  onChangeFormat={setCoordinateFormat}
+                  centroid={predioCentroid}
+                  disabled={isExporting || isSeriesExporting}
+                />
+              )}
+
               {currentPlano >= 2 && currentPlano <= 6 && (
                 <LayerFilterBar
                   layerFilterMode={layerFilterMode}

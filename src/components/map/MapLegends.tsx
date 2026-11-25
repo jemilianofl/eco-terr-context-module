@@ -95,7 +95,7 @@ export interface UserGeometryKinds {
 /** Simbología de lo que subió el usuario: polígono, línea y/o vértices. */
 const UserGeometrySymbology = ({ kinds }: { kinds?: UserGeometryKinds }) => {
   const showPolygon = !kinds || kinds.hasPolygons;
-  const rowStyle: CSSProperties = { fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' };
+  const rowStyle: CSSProperties = { fontSize: '0.87rem', lineHeight: '1.2', whiteSpace: 'nowrap' };
   return (
     <>
       {showPolygon && (
@@ -155,7 +155,7 @@ const AreaUnitToggle = ({
           onClick={() => onChange(opt.id)}
           className={`btn btn-sm py-0 px-2 ${unit === opt.id ? 'text-white fw-bold' : 'btn-outline-secondary'}`}
           style={{
-            fontSize: '0.60rem',
+            fontSize: '0.81rem',
             ...(unit === opt.id ? { backgroundColor: '#163f37', borderColor: '#163f37' } : {}),
           }}
           title={disabled ? 'Termina la edición para cambiar de unidad' : `Mostrar en ${opt.label}`}
@@ -232,11 +232,11 @@ export const LegendUbicacion = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.98rem' }}
         >
           Datos del expediente
         </div>
-        <div className="p-2 text-center" style={{ fontSize: '0.65rem' }}>
+        <div className="p-2 text-center" style={{ fontSize: '0.87rem' }}>
           <p className="mb-1">
             <strong>Acta de inspección:</strong> {previewData.acta || 'N/A'}
           </p>
@@ -250,11 +250,11 @@ export const LegendUbicacion = ({
         <div className="bg-white mb-2 border border-dark">
           <div
             className="fw-bold text-white text-center mb-1"
-            style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}
+            style={{ backgroundColor: '#0d6efd', fontSize: '0.98rem' }}
           >
             Metadatos Satelitales
           </div>
-          <div className="p-2 text-center" style={{ fontSize: '0.60rem' }}>
+          <div className="p-2 text-center" style={{ fontSize: '0.81rem' }}>
             <p className="mb-1">
               <strong>Sensor:</strong> {sentinelMetadata.platform ?? 'N/A'}
             </p>
@@ -271,7 +271,7 @@ export const LegendUbicacion = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.98rem' }}
         >
           Simbología
         </div>
@@ -283,7 +283,7 @@ export const LegendUbicacion = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1 position-relative"
-          style={{ backgroundColor: '#163f37', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#163f37', fontSize: '0.98rem' }}
         >
           Superficie:
           {!isExporting && onUpdateArea && (
@@ -295,7 +295,7 @@ export const LegendUbicacion = ({
                 right: '6px',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                fontSize: '0.68rem',
+                fontSize: '0.90rem',
                 lineHeight: 1,
               }}
               title={isEditing ? 'Finalizar edición' : 'Editar superficie'}
@@ -307,14 +307,14 @@ export const LegendUbicacion = ({
         </div>
 
         {showEditForm && draft ? (
-          <div className="p-2 ignore-print" style={{ fontSize: '0.65rem' }}>
+          <div className="p-2 ignore-print" style={{ fontSize: '0.87rem' }}>
             {draft.details.map((item, idx) => (
               <div key={`area-edit-${idx}`} className="d-flex align-items-center gap-1 mb-1">
                 <input
                   type="text"
                   aria-label={`Etiqueta del polígono ${idx + 1}`}
                   className="form-control form-control-sm px-1 py-0"
-                  style={{ fontSize: '0.62rem', width: '48%' }}
+                  style={{ fontSize: '0.83rem', width: '48%' }}
                   value={item.name}
                   onChange={(e) => handleDetailChange(idx, 'name', e.target.value)}
                 />
@@ -323,28 +323,28 @@ export const LegendUbicacion = ({
                   inputMode="decimal"
                   aria-label={`Superficie de ${item.name} en ${unitLabel}`}
                   className="form-control form-control-sm px-1 py-0 text-end"
-                  style={{ fontSize: '0.62rem', width: '40%' }}
+                  style={{ fontSize: '0.83rem', width: '40%' }}
                   value={item.area}
                   onChange={(e) => handleDetailChange(idx, 'area', e.target.value)}
                 />
-                <span style={{ fontSize: '0.62rem', flexShrink: 0 }}>{unitLabel}</span>
+                <span style={{ fontSize: '0.83rem', flexShrink: 0 }}>{unitLabel}</span>
               </div>
             ))}
 
             <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
 
             <div className="d-flex align-items-center gap-1 mb-2">
-              <strong style={{ fontSize: '0.65rem', width: '48%' }}>Total:</strong>
+              <strong style={{ fontSize: '0.87rem', width: '48%' }}>Total:</strong>
               <input
                 type="text"
                 inputMode="decimal"
                 aria-label={`Superficie total en ${unitLabel}`}
                 className="form-control form-control-sm px-1 py-0 text-end fw-bold"
-                style={{ fontSize: '0.64rem', width: '40%' }}
+                style={{ fontSize: '0.86rem', width: '40%' }}
                 value={draft.total}
                 onChange={(e) => handleTotalChange(e.target.value)}
               />
-              <span style={{ fontSize: '0.62rem', flexShrink: 0 }}>{unitLabel}</span>
+              <span style={{ fontSize: '0.83rem', flexShrink: 0 }}>{unitLabel}</span>
             </div>
 
             <div className="d-flex justify-content-end gap-1">
@@ -356,7 +356,7 @@ export const LegendUbicacion = ({
                     stopEditing();
                   }}
                   className="btn btn-outline-secondary btn-sm py-0 px-2"
-                  style={{ fontSize: '0.60rem' }}
+                  style={{ fontSize: '0.81rem' }}
                   title="Restaurar superficie calculada automáticamente"
                 >
                   Restaurar
@@ -366,7 +366,7 @@ export const LegendUbicacion = ({
                 type="button"
                 onClick={stopEditing}
                 className="btn btn-success btn-sm py-0 px-2"
-                style={{ fontSize: '0.60rem' }}
+                style={{ fontSize: '0.81rem' }}
               >
                 Listo
               </button>
@@ -375,17 +375,17 @@ export const LegendUbicacion = ({
         ) : (
           <div className="p-2 text-center">
             {areaDetails.length === 0 && (
-              <p className="mb-1 text-muted" style={{ fontSize: '0.62rem' }}>
+              <p className="mb-1 text-muted" style={{ fontSize: '0.83rem' }}>
                 Sin polígonos graficados (solo puntos o líneas)
               </p>
             )}
             {areaDetails.map((item, idx) => (
-              <p key={`area-${idx}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
+              <p key={`area-${idx}`} className="mb-1" style={{ fontSize: '0.87rem' }}>
                 <strong>{item.name}:</strong> {formatArea(item.area, areaUnit)}
               </p>
             ))}
             <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
-            <p className="mb-0" style={{ fontSize: '0.7rem' }}>
+            <p className="mb-0" style={{ fontSize: '0.92rem' }}>
               <strong>Total:</strong> {formatArea(totalArea, areaUnit)}
             </p>
             {!isExporting && <AreaUnitToggle unit={areaUnit} onChange={onChangeAreaUnit} />}
@@ -439,19 +439,19 @@ const IntegridadLegend = ({ info }: { info: IntegridadLegendInfo }) => {
 
   return (
     <div className="mb-2 border-top pt-2">
-      <div className="fw-semibold mb-1" style={{ fontSize: '0.60rem', lineHeight: '1.2' }}>
+      <div className="fw-semibold mb-1" style={{ fontSize: '0.81rem', lineHeight: '1.2' }}>
         {INTEGRIDAD_RASTER.title}
       </div>
       <div style={{ height: '9px', background: gradient, border: '1px solid #64748b', opacity: INTEGRIDAD_RASTER.opacity + 0.2 }} />
-      <div className="d-flex justify-content-between text-muted" style={{ fontSize: '0.52rem' }}>
+      <div className="d-flex justify-content-between text-muted" style={{ fontSize: '0.72rem' }}>
         <span>0 · Degradado</span>
         <span>0.5</span>
         <span>1 · Íntegro</span>
       </div>
-      <div className="mt-1" style={{ fontSize: '0.56rem', lineHeight: '1.25' }}>
+      <div className="mt-1" style={{ fontSize: '0.76rem', lineHeight: '1.25' }}>
         {statsText}
       </div>
-      <div className="text-muted" style={{ fontSize: '0.5rem' }}>
+      <div className="text-muted" style={{ fontSize: '0.69rem' }}>
         Fuente: {INTEGRIDAD_RASTER.source}
       </div>
     </div>
@@ -526,12 +526,12 @@ export const LegendEcologica = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.98rem' }}
         >
           Simbología
         </div>
         <div className="p-2">
-          <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>
+          <p className="mb-2 text-muted" style={{ fontSize: '0.81rem' }}>
             Capas extraídas de: CONABIO / CONANP / SEMARNAT (SIORE)
           </p>
           <div className="d-flex align-items-center mb-2 border-bottom pb-2">
@@ -545,7 +545,7 @@ export const LegendEcologica = ({
                 flexShrink: 0,
               }}
             ></div>
-            <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: '0.87rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
               Polígono(s) Inspeccionado(s)
             </span>
           </div>
@@ -567,7 +567,7 @@ export const LegendEcologica = ({
                     ></div>
                     <span
                       className="fw-semibold"
-                      style={{ fontSize: '0.60rem', lineHeight: '1.2' }}
+                      style={{ fontSize: '0.81rem', lineHeight: '1.2' }}
                     >
                       {layer.title}
                     </span>
@@ -581,14 +581,14 @@ export const LegendEcologica = ({
                         <div
                           key={`${layer.id}-${name}`}
                           className="text-muted d-flex justify-content-between align-items-baseline gap-1"
-                          style={{ fontSize: '0.56rem', lineHeight: '1.25' }}
+                          style={{ fontSize: '0.76rem', lineHeight: '1.25' }}
                         >
                           <span>- {name}</span>
                           {dist && (
                             <span
                               className="fw-bold px-1 rounded"
                               style={{
-                                fontSize: '0.52rem',
+                                fontSize: '0.72rem',
                                 whiteSpace: 'nowrap',
                                 backgroundColor: dist.intersects ? '#fee2e2' : '#f1f5f9',
                                 color: dist.intersects ? '#b91c1c' : '#334155',
@@ -601,7 +601,7 @@ export const LegendEcologica = ({
                         </div>
                       ))}
                       {layer.sites.length > MAX_SITES_PER_LAYER && (
-                        <div className="text-muted" style={{ fontSize: '0.54rem' }}>
+                        <div className="text-muted" style={{ fontSize: '0.74rem' }}>
                           … y {layer.sites.length - MAX_SITES_PER_LAYER} más (los más cercanos arriba)
                         </div>
                       )}
@@ -613,7 +613,7 @@ export const LegendEcologica = ({
           ) : (
             <output
               className="text-center text-muted mt-2 d-block"
-              style={{ fontSize: '0.65rem' }}
+              style={{ fontSize: '0.87rem' }}
             >
               {isLoading
                 ? 'Buscando intersecciones...'
@@ -627,7 +627,7 @@ export const LegendEcologica = ({
 
       <div
         className="border border-dark mb-2 p-1 text-center bg-white"
-        style={{ fontSize: '0.65rem' }}
+        style={{ fontSize: '0.87rem' }}
       >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
@@ -679,14 +679,14 @@ export const LegendVegetacion = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#65a30d', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#65a30d', fontSize: '0.98rem' }}
         >
           Datos de Vegetación
         </div>
         <div className="p-2">
           <span
             className="fw-bold mb-1 d-block text-muted"
-            style={{ fontSize: '0.60rem' }}
+            style={{ fontSize: '0.81rem' }}
           >
             Capa extraída de: INEGI
           </span>
@@ -694,7 +694,7 @@ export const LegendVegetacion = ({
           {isExporting ? (
             <div
               className="fw-bold text-dark text-center border-bottom pb-2 mb-2"
-              style={{ fontSize: '0.65rem' }}
+              style={{ fontSize: '0.87rem' }}
             >
               {activeSerieLabel}
             </div>
@@ -725,7 +725,7 @@ export const LegendVegetacion = ({
                   flexShrink: 0,
                 }}
               ></div>
-              <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '0.87rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
                 Polígono(s) Inspeccionado(s)
               </span>
             </div>
@@ -733,7 +733,7 @@ export const LegendVegetacion = ({
             {activeVegLegend.length === 0 && !isLoading && (
               <output
                 className="text-center text-muted mt-2 d-block"
-                style={{ fontSize: '0.65rem' }}
+                style={{ fontSize: '0.87rem' }}
               >
                 Sin coberturas visibles en encuadre
               </output>
@@ -751,7 +751,7 @@ export const LegendVegetacion = ({
                     flexShrink: 0,
                   }}
                 ></div>
-                <span style={{ fontSize: '0.60rem' }}>{compactarNombreVeg(item.label)}</span>
+                <span style={{ fontSize: '0.81rem' }}>{compactarNombreVeg(item.label)}</span>
               </div>
             ))}
           </div>
@@ -760,7 +760,7 @@ export const LegendVegetacion = ({
 
       <div
         className="border border-dark mb-2 p-1 text-center bg-white"
-        style={{ fontSize: '0.65rem' }}
+        style={{ fontSize: '0.87rem' }}
       >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
@@ -791,12 +791,12 @@ export const LegendClima = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#0284c7', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#0284c7', fontSize: '0.98rem' }}
         >
           Unidades Climáticas
         </div>
         <div className="p-2">
-          <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>
+          <p className="mb-2 text-muted" style={{ fontSize: '0.81rem' }}>
             Capa extraída de: CONABIO (García - 1998)
           </p>
 
@@ -812,7 +812,7 @@ export const LegendClima = ({
                   flexShrink: 0,
                 }}
               ></div>
-              <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '0.87rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
                 Polígono(s) Inspeccionado(s)
               </span>
             </div>
@@ -820,7 +820,7 @@ export const LegendClima = ({
             {activeClimateLegend.length === 0 && !isLoading && (
               <output
                 className="text-center text-muted mt-2 d-block"
-                style={{ fontSize: '0.65rem' }}
+                style={{ fontSize: '0.87rem' }}
               >
                 Sin unidades climáticas visibles en encuadre
               </output>
@@ -838,7 +838,7 @@ export const LegendClima = ({
                     flexShrink: 0,
                   }}
                 ></div>
-                <span style={{ fontSize: '0.60rem' }}>{item.label}</span>
+                <span style={{ fontSize: '0.81rem' }}>{item.label}</span>
               </div>
             ))}
           </div>
@@ -847,7 +847,7 @@ export const LegendClima = ({
 
       <div
         className="border border-dark mb-2 p-1 text-center bg-white"
-        style={{ fontSize: '0.65rem' }}
+        style={{ fontSize: '0.87rem' }}
       >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
@@ -878,12 +878,12 @@ export const LegendEdafologia = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#92400e', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#92400e', fontSize: '0.98rem' }}
         >
           Edafología (Serie II)
         </div>
         <div className="p-2">
-          <p className="mb-2 text-muted" style={{ fontSize: '0.60rem' }}>
+          <p className="mb-2 text-muted" style={{ fontSize: '0.81rem' }}>
             Capa extraída de: INEGI (Esc. 1:250,000)
           </p>
 
@@ -899,7 +899,7 @@ export const LegendEdafologia = ({
                   flexShrink: 0,
                 }}
               ></div>
-              <span style={{ fontSize: '0.65rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '0.87rem', lineHeight: '1.2', whiteSpace: 'nowrap' }}>
                 Polígono(s) Inspeccionado(s)
               </span>
             </div>
@@ -907,7 +907,7 @@ export const LegendEdafologia = ({
             {activeEdafologiaLegend.length === 0 && !isLoading && (
               <output
                 className="text-center text-muted mt-2 d-block"
-                style={{ fontSize: '0.65rem' }}
+                style={{ fontSize: '0.87rem' }}
               >
                 Sin unidades edafológicas visibles en encuadre
               </output>
@@ -925,7 +925,7 @@ export const LegendEdafologia = ({
                     flexShrink: 0,
                   }}
                 ></div>
-                <span style={{ fontSize: '0.60rem' }}>{item.label}</span>
+                <span style={{ fontSize: '0.81rem' }}>{item.label}</span>
               </div>
             ))}
           </div>
@@ -934,7 +934,7 @@ export const LegendEdafologia = ({
 
       <div
         className="border border-dark mb-2 p-1 text-center bg-white"
-        style={{ fontSize: '0.65rem' }}
+        style={{ fontSize: '0.87rem' }}
       >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
@@ -1093,7 +1093,7 @@ export const LegendHidrologia = ({
   };
 
   const labelStyle: CSSProperties = {
-    fontSize: '0.60rem',
+    fontSize: '0.81rem',
     lineHeight: '1.2',
     whiteSpace: 'nowrap',
   };
@@ -1101,7 +1101,7 @@ export const LegendHidrologia = ({
   const renderStrahlerList = () => {
     if (isLoading) {
       return (
-        <output className="text-muted d-block text-center" style={{ fontSize: '0.60rem' }}>
+        <output className="text-muted d-block text-center" style={{ fontSize: '0.81rem' }}>
           Cargando red hidrográfica...
         </output>
       );
@@ -1109,7 +1109,7 @@ export const LegendHidrologia = ({
 
     if (activeHydroContext.displayedStrahlerItems.length === 0) {
       return (
-        <output className="text-muted d-block text-center mt-2" style={{ fontSize: '0.60rem' }}>
+        <output className="text-muted d-block text-center mt-2" style={{ fontSize: '0.81rem' }}>
           Sin corrientes visibles en encuadre
         </output>
       );
@@ -1154,12 +1154,12 @@ export const LegendHidrologia = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#0369a1', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#0369a1', fontSize: '0.98rem' }}
         >
           Simbología Hidrológica
         </div>
         <div className="p-2">
-          <p className="mb-1 text-muted" style={{ fontSize: '0.58rem' }}>
+          <p className="mb-1 text-muted" style={{ fontSize: '0.79rem' }}>
             Fuente: INEGI - SIATL / CONAGUA
           </p>
 
@@ -1170,7 +1170,7 @@ export const LegendHidrologia = ({
                 style={{
                   backgroundColor: '#f0f9ff',
                   border: '1px solid #bae6fd',
-                  fontSize: '0.58rem',
+                  fontSize: '0.79rem',
                   lineHeight: '1.25',
                 }}
               >
@@ -1269,10 +1269,10 @@ export const LegendHidrologia = ({
 
           {/* Red Hidrográfica 1:50,000 - Orden Strahler visible en encuadre */}
           <div className="border-top mt-2 pt-1">
-            <div className="fw-bold text-dark" style={{ fontSize: '0.62rem' }}>
+            <div className="fw-bold text-dark" style={{ fontSize: '0.83rem' }}>
               Red Hidrográfica 1:50,000
             </div>
-            <div className="text-muted mb-1" style={{ fontSize: '0.58rem' }}>
+            <div className="text-muted mb-1" style={{ fontSize: '0.79rem' }}>
               Orden de escorrentía (Strahler):
             </div>
 
@@ -1283,7 +1283,7 @@ export const LegendHidrologia = ({
 
       <div
         className="border border-dark mb-2 p-1 text-center bg-white"
-        style={{ fontSize: '0.65rem' }}
+        style={{ fontSize: '0.87rem' }}
       >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
@@ -1340,11 +1340,11 @@ export const LegendEspacioTemporal = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.98rem' }}
         >
           Análisis Espacio-Temporal
         </div>
-        <div className="p-2 text-center" style={{ fontSize: '0.62rem', lineHeight: '1.25' }}>
+        <div className="p-2 text-center" style={{ fontSize: '0.83rem', lineHeight: '1.25' }}>
           {seriesInfo && (
             <p className="mb-1">
               <strong>Serie multitemporal:</strong> {seriesInfo.index} de {seriesInfo.total} (
@@ -1364,11 +1364,11 @@ export const LegendEspacioTemporal = ({
         <div className="bg-white mb-2 border border-dark">
           <div
             className="fw-bold text-white text-center mb-1"
-            style={{ backgroundColor: '#0d6efd', fontSize: '0.75rem' }}
+            style={{ backgroundColor: '#0d6efd', fontSize: '0.98rem' }}
           >
             Metadatos Satelitales
           </div>
-          <div className="p-2 text-center" style={{ fontSize: '0.58rem', lineHeight: '1.25' }}>
+          <div className="p-2 text-center" style={{ fontSize: '0.79rem', lineHeight: '1.25' }}>
             <p className="mb-1">
               <strong>Programa:</strong> {sourceLabel}
             </p>
@@ -1397,7 +1397,7 @@ export const LegendEspacioTemporal = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#9e1c3f', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#9e1c3f', fontSize: '0.98rem' }}
         >
           Simbología
         </div>
@@ -1409,18 +1409,18 @@ export const LegendEspacioTemporal = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#163f37', fontSize: '0.75rem' }}
+          style={{ backgroundColor: '#163f37', fontSize: '0.98rem' }}
         >
           Superficie:
         </div>
         <div className="p-2 text-center">
           {areaDetails.map((item) => (
-            <p key={`temp-area-${item.name}`} className="mb-1" style={{ fontSize: '0.65rem' }}>
+            <p key={`temp-area-${item.name}`} className="mb-1" style={{ fontSize: '0.87rem' }}>
               <strong>{item.name}:</strong> {formatArea(item.area, areaUnit)}
             </p>
           ))}
           <div style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}></div>
-          <p className="mb-0" style={{ fontSize: '0.7rem' }}>
+          <p className="mb-0" style={{ fontSize: '0.92rem' }}>
             <strong>Total:</strong> {formatArea(totalArea, areaUnit)}
           </p>
           <AreaUnitToggle unit={areaUnit} onChange={onChangeAreaUnit} />
@@ -1483,11 +1483,11 @@ export const LegendClimograma = ({
       <div className="bg-white mb-2 border border-dark">
         <div
           className="fw-bold text-white text-center mb-1"
-          style={{ backgroundColor: '#163f37', fontSize: '0.75rem', padding: '2px' }}
+          style={{ backgroundColor: '#163f37', fontSize: '0.98rem', padding: '2px' }}
         >
           Estación Climatológica SMN
         </div>
-        <div className="p-2" style={{ fontSize: '0.63rem', lineHeight: '1.35' }}>
+        <div className="p-2" style={{ fontSize: '0.84rem', lineHeight: '1.35' }}>
           <p className="mb-1 text-muted text-center">
             Normales Climatológicas ({climaData?.periodo ?? '1981-2010'})
           </p>
@@ -1525,7 +1525,7 @@ export const LegendClimograma = ({
         <div className="bg-white mb-2 border border-dark">
           <div
             className="fw-bold text-white text-center"
-            style={{ backgroundColor: '#9e1c3f', fontSize: '0.73rem', padding: '3px' }}
+            style={{ backgroundColor: '#9e1c3f', fontSize: '0.96rem', padding: '3px' }}
           >
             Resumen Estadístico Normal
           </div>
@@ -1533,7 +1533,7 @@ export const LegendClimograma = ({
             <table
               className="w-100 mb-0"
               style={{
-                fontSize: '0.60rem',
+                fontSize: '0.81rem',
                 lineHeight: '1.25',
                 borderCollapse: 'collapse',
               }}
@@ -1586,7 +1586,7 @@ export const LegendClimograma = ({
 
       <div
         className="border border-dark mb-2 p-1 text-center bg-white"
-        style={{ fontSize: '0.65rem' }}
+        style={{ fontSize: '0.87rem' }}
       >
         <span className="fw-bold">Fecha de Inspección:</span> {targetDate || 'N/A'}
       </div>
